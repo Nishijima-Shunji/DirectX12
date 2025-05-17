@@ -1,6 +1,8 @@
-cbuffer SceneCB : register(b0)
+cbuffer Transform : register(b0)
 {
-    matrix viewProj;
+    matrix World;
+    matrix View;
+    matrix Proj;
 };
 
 struct VSInput
@@ -17,7 +19,9 @@ struct VSOutput
 VSOutput VSMain(VSInput input)
 {
     VSOutput output;
-    output.pos = mul(viewProj, float4(input.pos, 1.0f));
-    output.color = float4(0.2, 0.6, 1.0, 1.0); // ê¬Ç¡Ç€Ç¢
+    float4 worldPos = mul(World, float4(input.pos, 1.0f));
+    float4 viewPos = mul(View, worldPos);
+    output.pos = mul(Proj, viewPos);
+    output.color = float4(0.2, 0.6, 1.0, 1.0);
     return output;
 }

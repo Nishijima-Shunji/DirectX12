@@ -72,6 +72,10 @@ bool Texture2D::Load(std::wstring& path)
 	}
 
 	auto img = scratch.GetImage(0, 0, 0);
+	if (!img) {
+		return false;
+	}
+
 	auto prop = CD3DX12_HEAP_PROPERTIES(D3D12_CPU_PAGE_PROPERTY_WRITE_BACK, D3D12_MEMORY_POOL_L0);
 	auto desc = CD3DX12_RESOURCE_DESC::Tex2D(meta.format,
 		meta.width,

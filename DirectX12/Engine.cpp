@@ -7,11 +7,73 @@
 
 Engine* g_Engine;
 
+// デバッグ
+template<typename T>
+class DX12Object
+{
+protected:
+	ComPtr<T> ptr = nullptr;
+
+	DX12Object() = default;
+
+
+
+public:
+	T* operator->() { return ptr.Get(); }
+	operator T* () { return ptr.Get(); }
+	T** operator&() { return ptr.GetAddressOf(); }
+
+	// コピーの禁止
+	DX12Object(const DX12Object&) = delete;
+	DX12Object& operator=(const DX12Object&) = delete;
+
+};
+
+class DebugLayer : public DX12Object<ID3D12Debug>
+{
+public:
+	bool Create();
+	bool Enable();
+};
+
+bool DebugLayer::Create()
+{
+	HRESULT hr = D3D12GetDebugInterface(
+		IID_PPV_ARGS(ptr.ReleaseAndGetAddressOf())
+	);
+
+	if (FAILED(hr)) {
+		return false;
+	}
+
+	return true;
+}
+
+bool DebugLayer::Enable()
+{
+	if (!ptr)
+		return false;
+
+	ptr->EnableDebugLayer();
+
+	return true;
+}
+
+
+
+
+
 bool Engine::Init(HWND hwnd, UINT windowWidth, UINT windowHeight)
 {
 	m_FrameBufferWidth = windowWidth;
 	m_FrameBufferHeight = windowHeight;
 	m_hWnd = hwnd;
+
+	DebugLayer debug;
+
+	debug.Create();
+	debug.Enable();
+
 
 	// =====デバイスの初期化処理=====
 	if (!CreateDevice())

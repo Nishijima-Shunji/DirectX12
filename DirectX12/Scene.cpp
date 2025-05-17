@@ -3,6 +3,7 @@
 #include "Scene.h"
 #include "Engine.h"
 #include "App.h"
+#include "Game.h"
 #include <d3dx12.h>
 #include "SharedStruct.h"
 #include "VertexBuffer.h"
@@ -166,7 +167,7 @@ bool Scene::Init()
 	pipelineState->SetRootSignature(rootSignature->Get());
 	pipelineState->SetVS(L"../x64/Debug/SimpleVS.cso");
 	pipelineState->SetPS(L"../x64/Debug/SimplePS.cso");
-	pipelineState->Create();
+	pipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 	if (!pipelineState->IsValid())
 	{
 		printf("パイプラインステートの生成に失敗\n");
@@ -215,6 +216,10 @@ void Scene::Update()
 
 	ptr->World = XMMatrixIdentity();
 	ptr->View = XMMatrixLookAtRH(eyePos, targetPos, upward);
+
+	if (GetAsyncKeyState(VK_SPACE)) {
+		m_game->ChangeScene("Game");
+	}
 }
 
 void Scene::Draw()

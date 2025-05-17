@@ -59,3 +59,7 @@
 		return m_IsValid;
 	}
 
+	ID3D12Resource* VertexBuffer::GetResource() const
+	{
+		return m_pBuffer.Get();
+	}

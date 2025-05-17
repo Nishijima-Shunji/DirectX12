@@ -19,16 +19,26 @@ ConstantBuffer::ConstantBuffer(size_t size)
         IID_PPV_ARGS(m_pBuffer.GetAddressOf()));
     if (FAILED(hr))
     {
-        printf("定数バッファリソースの生成に失敗\n");
+        printf("定数バッファリソースの生成に失敗  HRESULT=0x%08X\n", hr);
         return;
+    }
+    else
+    {
+        printf("定数バッファリソースの生成 成功\n");
     }
 
+
     hr = m_pBuffer->Map(0, nullptr, &m_pMappedPtr);
-    if (FAILED(hr))
-    {
-        printf("定数バッファのマッピングに失敗\n");
+    if (!m_pBuffer) {
+        printf("m_pBufferが空です\n");
         return;
     }
+    else {
+        printf("m_pBufferは有効です\n");
+    }
+
+    auto addr = m_pBuffer->GetGPUVirtualAddress();
+    printf("GPU仮想アドレス = 0x%llx\n", addr);
 
     m_Desc = {};
     m_Desc.BufferLocation = m_pBuffer->GetGPUVirtualAddress();

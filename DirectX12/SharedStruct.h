@@ -20,7 +20,7 @@ private:
 };
 
 struct alignas(256) Transform
-{
+{	
 	DirectX::XMMATRIX World;    // ワールド行列
 	DirectX::XMMATRIX View;     // ビュー行列
 	DirectX::XMMATRIX Proj;     // 投影行列

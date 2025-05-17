@@ -12,7 +12,7 @@
 Game::Game()
 {
     RegisterScenes();                       // 使用するシーンを登録
-    m_SceneManager.ChangeScene("TitleScene");    // 最初のシーン
+    m_SceneManager.ChangeScene("Scene");    // 最初のシーン
 }
 
 // =======================================================================================
