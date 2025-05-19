@@ -9,6 +9,7 @@ void SceneManager::RegisterScene(const std::string& name, SceneFactory factory)
 void SceneManager::ChangeScene(const std::string& name)
 {
 	auto it = m_Registry.find(name);
+	// ’†g‚ª‚ ‚é‚È‚ç
 	if (it != m_Registry.end())
 	{
 		if (!m_SceneStack.empty()) {
@@ -26,6 +27,7 @@ void SceneManager::PushScene(const std::string& name)
 	}
 }
 
+
 void SceneManager::PopScene()
 {
 	if (!m_SceneStack.empty()) {
@@ -33,12 +35,14 @@ void SceneManager::PopScene()
 	}
 }
 
+
 void SceneManager::Update()
 {
 	if (!m_SceneStack.empty()) {
 		m_SceneStack.top()->Update();
 	}
 }
+
 
 void SceneManager::Render()
 {

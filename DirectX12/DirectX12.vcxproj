@@ -71,8 +71,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>C:\DirectX_lib\assimp\5.2.5\include;C:\DirectXTex-main\DirectXTex-main\DirectXTex\Bin\Desktop_2022\x64\Debug;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\DirectX_lib\assimp\5.2.5\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>C:\directxtk\include;C:\DirectX_lib\assimp\5.2.5\include;C:\DirectXTex-main\DirectXTex-main\DirectXTex\Bin\Desktop_2022\x64\Debug;$(IncludePath)</IncludePath>
+    <LibraryPath>C:\directxtk\lib\x64\Debug;C:\DirectX_lib\assimp\5.2.5\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -154,6 +154,7 @@
     <ClCompile Include="Scene.cpp" />
     <ClCompile Include="SceneManager.cpp" />
     <ClCompile Include="SharedStruct.cpp" />
+    <ClCompile Include="SphereMeshGenerator.cpp" />
     <ClCompile Include="Texture2D.cpp" />
     <ClCompile Include="TitleScene.cpp" />
     <ClCompile Include="VertexBuffer.cpp" />
@@ -178,6 +179,7 @@
     <ClInclude Include="Scene.h" />
     <ClInclude Include="SceneManager.h" />
     <ClInclude Include="SharedStruct.h" />
+    <ClInclude Include="SphereMeshGenerator.h" />
     <ClInclude Include="Texture2D.h" />
     <ClInclude Include="TitleScene.h" />
     <ClInclude Include="VertexBuffer.h" />
