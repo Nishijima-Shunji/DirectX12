@@ -149,7 +149,7 @@
     <ClCompile Include="Object.cpp" />
     <ClCompile Include="Particle.cpp" />
     <ClCompile Include="PipelineState.cpp" />
-    <ClCompile Include="PointPipelineState.cpp" />
+    <ClCompile Include="ParticlePipelineState.cpp" />
     <ClCompile Include="RootSignature.cpp" />
     <ClCompile Include="Scene.cpp" />
     <ClCompile Include="SceneManager.cpp" />
@@ -174,7 +174,7 @@
     <ClInclude Include="Object.h" />
     <ClInclude Include="Particle.h" />
     <ClInclude Include="PipelineState.h" />
-    <ClInclude Include="PointPipelineState.h" />
+    <ClInclude Include="ParticlePipelineState.h" />
     <ClInclude Include="RootSignature.h" />
     <ClInclude Include="Scene.h" />
     <ClInclude Include="SceneManager.h" />

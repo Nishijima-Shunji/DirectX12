@@ -23,7 +23,7 @@ bool GameScene::Init() {
 void GameScene::Update() {
 	particle->Update();
 
-	if (GetAsyncKeyState(VK_UP)) {
+	if (GetAsyncKeyState(VK_LEFT)) {
 		m_game->ChangeScene("Scene");
 	}
 }

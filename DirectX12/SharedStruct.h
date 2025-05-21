@@ -35,7 +35,7 @@ struct Mesh {
 struct ParticleVertex {
 	DirectX::XMFLOAT3 position;
 
-	static const D3D12_INPUT_ELEMENT_DESC InputElements[1];
-	static const D3D12_INPUT_LAYOUT_DESC InputLayout;
-	static constexpr UINT InputElementCount = _countof(InputElements);
+	static const D3D12_INPUT_ELEMENT_DESC ParticleInputElements[5];
+	static const D3D12_INPUT_LAYOUT_DESC ParticleInputLayout;
+	static constexpr UINT InputElementCount = _countof(ParticleInputElements);
 };

@@ -10,6 +10,7 @@ PipelineState::PipelineState()
 	// パイプラインステートの設定
 	desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);		// ラスタライザーはデフォルト
 	desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;				// カリングはなし
+	desc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;			// 塗りつぶしはソリッド
 	desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);				// ブレンドステートもデフォルト
 	desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT); // 深度ステンシルはデフォルトを使う
 	desc.SampleMask = UINT_MAX;
@@ -84,11 +85,6 @@ void PipelineState::Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE type)
 	rtBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
 	desc.BlendState = blendDesc;
-
-
-	printf("VS size: %zu, PS size: %zu\n", desc.VS.BytecodeLength, desc.PS.BytecodeLength);
-	printf("InputLayout.Elements: %u\n", desc.InputLayout.NumElements);
-	printf("SemanticName: %s\n", desc.InputLayout.pInputElementDescs[0].SemanticName);
 	// パイプラインステートを生成
 	auto hr = g_Engine->Device()->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(m_pPipelineState.ReleaseAndGetAddressOf()));
 	if (FAILED(hr))

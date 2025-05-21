@@ -91,6 +91,19 @@ bool Particle::Init() {
         return false;
     }
 
+	// 定数バッファをフレーム数分生成
+	for (int i = 0; i < Engine::FRAME_BUFFER_COUNT; ++i)
+	{
+		m_ConstantBuffer[i] = new ConstantBuffer(sizeof(SPHParams));
+		if (!m_ConstantBuffer[i] || !m_ConstantBuffer[i]->IsValid()) {
+			printf("定数バッファ[%d]作成に失敗\n", i);
+			return false;
+		}
+
+		// 初期SPHパラメータを書き込む
+		memcpy(m_ConstantBuffer[i]->GetPtr(), &m_SPHParams, sizeof(SPHParams));
+	}
+
     // インスタンスバッファ初期化（位置＋スケール行列）
     std::vector<DirectX::XMMATRIX> instanceMatrices(m_Particles.size(), DirectX::XMMatrixIdentity());
     m_InstanceBuffer = new VertexBuffer(sizeof(DirectX::XMMATRIX) * instanceMatrices.size(), sizeof(DirectX::XMMATRIX), instanceMatrices.data());
@@ -108,23 +121,25 @@ bool Particle::Init() {
 	}
 
 	// パイプラインステート
-	m_PipelineState = new PipelineState();
-	m_PipelineState->SetInputLayout(ParticleVertex::InputLayout);
+	m_PipelineState = new ParticlePipelineState();
+	m_PipelineState->SetInputLayout(ParticleVertex::ParticleInputLayout);
 	m_PipelineState->SetRootSignature(m_RootSignature->Get());
 	m_PipelineState->SetVS(L"../x64/Debug/ParticleVS.cso");
 	m_PipelineState->SetPS(L"../x64/Debug/ParticlePS.cso");
 
-	m_PipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT);
+	m_PipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 	if (!m_PipelineState->IsValid()) {
 		printf("PipelineState作成に失敗\n");
 		return false;
 	}
+
 	return true;
 }
 
 void Particle::Update() {
 	UpdateParticles();
-	UpdateVertexBuffer();
+	//UpdateVertexBuffer();
+	UpdateInstanceBuffer();
 
 	auto ptr = m_ConstantBuffer[0]->GetPtr<Transform>();
 	ptr->World = DirectX::XMMatrixIdentity();
@@ -237,36 +252,35 @@ void Particle::Integrate(const std::vector<Vector3>& forces) {
 		// X軸壁
 		if (m_Particles[i].position.x < xmin) {
 			m_Particles[i].position.x = xmin;
-			m_Particles[i].velocity.x *= -0.05f;
+			m_Particles[i].velocity.x *= -0.1f;
 		}
 		if (m_Particles[i].position.x > xmax) {
 			m_Particles[i].position.x = xmax;
-			m_Particles[i].velocity.x *= -0.05f;
+			m_Particles[i].velocity.x *= -0.1f;
 		}
 
 		// Y軸壁（床と天井）
 		if (m_Particles[i].position.y < ymin) {
 			m_Particles[i].position.y = ymin;
-			m_Particles[i].velocity.y *= -0.05f;
+			m_Particles[i].velocity.y *= -0.1f;
 		}
 		if (m_Particles[i].position.y > ymax) {
 			m_Particles[i].position.y = ymax;
-			m_Particles[i].velocity.y *= -0.05f;
+			m_Particles[i].velocity.y *= -0.1f;
 		}
 
 		// Z軸壁
 		if (m_Particles[i].position.z < zmin) {
 			m_Particles[i].position.z = zmin;
-			m_Particles[i].velocity.z *= -0.05f;
+			m_Particles[i].velocity.z *= -0.1f;
 		}
 		if (m_Particles[i].position.z > zmax) {
 			m_Particles[i].position.z = zmax;
-			m_Particles[i].velocity.z *= -0.05f;
+			m_Particles[i].velocity.z *= -0.1f;
 		}
 
 		float maxSpeed = 3.0f;
 		if (m_Particles[i].velocity.Length() > maxSpeed) {
-			m_Particles[i].velocity = m_Particles[i].velocity;
 			m_Particles[i].velocity.Normalize();
 			m_Particles[i].velocity *= maxSpeed;
 		}
@@ -293,9 +307,17 @@ void Particle::UpdateInstanceBuffer()	 {
 		auto pos = m_Particles[i].position;
 		DirectX::XMMATRIX scale = DirectX::XMMatrixScaling(m_SPHParams.radius, m_SPHParams.radius, m_SPHParams.radius);
 		DirectX::XMMATRIX trans = DirectX::XMMatrixTranslation(pos.x, pos.y, pos.z);
-		matrices[i] = scale * trans;
+		//matrices[i] = trans * scale;
+		DirectX::XMMATRIX mat = scale * trans;
+		matrices[i] = mat;
+
+		if (i == 0) {
+			printf("matrix[0] = {%f, %f, %f, %f}\n", mat.r[3].m128_f32[0], mat.r[3].m128_f32[1], mat.r[3].m128_f32[2], mat.r[3].m128_f32[3]);
+		}
 	}
 
+	//printf("pos = %f, %f, %f\n", m_Particles[0].position.x, m_Particles[0].position.y, m_Particles[0].position.z);
+	
 	void* ptr = nullptr;
 	m_InstanceBuffer->GetResource()->Map(0, nullptr, &ptr);
 	memcpy(ptr, matrices.data(), sizeof(DirectX::XMMATRIX) * matrices.size());

@@ -5,9 +5,9 @@
 RootSignature::RootSignature()
 {
 	auto flag = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;	// アプリケーションの入力アセンブラを使用する
-	flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS;		// ドメインシェーダー　　のルートシグネチャへのアクセスを拒否する
-	flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS;		// ハルシェーダー　　　　のルートシグネチャへのアクセスを拒否する
-	flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;	// ジオメトリシェーダー　のルートシグネチャへのアクセスを拒否する
+	flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS;			// ドメインシェーダー　　のルートシグネチャへのアクセスを拒否する
+	flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS;				// ハルシェーダー　　　　のルートシグネチャへのアクセスを拒否する
+	flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;			// ジオメトリシェーダー　のルートシグネチャへのアクセスを拒否する
 
 	CD3DX12_ROOT_PARAMETER rootParam[2] = {}; // 定数バッファとテクスチャの2
 	rootParam[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_ALL);	// b0の定数バッファを設定、全てのシェーダーから見えるようにする

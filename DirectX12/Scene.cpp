@@ -186,16 +186,16 @@ void Scene::Update()
 	//currentTransform->World = DirectX::XMMatrixRotationY(rotateY);				// Yé≤Ç≈âÒì]Ç≥ÇπÇÈ
 
 	// ÉJÉÅÉâà⁄ìÆ
-	if (GetAsyncKeyState(VK_LEFT)) {
+	if (GetAsyncKeyState('A')) {
 		posX -= 0.1f;
 	}
-	if (GetAsyncKeyState(VK_RIGHT)) {
+	if (GetAsyncKeyState('D')) {
 		posX += 0.1f;
 	}
-	if (GetAsyncKeyState(VK_DOWN)) {
+	if (GetAsyncKeyState('S')) {
 		posY -= 0.1f;
 	}
-	if (GetAsyncKeyState(VK_UP)) {
+	if (GetAsyncKeyState('W')) {
 		posY += 0.1f;
 	}
 

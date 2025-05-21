@@ -3,10 +3,10 @@
 #include <d3dx12.h>
 #include <string>
 
-class PointPipelineState
+class ParticlePipelineState
 {
 public:
-	PointPipelineState();	// コンストラクタである程度の設定をする
+	ParticlePipelineState();	// コンストラクタである程度の設定をする
 	bool IsValid();		// 生成に成功したかどうかを返す
 
 	void SetInputLayout(D3D12_INPUT_LAYOUT_DESC layout);		// 入力レイアウトを設定
