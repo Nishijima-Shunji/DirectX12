@@ -15,6 +15,8 @@ const D3D12_INPUT_LAYOUT_DESC Vertex::InputLayout =
 	Vertex::InputElementCount
 };
 
+
+
 const D3D12_INPUT_ELEMENT_DESC ParticleVertex::ParticleInputElements[] = {
 	// メッシュの頂点（位置のみ）
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -25,8 +27,6 @@ const D3D12_INPUT_ELEMENT_DESC ParticleVertex::ParticleInputElements[] = {
 		{ "INSTANCE_WORLD", 2, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 32, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
 		{ "INSTANCE_WORLD", 3, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 48, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
 };
-
-
 
 const D3D12_INPUT_LAYOUT_DESC ParticleVertex::ParticleInputLayout =
 {

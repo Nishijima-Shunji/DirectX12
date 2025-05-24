@@ -32,6 +32,8 @@ struct Mesh {
 	std::wstring DiffuseMap;		// テクスチャのファイルパス
 };
 
+
+
 struct ParticleVertex {
 	DirectX::XMFLOAT3 position;
 

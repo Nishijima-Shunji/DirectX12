@@ -26,6 +26,13 @@ struct SPHParams {
 	float timeStep = 0.016f;
 };
 
+struct InstanceData {
+	DirectX::XMFLOAT4 row0;
+	DirectX::XMFLOAT4 row1;
+	DirectX::XMFLOAT4 row2;
+	DirectX::XMFLOAT4 row3;
+};
+
 class Particle : public Object
 {
 private:
@@ -44,6 +51,9 @@ private:
 
 	Camera* camera;
 	SPHParams m_SPHParams;
+
+
+	int ParticleCount = 100;
 public:
 	Particle(Camera* cam);
 	bool Init();

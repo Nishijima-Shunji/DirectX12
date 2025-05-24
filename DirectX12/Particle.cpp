@@ -64,7 +64,7 @@ Particle::Particle(Camera* cam) : camera(cam) {
 
 bool Particle::Init() {
 	// 粒子生成
-	for (int i = 0; i < 100; ++i) {
+	for (int i = 0; i < ParticleCount; ++i) {
 		Point p;
 
 		p.position = { RandFloat(-0.5f, 0.5f), RandFloat(-0.5f, 0.5f), RandFloat(-0.5f, 0.5f) };
@@ -79,17 +79,29 @@ bool Particle::Init() {
 	m_SPHParams.radius			= 0.1f;		//
 	m_SPHParams.timeStep		= 0.016f;	//
 
-	// 低ポリ球メッシュ生成
-    auto mesh = CreateLowPolySphere(m_SPHParams.radius, 0);
-    m_IndexCount = (UINT)mesh.indices.size();
 
-    m_MeshVertexBuffer = new VertexBuffer(sizeof(Vertex) * mesh.vertices.size(), sizeof(Vertex), mesh.vertices.data());
-	m_MeshIndexBuffer = new IndexBuffer(sizeof(uint32_t) * mesh.indices.size(), mesh.indices.data());
+	// 低ポリ球メッシュ生成
+	// 半径 1 の低ポリ球を生成（第２引数は細かさレベル、0～３程度がおすすめ）
+	auto mesh = CreateLowPolySphere(1.0f, 0);
+	m_IndexCount = (UINT)mesh.indices.size();
+
+	// 頂点バッファ
+	m_MeshVertexBuffer = new VertexBuffer(
+		sizeof(Vertex) * mesh.vertices.size(),
+		sizeof(Vertex),
+		mesh.vertices.data());
+
+	// インデックスバッファ
+	m_MeshIndexBuffer = new IndexBuffer(
+		sizeof(uint32_t) * mesh.indices.size(),
+		mesh.indices.data());
 
     if (!m_MeshVertexBuffer || !m_MeshIndexBuffer) {
         printf("Meshバッファ作成失敗\n");
         return false;
     }
+
+
 
 	// 定数バッファをフレーム数分生成
 	for (int i = 0; i < Engine::FRAME_BUFFER_COUNT; ++i)
@@ -169,7 +181,10 @@ void Particle::Draw() {
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 	// インスタンス描画
-	commandList->DrawIndexedInstanced(m_IndexCount, (UINT)m_Particles.size(), 0, 0, 0);
+	commandList->DrawIndexedInstanced(
+		m_IndexCount,               // 球メッシュのインデックス数
+		(UINT)m_Particles.size(),   // インスタンス数
+		0, 0, 0);
 }
 
 
@@ -300,26 +315,33 @@ void Particle::UpdateVertexBuffer() {
 	m_VertexBuffer->GetResource()->Unmap(0, nullptr);
 }
 
-void Particle::UpdateInstanceBuffer()	 {
-	std::vector<DirectX::XMMATRIX> matrices(m_Particles.size());
-
+void Particle::UpdateInstanceBuffer()
+{
+	std::vector<InstanceData> instances(m_Particles.size());
 	for (size_t i = 0; i < m_Particles.size(); ++i) {
+		// パーティクルの物理空間での位置と半径
 		auto pos = m_Particles[i].position;
-		DirectX::XMMATRIX scale = DirectX::XMMatrixScaling(m_SPHParams.radius, m_SPHParams.radius, m_SPHParams.radius);
-		DirectX::XMMATRIX trans = DirectX::XMMatrixTranslation(pos.x, pos.y, pos.z);
-		//matrices[i] = trans * scale;
-		DirectX::XMMATRIX mat = scale * trans;
-		matrices[i] = mat;
+		float r = m_SPHParams.radius;
 
-		if (i == 0) {
-			printf("matrix[0] = {%f, %f, %f, %f}\n", mat.r[3].m128_f32[0], mat.r[3].m128_f32[1], mat.r[3].m128_f32[2], mat.r[3].m128_f32[3]);
-		}
+		// 半径1の球メッシュを、物理半径rでスケール
+		DirectX::XMMATRIX scale = DirectX::XMMatrixScaling(r, r, r);
+		// パーティクル位置に移動
+		DirectX::XMMATRIX trans = DirectX::XMMatrixTranslation(pos.x, pos.y, pos.z);
+		DirectX::XMMATRIX world = scale * trans;
+		// 列優先に合わせて転置
+		DirectX::XMMATRIX worldT = DirectX::XMMatrixTranspose(world);
+
+		// 行データを InstanceData に書き込む
+		InstanceData& data = instances[i];
+		XMStoreFloat4(&data.row0, worldT.r[0]);
+		XMStoreFloat4(&data.row1, worldT.r[1]);
+		XMStoreFloat4(&data.row2, worldT.r[2]);
+		XMStoreFloat4(&data.row3, worldT.r[3]);
 	}
 
-	//printf("pos = %f, %f, %f\n", m_Particles[0].position.x, m_Particles[0].position.y, m_Particles[0].position.z);
-	
+	// GPUバッファへアップロード
 	void* ptr = nullptr;
 	m_InstanceBuffer->GetResource()->Map(0, nullptr, &ptr);
-	memcpy(ptr, matrices.data(), sizeof(DirectX::XMMATRIX) * matrices.size());
+	memcpy(ptr, instances.data(), sizeof(InstanceData) * instances.size());
 	m_InstanceBuffer->GetResource()->Unmap(0, nullptr);
 }
