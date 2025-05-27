@@ -1,22 +1,22 @@
-#include "Particle.h"
+ï»¿#include "Particle.h"
 #include "SharedStruct.h"
 #include "SphereMeshGenerator.h"
 
 #include <random>
-// w’è‚µ‚½”ÍˆÍ [min, max] ‚Ìƒ‰ƒ“ƒ_ƒ€‚È•‚“®¬”‚ğ•Ô‚·
+// æŒ‡å®šã—ãŸç¯„å›² [min, max] ã®ãƒ©ãƒ³ãƒ€ãƒ ãªæµ®å‹•å°æ•°ã‚’è¿”ã™
 float RandFloat(float min, float max)
 {
 	static std::random_device rd;
-	static std::mt19937 gen(rd()); // —”¶¬Šíiƒƒ‹ƒZƒ“ƒkEƒcƒCƒXƒ^j
+	static std::mt19937 gen(rd()); // ä¹±æ•°ç”Ÿæˆå™¨ï¼ˆãƒ¡ãƒ«ã‚»ãƒ³ãƒŒãƒ»ãƒ„ã‚¤ã‚¹ã‚¿ï¼‰
 	std::uniform_real_distribution<float> dist(min, max);
 	return dist(gen);
 }
 
 // =============================================================================
-// •¨—‚ÌŒö®Œn
+// ç‰©ç†ã®å…¬å¼ç³»
 // =============================================================================
 
-// Poly6ƒJ[ƒlƒ‹
+// Poly6ã‚«ãƒ¼ãƒãƒ«
 float Poly6Kernel(float r, float h) {
 	if (r >= 0 && r <= h) {
 		float x = (h * h - r * r);
@@ -40,7 +40,7 @@ float ViscosityLaplacian(float r, float h) {
 	return 0.0f;
 }
 
-// ‰‰ZqƒI[ƒo[ƒ[ƒh
+// æ¼”ç®—å­ã‚ªãƒ¼ãƒãƒ¼ãƒ­ãƒ¼ãƒ‰
 DirectX::XMFLOAT3 operator+(const DirectX::XMFLOAT3& a, const DirectX::XMFLOAT3& b) {
 	return { a.x + b.x, a.y + b.y, a.z + b.z };
 }
@@ -63,7 +63,7 @@ Particle::Particle(Camera* cam) : camera(cam) {
 }
 
 bool Particle::Init() {
-	// —±q¶¬
+	// ç²’å­ç”Ÿæˆ
 	for (int i = 0; i < ParticleCount; ++i) {
 		Point p;
 
@@ -71,68 +71,68 @@ bool Particle::Init() {
 		p.velocity = { 0, 0, 0 };
 		m_Particles.push_back(p);
 	}
-	// —±q‚Ìƒpƒ‰ƒ[ƒ^[‚Ì‰Šú‰»
+	// ç²’å­ã®ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ãƒ¼ã®åˆæœŸåŒ–
 	m_SPHParams.restDensity		= 1000.0f;	//
-	m_SPHParams.particleMass	= 1.0f;		// d‚³
-	m_SPHParams.viscosity		= 5.0f;		// ”S«
-	m_SPHParams.stiffness		= 1.0f;		// „«
+	m_SPHParams.particleMass	= 1.0f;		// é‡ã•
+	m_SPHParams.viscosity		= 5.0f;		// ç²˜æ€§
+	m_SPHParams.stiffness		= 1.0f;		// å‰›æ€§
 	m_SPHParams.radius			= 0.1f;		//
 	m_SPHParams.timeStep		= 0.016f;	//
 
 
-	// ’áƒ|ƒŠ‹…ƒƒbƒVƒ…¶¬
-	// ”¼Œa 1 ‚Ì’áƒ|ƒŠ‹…‚ğ¶¬i‘æ‚Qˆø”‚Í×‚©‚³ƒŒƒxƒ‹A0`‚R’ö“x‚ª‚¨‚·‚·‚ßj
+	// ä½ãƒãƒªçƒãƒ¡ãƒƒã‚·ãƒ¥ç”Ÿæˆ
+	// åŠå¾„ 1 ã®ä½ãƒãƒªçƒã‚’ç”Ÿæˆï¼ˆç¬¬ï¼’å¼•æ•°ã¯ç´°ã‹ã•ãƒ¬ãƒ™ãƒ«ã€0ï½ï¼“ç¨‹åº¦ãŒãŠã™ã™ã‚ï¼‰
 	auto mesh = CreateLowPolySphere(1.0f, 0);
 	m_IndexCount = (UINT)mesh.indices.size();
 
-	// ’¸“_ƒoƒbƒtƒ@
+	// é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡
 	m_MeshVertexBuffer = new VertexBuffer(
 		sizeof(Vertex) * mesh.vertices.size(),
 		sizeof(Vertex),
 		mesh.vertices.data());
 
-	// ƒCƒ“ƒfƒbƒNƒXƒoƒbƒtƒ@
+	// ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒãƒƒãƒ•ã‚¡
 	m_MeshIndexBuffer = new IndexBuffer(
 		sizeof(uint32_t) * mesh.indices.size(),
 		mesh.indices.data());
 
     if (!m_MeshVertexBuffer || !m_MeshIndexBuffer) {
-        printf("Meshƒoƒbƒtƒ@ì¬¸”s\n");
+        printf("Meshãƒãƒƒãƒ•ã‚¡ä½œæˆå¤±æ•—\n");
         return false;
     }
 
 
 
-	// ’è”ƒoƒbƒtƒ@‚ğƒtƒŒ[ƒ€”•ª¶¬
+	// å®šæ•°ãƒãƒƒãƒ•ã‚¡ã‚’ãƒ•ãƒ¬ãƒ¼ãƒ æ•°åˆ†ç”Ÿæˆ
 	for (int i = 0; i < Engine::FRAME_BUFFER_COUNT; ++i)
 	{
 		m_ConstantBuffer[i] = new ConstantBuffer(sizeof(SPHParams));
 		if (!m_ConstantBuffer[i] || !m_ConstantBuffer[i]->IsValid()) {
-			printf("’è”ƒoƒbƒtƒ@[%d]ì¬‚É¸”s\n", i);
+			printf("å®šæ•°ãƒãƒƒãƒ•ã‚¡[%d]ä½œæˆã«å¤±æ•—\n", i);
 			return false;
 		}
 
-		// ‰ŠúSPHƒpƒ‰ƒ[ƒ^‚ğ‘‚«‚Ş
+		// åˆæœŸSPHãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ã‚’æ›¸ãè¾¼ã‚€
 		memcpy(m_ConstantBuffer[i]->GetPtr(), &m_SPHParams, sizeof(SPHParams));
 	}
 
-    // ƒCƒ“ƒXƒ^ƒ“ƒXƒoƒbƒtƒ@‰Šú‰»iˆÊ’u{ƒXƒP[ƒ‹s—ñj
+    // ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ãƒãƒƒãƒ•ã‚¡åˆæœŸåŒ–ï¼ˆä½ç½®ï¼‹ã‚¹ã‚±ãƒ¼ãƒ«è¡Œåˆ—ï¼‰
     std::vector<DirectX::XMMATRIX> instanceMatrices(m_Particles.size(), DirectX::XMMatrixIdentity());
     m_InstanceBuffer = new VertexBuffer(sizeof(DirectX::XMMATRIX) * instanceMatrices.size(), sizeof(DirectX::XMMATRIX), instanceMatrices.data());
 
     if (!m_InstanceBuffer) {
-        printf("ƒCƒ“ƒXƒ^ƒ“ƒXƒoƒbƒtƒ@ì¬¸”s\n");
+        printf("ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ãƒãƒƒãƒ•ã‚¡ä½œæˆå¤±æ•—\n");
         return false;
     }
 
-	// ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ
+	// ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£
 	m_RootSignature = new RootSignature();
 	if (!m_RootSignature->IsValid()) {
-		printf("RootSignatureì¬‚É¸”s\n");
+		printf("RootSignatureä½œæˆã«å¤±æ•—\n");
 		return false;
 	}
 
-	// ƒpƒCƒvƒ‰ƒCƒ“ƒXƒe[ƒg
+	// ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ã‚¹ãƒ†ãƒ¼ãƒˆ
 	m_PipelineState = new ParticlePipelineState();
 	m_PipelineState->SetInputLayout(ParticleVertex::ParticleInputLayout);
 	m_PipelineState->SetRootSignature(m_RootSignature->Get());
@@ -141,9 +141,113 @@ bool Particle::Init() {
 
 	m_PipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 	if (!m_PipelineState->IsValid()) {
-		printf("PipelineStateì¬‚É¸”s\n");
+		printf("PipelineStateä½œæˆã«å¤±æ•—\n");
 		return false;
 	}
+
+	//===================================================
+	// ãƒ¡ã‚¿ãƒœãƒ¼ãƒ«ç”¨
+	// 1) ãƒ•ãƒ«ã‚¹ã‚¯ãƒªãƒ¼ãƒ³ãƒˆãƒ©ã‚¤ã‚¢ãƒ³ã‚°ãƒ«é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ç”Ÿæˆ
+	FullscreenVertex quad[3] = {
+		{{-1,  1}},
+		{{ 3,  1}},
+		{{-1, -3}}
+	};
+	m_QuadVB = new VertexBuffer(
+		sizeof(FullscreenVertex) * 3,
+		sizeof(FullscreenVertex),
+		quad);
+
+	// 2) ãƒ‘ãƒ¼ãƒ†ã‚£ã‚¯ãƒ« SB(StructuredBuffer) ç”¨ GPU & Upload ãƒãƒƒãƒ•ã‚¡
+	UINT64 sbSize = sizeof(ParticleSB) * ParticleCount;
+
+	// --- (a) ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆãƒ’ãƒ¼ãƒ—ç”¨ãƒªã‚½ãƒ¼ã‚¹ ---
+	// ãƒ­ãƒ¼ã‚«ãƒ«å¤‰æ•°ã«æŸç¸›
+	CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
+	CD3DX12_RESOURCE_DESC   defaultResDesc = CD3DX12_RESOURCE_DESC::Buffer(sbSize);
+
+	HRESULT hr = g_Engine->Device()->CreateCommittedResource(
+		&defaultHeapProps,                   // â† å¤‰æ•°ã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‚’æ¸¡ã™
+		D3D12_HEAP_FLAG_NONE,
+		&defaultResDesc,                     // â† å¤‰æ•°ã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‚’æ¸¡ã™
+		D3D12_RESOURCE_STATE_COPY_DEST,
+		nullptr,
+		IID_PPV_ARGS(&m_ParticleSBGPU)
+	);
+	if (FAILED(hr)) {
+		// ã‚¨ãƒ©ãƒ¼å‡¦ç†
+	}
+
+	// --- (b) ã‚¢ãƒƒãƒ—ãƒ­ãƒ¼ãƒ‰ãƒ’ãƒ¼ãƒ—ç”¨ãƒªã‚½ãƒ¼ã‚¹ ---
+	CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
+	CD3DX12_RESOURCE_DESC   uploadResDesc = CD3DX12_RESOURCE_DESC::Buffer(sbSize);
+
+	hr = g_Engine->Device()->CreateCommittedResource(
+		&uploadHeapProps,                    // â† å¤‰æ•°ã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‚’æ¸¡ã™
+		D3D12_HEAP_FLAG_NONE,
+		&uploadResDesc,                      // â† å¤‰æ•°ã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‚’æ¸¡ã™
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&m_ParticleSBUpload)
+	);
+	if (FAILED(hr)) {
+		// ã‚¨ãƒ©ãƒ¼å‡¦ç†
+	}
+
+	// 3) SRV ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿æº–å‚™ 
+	auto handle = g_Engine->CbvSrvUavHeap()->RegisterBuffer(
+		m_ParticleSBGPU,       // ID3D12Resource*
+		ParticleCount,         // è¦ç´ æ•°
+		sizeof(ParticleSB)     // ï¼‘è¦ç´ ã®ãƒã‚¤ãƒˆå¹…
+	);
+	if (!handle) {
+		// ã‚¨ãƒ©ãƒ¼å‡¦ç†
+		printf("Particle SB ç”¨ SRV ã®ç™»éŒ²ã«å¤±æ•—\n");
+		return false;
+	}
+	// ãƒ”ã‚¯ã‚»ãƒ«ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã§ SetGraphicsRootDescriptorTable ã«ä½¿ã† GPU ãƒãƒ³ãƒ‰ãƒ«
+	m_ParticleSB_SRV = handle->HandleGPU;
+
+	// 4) RootSignature ä½œæˆ
+	{
+		CD3DX12_DESCRIPTOR_RANGE ranges[1];
+		ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
+
+		CD3DX12_ROOT_PARAMETER params[2];
+		// b0: screenSize + threshold
+		params[0].InitAsConstants(4, 0);
+		// t0: ãƒ‘ãƒ¼ãƒ†ã‚£ã‚¯ãƒ« SB
+		params[1].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_PIXEL);
+
+		CD3DX12_STATIC_SAMPLER_DESC sampler(0);
+		sampler.Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+
+		CD3DX12_ROOT_SIGNATURE_DESC rsigDesc;
+		rsigDesc.Init(
+			_countof(params), params,
+			1, &sampler,
+			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+		m_MetaRootSig = new RootSignature();
+		m_MetaRootSig->Init(rsigDesc);
+	}
+
+	// 5) PSO ä½œæˆ
+	{
+		m_MetaPSO = new ParticlePipelineState();
+		m_MetaPSO->SetRootSignature(m_MetaRootSig->Get());
+		// ãƒ•ãƒ«ã‚¹ã‚¯ãƒªãƒ¼ãƒ³ç”¨å…¥åŠ›ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆ
+		D3D12_INPUT_ELEMENT_DESC elems[] = {
+			{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
+			  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+		};
+		D3D12_INPUT_LAYOUT_DESC layout{ elems, 1 };
+		m_MetaPSO->SetInputLayout(layout);
+		m_MetaPSO->SetVS(L"../x64/Debug/MetaballVS.cso");
+		m_MetaPSO->SetPS(L"../x64/Debug/MetaballPS.cso");
+		m_MetaPSO->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+	}
+
 
 	return true;
 }
@@ -168,23 +272,54 @@ void Particle::Draw() {
 	commandList->SetPipelineState(m_PipelineState->Get());
 	commandList->SetGraphicsRootConstantBufferView(0, m_ConstantBuffer[frameIndex]->GetAddress());
 
-	// ‹…ƒƒbƒVƒ…’¸“_EƒCƒ“ƒfƒbƒNƒXƒoƒbƒtƒ@ƒZƒbƒg
+	// çƒãƒ¡ãƒƒã‚·ãƒ¥é ‚ç‚¹ãƒ»ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒãƒƒãƒ•ã‚¡ã‚»ãƒƒãƒˆ
 	auto vbView = m_MeshVertexBuffer->View();
 	auto ibView = m_MeshIndexBuffer->View();
 	commandList->IASetVertexBuffers(0, 1, &vbView);
 
-	// ƒCƒ“ƒXƒ^ƒ“ƒXƒoƒbƒtƒ@‚ÍƒXƒƒbƒg1‚ÉƒZƒbƒgiInputLayout‚Åw’èj
+	// ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ãƒãƒƒãƒ•ã‚¡ã¯ã‚¹ãƒ­ãƒƒãƒˆ1ã«ã‚»ãƒƒãƒˆï¼ˆInputLayoutã§æŒ‡å®šï¼‰
 	auto instView = m_InstanceBuffer->View();
 	commandList->IASetVertexBuffers(1, 1, &instView);
 
 	commandList->IASetIndexBuffer(&ibView);
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-	// ƒCƒ“ƒXƒ^ƒ“ƒX•`‰æ
+	// ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹æç”»
 	commandList->DrawIndexedInstanced(
-		m_IndexCount,               // ‹…ƒƒbƒVƒ…‚ÌƒCƒ“ƒfƒbƒNƒX”
-		(UINT)m_Particles.size(),   // ƒCƒ“ƒXƒ^ƒ“ƒX”
+		m_IndexCount,               // çƒãƒ¡ãƒƒã‚·ãƒ¥ã®ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹æ•°
+		(UINT)m_Particles.size(),   // ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹æ•°
 		0, 0, 0);
+
+
+	// ====================================================
+	// --- Metaball æç”» ---
+	auto cmd = g_Engine->CommandList();
+	cmd->SetPipelineState(m_MetaPSO->Get());
+	cmd->SetGraphicsRootSignature(m_MetaRootSig->Get());
+
+	// b0: screenSize + threshold
+	struct {
+		float w;
+		float h;
+		float thr;
+		UINT count;
+	} cbv = {
+	(float)g_Engine->FrameBufferWidth(), (float)g_Engine->FrameBufferHeight(),
+	/*threshold=*/0.7f,
+	/*particleCount=*/ParticleCount
+	};
+	cmd->SetGraphicsRoot32BitConstants(0, 4, &cbv, 0);
+
+	// t0: Particle SB
+	cmd->SetGraphicsRootDescriptorTable(1, m_ParticleSB_SRV);
+
+	// VB/IA è¨­å®š
+	auto vbv = m_QuadVB->View();
+	cmd->IASetVertexBuffers(0, 1, &vbv);
+	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	// ä¸‰è§’ï¼‘æš
+	cmd->DrawInstanced(3, 1, 0, 0);
 }
 
 
@@ -195,14 +330,60 @@ void Particle::UpdateParticles() {
 	std::vector<float> pressures(n);
 	std::vector<Vector3> forces(n, { 0,0,0 });
 
-	// –§“x‚Æˆ³—ÍŒvZ
+	// å¯†åº¦ã¨åœ§åŠ›è¨ˆç®—
 	ComputeDensityPressure(densities, pressures);
 
-	// —ÍŒvZ
+	// åŠ›è¨ˆç®—
 	ComputeForces(densities, pressures, forces);
 
-	// ‘¬“xEˆÊ’uXV
+	// é€Ÿåº¦ãƒ»ä½ç½®æ›´æ–°
 	Integrate(forces);
+
+
+	// CPUâ†’UploadBuffer ã¸æ›¸ãè¾¼ã¿
+	ParticleSB* mapped = nullptr;
+	CD3DX12_RANGE readRange(0, 0);
+	m_ParticleSBUpload->Map(0, &readRange, reinterpret_cast<void**>(&mapped));
+
+	// â‘  ã‚«ãƒ¡ãƒ©è¡Œåˆ—ã‚’ç”¨æ„
+	DirectX::XMMATRIX view = DirectX::XMMatrixLookAtRH(
+		camera->GetEyePos(),
+		camera->GetTargetPos(),
+		camera->GetUpward()
+	);
+	DirectX::XMMATRIX proj = DirectX::XMMatrixPerspectiveFovRH(
+		camera->GetFov(),
+		camera->GetAspect(),
+		0.3f,
+		1000.0f
+	);
+	DirectX::XMMATRIX vpT = DirectX::XMMatrixTranspose(view * proj);
+
+
+	for (int i = 0; i < ParticleCount; ++i) {
+		// ãƒ¯ãƒ¼ãƒ«ãƒ‰ç©ºé–“ã®ç²’å­ä½ç½®
+		auto& P = m_Particles[i].position;
+		DirectX::XMVECTOR worldPos = DirectX::XMVectorSet(P.x, P.y, P.z, 1.0f);
+
+		// ã‚¯ãƒªãƒƒãƒ—ç©ºé–“ã¸å¤‰æ›
+		DirectX::XMVECTOR clip = DirectX::XMVector3Transform(worldPos, vpT);
+		float w = DirectX::XMVectorGetW(clip);
+
+		// NDC ç©ºé–“ã«æ­£è¦åŒ–
+		DirectX::XMVECTOR ndc = DirectX::XMVectorScale(clip, 1.0f / w);
+
+		// ç”»é¢åº§æ¨™ (0â€“1) ã«ãƒãƒƒãƒ—
+		float x = DirectX::XMVectorGetX(ndc) * 0.5f + 0.5f;
+		float y = 1.0f - (DirectX::XMVectorGetY(ndc) * 0.5f + 0.5f);
+
+		// Z ã¯ç²’å­åŠå¾„ã‚’ w ã§è£œæ­£ã—ãŸã‚‚ã®
+		float z = m_SPHParams.radius * (1.0f / w);
+
+	}
+
+	m_ParticleSBUpload->Unmap(0, nullptr);
+	g_Engine->CommandList()->CopyResource(m_ParticleSBGPU, m_ParticleSBUpload);
+
 }
 
 void Particle::ComputeDensityPressure(std::vector<float>& densities, std::vector<float>& pressures) {
@@ -234,18 +415,18 @@ void Particle::ComputeForces(const std::vector<float>& densities, const std::vec
 			float r = sqrtf(rij.x * rij.x + rij.y * rij.y + rij.z * rij.z);
 
 			if (r < m_SPHParams.radius && r > 0.0001f) {
-				// ˆ³—Í—Í
+				// åœ§åŠ›åŠ›
 				Vector3 grad = SpikyGradient(rij, r, m_SPHParams.radius);
 				float pressureTerm = (pressures[i] + pressures[j]) / (2.0f * densities[j]);
 				pressureForce += grad * (-m_SPHParams.particleMass * pressureTerm);
 
-				// ”S«—Í
+				// ç²˜æ€§åŠ›
 				Vector3 vij = m_Particles[j].velocity - m_Particles[i].velocity;
 				float lap = ViscosityLaplacian(r, m_SPHParams.radius);
 				viscosityForce += vij * (m_SPHParams.viscosity * m_SPHParams.particleMass * lap / densities[j]);
 			}
 		}
-		// ‡—Í = ˆ³—Í + ”S« + d—Í
+		// åˆåŠ› = åœ§åŠ› + ç²˜æ€§ + é‡åŠ›
 		forces[i] = pressureForce + viscosityForce + gravity * densities[i];
 	}
 }
@@ -253,18 +434,18 @@ void Particle::ComputeForces(const std::vector<float>& densities, const std::vec
 void Particle::Integrate(const std::vector<Vector3>& forces) {
 	int n = (int)m_Particles.size();
 
-	// ” ‚Ì‹«ŠEƒTƒCƒYi—áj
+	// ç®±ã®å¢ƒç•Œã‚µã‚¤ã‚ºï¼ˆä¾‹ï¼‰
 	const float xmin = -1.0f, xmax = 1.0f;
 	const float ymin = -1.0f, ymax = 5.0f;
 	const float zmin = -1.0f, zmax = 1.0f;
 
 	for (int i = 0; i < n; ++i) {
-		Vector3 accel = forces[i] * (1.0f / (std::max)(m_SPHParams.restDensity, 0.0001f)); // ‰Á‘¬“x
+		Vector3 accel = forces[i] * (1.0f / (std::max)(m_SPHParams.restDensity, 0.0001f)); // åŠ é€Ÿåº¦
 
 		m_Particles[i].velocity += accel * m_SPHParams.timeStep;
 		m_Particles[i].position += m_Particles[i].velocity * m_SPHParams.timeStep;
 
-		// X²•Ç
+		// Xè»¸å£
 		if (m_Particles[i].position.x < xmin) {
 			m_Particles[i].position.x = xmin;
 			m_Particles[i].velocity.x *= -0.1f;
@@ -274,7 +455,7 @@ void Particle::Integrate(const std::vector<Vector3>& forces) {
 			m_Particles[i].velocity.x *= -0.1f;
 		}
 
-		// Y²•Çi°‚Æ“Vˆäj
+		// Yè»¸å£ï¼ˆåºŠã¨å¤©äº•ï¼‰
 		if (m_Particles[i].position.y < ymin) {
 			m_Particles[i].position.y = ymin;
 			m_Particles[i].velocity.y *= -0.1f;
@@ -284,7 +465,7 @@ void Particle::Integrate(const std::vector<Vector3>& forces) {
 			m_Particles[i].velocity.y *= -0.1f;
 		}
 
-		// Z²•Ç
+		// Zè»¸å£
 		if (m_Particles[i].position.z < zmin) {
 			m_Particles[i].position.z = zmin;
 			m_Particles[i].velocity.z *= -0.1f;
@@ -302,7 +483,7 @@ void Particle::Integrate(const std::vector<Vector3>& forces) {
 	}
 }
 
-// •`‰æ‘O‚ÉGPUƒoƒbƒtƒ@‚É”½‰f‚³‚¹‚é
+// æç”»å‰ã«GPUãƒãƒƒãƒ•ã‚¡ã«åæ˜ ã•ã›ã‚‹
 void Particle::UpdateVertexBuffer() {
 	std::vector<ParticleVertex> vertices(m_Particles.size());
 	for (size_t i = 0; i < m_Particles.size(); ++i) {
@@ -319,19 +500,19 @@ void Particle::UpdateInstanceBuffer()
 {
 	std::vector<InstanceData> instances(m_Particles.size());
 	for (size_t i = 0; i < m_Particles.size(); ++i) {
-		// ƒp[ƒeƒBƒNƒ‹‚Ì•¨—‹óŠÔ‚Å‚ÌˆÊ’u‚Æ”¼Œa
+		// ãƒ‘ãƒ¼ãƒ†ã‚£ã‚¯ãƒ«ã®ç‰©ç†ç©ºé–“ã§ã®ä½ç½®ã¨åŠå¾„
 		auto pos = m_Particles[i].position;
 		float r = m_SPHParams.radius;
 
-		// ”¼Œa1‚Ì‹…ƒƒbƒVƒ…‚ğA•¨—”¼Œar‚ÅƒXƒP[ƒ‹
+		// åŠå¾„1ã®çƒãƒ¡ãƒƒã‚·ãƒ¥ã‚’ã€ç‰©ç†åŠå¾„rã§ã‚¹ã‚±ãƒ¼ãƒ«
 		DirectX::XMMATRIX scale = DirectX::XMMatrixScaling(r, r, r);
-		// ƒp[ƒeƒBƒNƒ‹ˆÊ’u‚ÉˆÚ“®
+		// ãƒ‘ãƒ¼ãƒ†ã‚£ã‚¯ãƒ«ä½ç½®ã«ç§»å‹•
 		DirectX::XMMATRIX trans = DirectX::XMMatrixTranslation(pos.x, pos.y, pos.z);
 		DirectX::XMMATRIX world = scale * trans;
-		// —ñ—Dæ‚É‡‚í‚¹‚Ä“]’u
+		// åˆ—å„ªå…ˆã«åˆã‚ã›ã¦è»¢ç½®
 		DirectX::XMMATRIX worldT = DirectX::XMMatrixTranspose(world);
 
-		// sƒf[ƒ^‚ğ InstanceData ‚É‘‚«‚Ş
+		// è¡Œãƒ‡ãƒ¼ã‚¿ã‚’ InstanceData ã«æ›¸ãè¾¼ã‚€
 		InstanceData& data = instances[i];
 		XMStoreFloat4(&data.row0, worldT.r[0]);
 		XMStoreFloat4(&data.row1, worldT.r[1]);
@@ -339,7 +520,7 @@ void Particle::UpdateInstanceBuffer()
 		XMStoreFloat4(&data.row3, worldT.r[3]);
 	}
 
-	// GPUƒoƒbƒtƒ@‚ÖƒAƒbƒvƒ[ƒh
+	// GPUãƒãƒƒãƒ•ã‚¡ã¸ã‚¢ãƒƒãƒ—ãƒ­ãƒ¼ãƒ‰
 	void* ptr = nullptr;
 	m_InstanceBuffer->GetResource()->Map(0, nullptr, &ptr);
 	memcpy(ptr, instances.data(), sizeof(InstanceData) * instances.size());

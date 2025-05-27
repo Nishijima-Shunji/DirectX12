@@ -10,7 +10,17 @@
 #include "ParticlePipelineState.h"
 #include "ConstantBuffer.h"
 
+
 using namespace DirectX::SimpleMath;
+// GPUへ渡すパーティクル情報
+// float4(x_ndc, y_ndc, radius_ndc, unused)
+using ParticleSB = DirectX::XMFLOAT4;
+
+
+// フルスクリーントライアングル頂点
+struct FullscreenVertex {
+	DirectX::XMFLOAT2 pos;
+};
 
 struct Point {
 	Vector3 position = {};
@@ -48,10 +58,17 @@ private:
 	UINT m_IndexCount = 0;                        // 球メッシュのインデックス数
 	VertexBuffer* m_InstanceBuffer = nullptr;    // インスタンス行列バッファ
 
+	// Metaball 用
+	VertexBuffer* m_QuadVB = nullptr;
+	RootSignature* m_MetaRootSig = nullptr;
+	ParticlePipelineState* m_MetaPSO = nullptr;
+	ID3D12Resource* m_ParticleSBGPU = nullptr;
+	ID3D12Resource* m_ParticleSBUpload = nullptr;
+	D3D12_GPU_DESCRIPTOR_HANDLE m_ParticleSB_SRV; // SRV ハンドル
+
 
 	Camera* camera;
 	SPHParams m_SPHParams;
-
 
 	int ParticleCount = 100;
 public:

@@ -3,6 +3,7 @@
 #include <dxgi.h>
 #include <dxgi1_4.h>
 #include "ComPtr.h"
+#include "DescriptorHeap.h" 
 
 #pragma comment(lib, "d3d12.lib") // d3d12ライブラリをリンクする
 #pragma comment(lib, "dxgi.lib") // dxgiライブラリをリンクする
@@ -22,6 +23,10 @@ public: // 外からアクセスするためのGetter
 	ID3D12Device6* Device();
 	ID3D12GraphicsCommandList* CommandList();
 	UINT CurrentBackBufferIndex();
+	UINT FrameBufferWidth() const; // フレームバッファの幅を取得
+	UINT FrameBufferHeight() const; // フレームバッファの高さを取得
+	// CBV/SRV/UAV 用 DescriptorHeap を取得
+	DescriptorHeap * CbvSrvUavHeap() { return m_pCbvSrvUavHeap; }
 
 private: // DirectX12初期化に使う関数
 	bool CreateDevice();		// デバイスを生成
@@ -48,6 +53,9 @@ private: // 描画に使うDirectX12のオブジェクトたち
 	UINT64 m_fenceValue[FRAME_BUFFER_COUNT];										// フェンスの値（ダブルバッファリング用に2個）
 	D3D12_VIEWPORT m_Viewport;														// ビューポート
 	D3D12_RECT m_Scissor;															// シザー矩形
+
+	// CBV/SRV/UAV 用のディスクリプタヒープ管理クラス
+	DescriptorHeap * m_pCbvSrvUavHeap = nullptr;
 
 private: // 描画に使うオブジェクトとその生成関数たち
 	bool CreateRenderTarget(); // レンダーターゲットを生成

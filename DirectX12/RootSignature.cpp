@@ -1,6 +1,5 @@
 #include "RootSignature.h"
 #include "Engine.h"
-#include <d3dx12.h>
 
 RootSignature::RootSignature()
 {
@@ -55,6 +54,41 @@ RootSignature::RootSignature()
 	}
 
 	m_IsValid = true;
+}
+
+bool RootSignature::Init(const D3D12_ROOT_SIGNATURE_DESC& desc)
+{
+	ComPtr<ID3DBlob> pBlob;
+	ComPtr<ID3DBlob> pErrorBlob;
+
+	// シリアライズ
+	HRESULT hr = D3D12SerializeRootSignature(
+		&desc,
+		D3D_ROOT_SIGNATURE_VERSION_1_0,
+		pBlob.GetAddressOf(),
+		pErrorBlob.GetAddressOf());
+	if (FAILED(hr))
+	{
+		if (pErrorBlob) {
+			printf("ルートシグネチャシリアライズ失敗: %s\n", (char*)pErrorBlob->GetBufferPointer());
+		}
+		return false;
+	}
+
+	// 生成
+	hr = g_Engine->Device()->CreateRootSignature(
+		0,
+		pBlob->GetBufferPointer(),
+		pBlob->GetBufferSize(),
+		IID_PPV_ARGS(m_pRootSignature.GetAddressOf()));
+	if (FAILED(hr))
+	{
+		printf("ルートシグネチャ生成失敗\n");
+		return false;
+	}
+
+	m_IsValid = true;
+	return true;
 }
 
 bool RootSignature::IsValid()

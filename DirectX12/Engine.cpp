@@ -4,6 +4,7 @@
 #include <Windows.h>
 #include <DirectXTex.h>
 #include <d3dx12.h>
+#include "DescriptorHeap.h"
 
 Engine* g_Engine;
 
@@ -120,6 +121,14 @@ bool Engine::Init(HWND hwnd, UINT windowWidth, UINT windowHeight)
 	{
 		printf("デプスステンシルバッファの生成に失敗\n");
 		return false;
+	}
+
+	// --- CBV/SRV/UAV ディスクリプタヒープ生成 ---
+	 m_pCbvSrvUavHeap = new DescriptorHeap();
+	if (!m_pCbvSrvUavHeap/* || !m_pCbvSrvUavHeap->IsValid()*/) {
+		printf("CBV/SRV/UAV DescriptorHeap の生成に失敗\n");
+		return false;
+		
 	}
 
 	printf("描画エンジンの初期化に成功\n");
@@ -482,4 +491,14 @@ ID3D12GraphicsCommandList* Engine::CommandList()
 UINT Engine::CurrentBackBufferIndex()
 {
 	return m_CurrentBackBufferIndex;
+}
+
+UINT Engine::FrameBufferWidth() const
+{
+	return m_FrameBufferWidth;
+}
+
+UINT Engine::FrameBufferHeight() const
+{
+	return m_FrameBufferHeight;
 }
