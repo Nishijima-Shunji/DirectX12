@@ -294,6 +294,11 @@ void Particle::Draw() {
 	// ====================================================
 	// --- Metaball 描画 ---
 	auto cmd = g_Engine->CommandList();
+
+	// SRV/UAV 用ヒープをルートにバインド
+	ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
+	cmd->SetDescriptorHeaps(_countof(heaps), heaps);
+
 	cmd->SetPipelineState(m_MetaPSO->Get());
 	cmd->SetGraphicsRootSignature(m_MetaRootSig->Get());
 
