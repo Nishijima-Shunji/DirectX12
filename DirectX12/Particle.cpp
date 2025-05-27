@@ -72,12 +72,12 @@ bool Particle::Init() {
 		m_Particles.push_back(p);
 	}
 	// 粒子のパラメーターの初期化
-	m_SPHParams.restDensity		= 1000.0f;	//
-	m_SPHParams.particleMass	= 1.0f;		// 重さ
-	m_SPHParams.viscosity		= 5.0f;		// 粘性
-	m_SPHParams.stiffness		= 1.0f;		// 剛性
-	m_SPHParams.radius			= 0.1f;		//
-	m_SPHParams.timeStep		= 0.016f;	//
+	m_SPHParams.restDensity = 1000.0f;	//
+	m_SPHParams.particleMass = 1.0f;		// 重さ
+	m_SPHParams.viscosity = 5.0f;		// 粘性
+	m_SPHParams.stiffness = 1.0f;		// 剛性
+	m_SPHParams.radius = 0.1f;		//
+	m_SPHParams.timeStep = 0.016f;	//
 
 
 	// 低ポリ球メッシュ生成
@@ -96,10 +96,10 @@ bool Particle::Init() {
 		sizeof(uint32_t) * mesh.indices.size(),
 		mesh.indices.data());
 
-    if (!m_MeshVertexBuffer || !m_MeshIndexBuffer) {
-        printf("Meshバッファ作成失敗\n");
-        return false;
-    }
+	if (!m_MeshVertexBuffer || !m_MeshIndexBuffer) {
+		printf("Meshバッファ作成失敗\n");
+		return false;
+	}
 
 
 
@@ -116,14 +116,14 @@ bool Particle::Init() {
 		memcpy(m_ConstantBuffer[i]->GetPtr(), &m_SPHParams, sizeof(SPHParams));
 	}
 
-    // インスタンスバッファ初期化（位置＋スケール行列）
-    std::vector<DirectX::XMMATRIX> instanceMatrices(m_Particles.size(), DirectX::XMMatrixIdentity());
-    m_InstanceBuffer = new VertexBuffer(sizeof(DirectX::XMMATRIX) * instanceMatrices.size(), sizeof(DirectX::XMMATRIX), instanceMatrices.data());
+	// インスタンスバッファ初期化（位置＋スケール行列）
+	std::vector<DirectX::XMMATRIX> instanceMatrices(m_Particles.size(), DirectX::XMMatrixIdentity());
+	m_InstanceBuffer = new VertexBuffer(sizeof(DirectX::XMMATRIX) * instanceMatrices.size(), sizeof(DirectX::XMMATRIX), instanceMatrices.data());
 
-    if (!m_InstanceBuffer) {
-        printf("インスタンスバッファ作成失敗\n");
-        return false;
-    }
+	if (!m_InstanceBuffer) {
+		printf("インスタンスバッファ作成失敗\n");
+		return false;
+	}
 
 	// ルートシグネチャ
 	m_RootSignature = new RootSignature();
@@ -305,8 +305,8 @@ void Particle::Draw() {
 		UINT count;
 	} cbv = {
 	(float)g_Engine->FrameBufferWidth(), (float)g_Engine->FrameBufferHeight(),
-	/*threshold=*/0.7f,
-	/*particleCount=*/ParticleCount
+	/*threshold=*/0.5f,
+	ParticleCount
 	};
 	cmd->SetGraphicsRoot32BitConstants(0, 4, &cbv, 0);
 
@@ -359,6 +359,7 @@ void Particle::UpdateParticles() {
 	);
 	DirectX::XMMATRIX vpT = DirectX::XMMatrixTranspose(view * proj);
 
+	float projScaleX = DirectX::XMVectorGetX(proj.r[0]);
 
 	for (int i = 0; i < ParticleCount; ++i) {
 		// ワールド空間の粒子位置
@@ -379,10 +380,17 @@ void Particle::UpdateParticles() {
 		// Z は粒子半径を w で補正したもの
 		float z = m_SPHParams.radius * (1.0f / w);
 
+		// ワールド半径 × プロジェクションの X軸スケール ÷ w
+		float r_ndc = m_SPHParams.radius * projScaleX / w;
+		// UV(0–1)空間にマップするならさらに×0.5
+		float r_uv = r_ndc * 0.5f;
+
+		mapped[i] = { x, y, r_uv, 0 };
 	}
 
 	m_ParticleSBUpload->Unmap(0, nullptr);
 	g_Engine->CommandList()->CopyResource(m_ParticleSBGPU, m_ParticleSBUpload);
+
 
 }
 

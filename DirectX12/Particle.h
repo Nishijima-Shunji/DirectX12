@@ -70,7 +70,7 @@ private:
 	Camera* camera;
 	SPHParams m_SPHParams;
 
-	int ParticleCount = 100;
+	int ParticleCount = 200;
 public:
 	Particle(Camera* cam);
 	bool Init();

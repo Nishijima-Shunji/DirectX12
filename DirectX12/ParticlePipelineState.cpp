@@ -12,7 +12,10 @@ ParticlePipelineState::ParticlePipelineState()
 	desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;					// カリングはなし
 	desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;					// 塗りつぶしはソリッド
 	desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);					// ブレンドステートもデフォルト
-	desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);		// 深度ステンシルはデフォルトを使う
+	desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);		// 深度ステンシルはデフォルト
+	desc.DepthStencilState.DepthEnable = FALSE;								// 深度ステンシルを無効
+	desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;	// 深度書き込みは無効
+	desc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;		// 深度比較関数は常に通過
 	desc.SampleMask = UINT_MAX;
 	desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;	// 描画方法
 	desc.NumRenderTargets = 1;												// 描画対象は1

@@ -28,7 +28,9 @@ float4 PS_Main(VSOutput IN) : SV_TARGET
         sum += saturate(1 - d/r);
     }
 
-    float alpha = smoothstep(threshold, 1.0, sum);
-    clip(alpha - 0.01);
-    return float4(0.2, 0.4, 1.0, alpha);
+    //float alpha = smoothstep(threshold, 1.0, sum);
+    //clip(alpha - 0.01);
+    clip(sum - threshold);
+    //return float4(0.2, 0.4, 1.0, alpha);
+    return float4(0.2, 0.4, 1.0, 1.0);
 }
