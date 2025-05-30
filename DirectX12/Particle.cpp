@@ -63,268 +63,279 @@ Particle::Particle(Camera* cam) : camera(cam) {
 }
 
 bool Particle::Init() {
-	// 粒子生成
+	// --- CPU側のm_Particlesを生成する ---
+	m_Particles.reserve(ParticleCount);
 	for (int i = 0; i < ParticleCount; ++i) {
 		Point p;
-
-		p.position = { RandFloat(-0.5f, 0.5f), RandFloat(-0.5f, 0.5f), RandFloat(-0.5f, 0.5f) };
-		p.velocity = { 0, 0, 0 };
+		p.position = { RandFloat(-0.5f,0.5f), RandFloat(-0.5f,0.5f), RandFloat(-0.5f,0.5f) };
+		p.velocity = { 0,0,0 };
 		m_Particles.push_back(p);
 	}
-	// 粒子のパラメーターの初期化
-	m_SPHParams.restDensity = 1000.0f;	//
-	m_SPHParams.particleMass = 1.0f;		// 重さ
-	m_SPHParams.viscosity = 5.0f;		// 粘性
-	m_SPHParams.stiffness = 1.0f;		// 剛性
-	m_SPHParams.radius = 0.1f;		//
-	m_SPHParams.timeStep = 0.016f;	//
 
+	// --- GPUバッファを２つ（ping-pong）作成 ---
+	UINT64 sz = sizeof(Point) * ParticleCount;
 
-	// 低ポリ球メッシュ生成
-	// 半径 1 の低ポリ球を生成（第２引数は細かさレベル、0～３程度がおすすめ）
-	auto mesh = CreateLowPolySphere(1.0f, 0);
-	m_IndexCount = (UINT)mesh.indices.size();
+	// DefaultHeap 用のヒーププロパティ／リソース記述子をローカル変数に
+	CD3DX12_HEAP_PROPERTIES heapDefault(D3D12_HEAP_TYPE_DEFAULT);
+	CD3DX12_RESOURCE_DESC   descDefault =
+		CD3DX12_RESOURCE_DESC::Buffer(sz, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
-	// 頂点バッファ
-	m_MeshVertexBuffer = new VertexBuffer(
-		sizeof(Vertex) * mesh.vertices.size(),
-		sizeof(Vertex),
-		mesh.vertices.data());
+	// inBuffer
+	HRESULT hr = g_Engine->Device()->CreateCommittedResource(
+		&heapDefault,                     // ここはローカル変数のアドレス
+		D3D12_HEAP_FLAG_NONE,
+		&descDefault,                     // これもローカル変数
+		D3D12_RESOURCE_STATE_COPY_DEST,
+		nullptr,
+		IID_PPV_ARGS(&m_gpuInBuffer)
+	);
+	if (FAILED(hr)) return false;
 
-	// インデックスバッファ
-	m_MeshIndexBuffer = new IndexBuffer(
-		sizeof(uint32_t) * mesh.indices.size(),
-		mesh.indices.data());
+	// outBuffer
+	hr = g_Engine->Device()->CreateCommittedResource(
+		&heapDefault,
+		D3D12_HEAP_FLAG_NONE,
+		&descDefault,
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+		nullptr,
+		IID_PPV_ARGS(&m_gpuOutBuffer)
+	);
+	if (FAILED(hr)) return false;
 
-	if (!m_MeshVertexBuffer || !m_MeshIndexBuffer) {
-		printf("Meshバッファ作成失敗\n");
+	// UploadHeap 用も同様にローカル変数で用意
+	CD3DX12_HEAP_PROPERTIES heapUpload(D3D12_HEAP_TYPE_UPLOAD);
+	CD3DX12_RESOURCE_DESC   descUpload = CD3DX12_RESOURCE_DESC::Buffer(sz);
+
+	hr = g_Engine->Device()->CreateCommittedResource(
+		&heapUpload,
+		D3D12_HEAP_FLAG_NONE,
+		&descUpload,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&m_uploadBuffer)
+	);
+	if (FAILED(hr)) return false;
+
+	// ローカル変数としてヒーププロパティを用意
+	CD3DX12_HEAP_PROPERTIES heapReadback(D3D12_HEAP_TYPE_READBACK);
+
+	// リソース記述子もローカル変数
+	CD3DX12_RESOURCE_DESC readbackDesc = CD3DX12_RESOURCE_DESC::Buffer(sz);
+
+	// 生成呼び出し
+	hr = g_Engine->Device()->CreateCommittedResource(
+		&heapReadback,              // ← 一時ではなくローカル変数
+		D3D12_HEAP_FLAG_NONE,
+		&readbackDesc,              // ← こちらもローカル変数
+		D3D12_RESOURCE_STATE_COPY_DEST,
+		nullptr,
+		IID_PPV_ARGS(&m_readbackBuffer)
+	);
+	if (FAILED(hr)) {
+		// エラーハンドリング
 		return false;
 	}
 
+	// map → memcpy → Unmap
+	void* ptr = nullptr;
+	m_uploadBuffer->Map(0, nullptr, &ptr);
+	memcpy(ptr, m_Particles.data(), (size_t)sz);
+	m_uploadBuffer->Unmap(0, nullptr);
 
+	// CopyResourceでDefaultHeap(in)に転送
+	auto cmd = g_Engine->CommandList();
+	cmd->CopyResource(m_gpuInBuffer.Get(), m_uploadBuffer.Get());
+	// バリアを貼って状態遷移
+	D3D12_RESOURCE_BARRIER barrierTransition =
+		CD3DX12_RESOURCE_BARRIER::Transition(
+			m_gpuInBuffer.Get(),
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE
+		);
+	cmd->ResourceBarrier(1, &barrierTransition);
 
-	// 定数バッファをフレーム数分生成
-	for (int i = 0; i < Engine::FRAME_BUFFER_COUNT; ++i)
+	// --- 定数バッファ(SPHParams)の生成・書き込み ---
 	{
-		m_ConstantBuffer[i] = new ConstantBuffer(sizeof(SPHParams));
-		if (!m_ConstantBuffer[i] || !m_ConstantBuffer[i]->IsValid()) {
-			printf("定数バッファ[%d]作成に失敗\n", i);
-			return false;
-		}
-
-		// 初期SPHパラメータを書き込む
-		memcpy(m_ConstantBuffer[i]->GetPtr(), &m_SPHParams, sizeof(SPHParams));
+		m_paramCB = new ConstantBuffer(sizeof(SPHParams));
+		// 初期値を書き込む
+		memcpy(m_paramCB->GetPtr(), &m_SPHParams, sizeof(SPHParams));
 	}
 
-	// インスタンスバッファ初期化（位置＋スケール行列）
-	std::vector<DirectX::XMMATRIX> instanceMatrices(m_Particles.size(), DirectX::XMMatrixIdentity());
-	m_InstanceBuffer = new VertexBuffer(sizeof(DirectX::XMMATRIX) * instanceMatrices.size(), sizeof(DirectX::XMMATRIX), instanceMatrices.data());
+	// --- SRV/UAV用DescriptorHeapの作成・登録 ---
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC hdesc = {};
+		hdesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		hdesc.NodeMask = 0;
+		hdesc.NumDescriptors = 2;  // SRV, UAV
+		hdesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		g_Engine->Device()->CreateDescriptorHeap(&hdesc, IID_PPV_ARGS(&m_srvUavHeap));
+
+		auto cpu = m_srvUavHeap->GetCPUDescriptorHandleForHeapStart();
+		UINT stride = g_Engine->Device()->GetDescriptorHandleIncrementSize(
+			D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		// SRV(inBuffer)
+		D3D12_SHADER_RESOURCE_VIEW_DESC srv = {};
+		srv.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+		srv.Format = DXGI_FORMAT_UNKNOWN;
+		srv.Buffer.NumElements = ParticleCount;
+		srv.Buffer.StructureByteStride = sizeof(Point);
+		srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		g_Engine->Device()->CreateShaderResourceView(
+			m_gpuInBuffer.Get(), &srv, cpu);
+
+		// UAV(outBuffer)
+		cpu.ptr += stride;
+		D3D12_UNORDERED_ACCESS_VIEW_DESC uav = {};
+		uav.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+		uav.Buffer.NumElements = ParticleCount;
+		uav.Buffer.StructureByteStride = sizeof(Point);
+		g_Engine->Device()->CreateUnorderedAccessView(
+			m_gpuOutBuffer.Get(), nullptr, &uav, cpu);
+	}
+
+	// --- InstanceBufferの生成 ---
+
+	// インスタンス行列を Identity で初期化
+	std::vector<DirectX::XMMATRIX> instanceMatrices(
+		m_Particles.size(),
+		DirectX::XMMatrixIdentity()
+	);
+
+	// インスタンスバッファ生成
+	m_InstanceBuffer = new VertexBuffer(
+		sizeof(DirectX::XMMATRIX) * instanceMatrices.size(),
+		sizeof(DirectX::XMMATRIX),
+		instanceMatrices.data()
+	);
 
 	if (!m_InstanceBuffer) {
 		printf("インスタンスバッファ作成失敗\n");
 		return false;
 	}
 
-	// ルートシグネチャ
+
+	// --- Compute用ルートシグネチャ/PSOの初期化 ---
+	m_computeRS.InitForSPH();                                            // ComputeRootSignature.cpp
+	m_computePSO.SetRootSignature(m_computeRS.Get());                    // ComputePipelineState.cpp
+	m_computePSO.SetCS(L"..\\x64\\Debug\\ParticleComputeShader.cso");						 // あらかじめビルドしたCSOファイル
+	m_computePSO.Create();
+
+
+	// --- ビューバッファの生成 ---
+	// 頂点バッファのビュー
+	m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
+	m_vertexBufferView.SizeInBytes = static_cast<UINT>(sizeof(Vertex) * m_vertexCount);
+	m_vertexBufferView.StrideInBytes = sizeof(Vertex);
+
+	// インデックスバッファのビュー
+	m_indexBufferView.BufferLocation = m_indexBuffer->GetGPUVirtualAddress();
+	m_indexBufferView.SizeInBytes = static_cast<UINT>(sizeof(uint16_t) * m_indexCount);
+	m_indexBufferView.Format = DXGI_FORMAT_R16_UINT;  // または R32_UINT
+
+
+
+	// --- グラフィックス描画用のルートシグネチャ生成 ---
 	m_RootSignature = new RootSignature();
 	if (!m_RootSignature->IsValid()) {
-		printf("RootSignature作成に失敗\n");
+		printf("RootSignature 作成に失敗\n");
 		return false;
 	}
 
-	// パイプラインステート
+	// --- グラフィックス用 PSO の設定・生成 ---
 	m_PipelineState = new ParticlePipelineState();
-	m_PipelineState->SetInputLayout(ParticleVertex::ParticleInputLayout);
+	// 頂点入力レイアウトは既定のものを使うか、必要に応じて独自定義
+	m_PipelineState->SetInputLayout(ParticleVertex::ParticleInputLayout);  // :contentReference[oaicite:0]{index=0}
 	m_PipelineState->SetRootSignature(m_RootSignature->Get());
-	m_PipelineState->SetVS(L"../x64/Debug/ParticleVS.cso");
-	m_PipelineState->SetPS(L"../x64/Debug/ParticlePS.cso");
+	m_PipelineState->SetVS(L"..\\x64\\Debug\\ParticleVS.cso");
+	m_PipelineState->SetPS(L"..\\x64\\Debug\\ParticlePS.cso");
+	m_PipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);        // :contentReference[oaicite:1]{index=1}
 
-	m_PipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 	if (!m_PipelineState->IsValid()) {
-		printf("PipelineState作成に失敗\n");
+		printf("Graphics PipelineState 作成に失敗\n");
 		return false;
 	}
-
-	//===================================================
-	// メタボール用
-	// 1) フルスクリーントライアングル頂点バッファ生成
-	FullscreenVertex quad[3] = {
-		{{-1,  1}},
-		{{ 3,  1}},
-		{{-1, -3}}
-	};
-	m_QuadVB = new VertexBuffer(
-		sizeof(FullscreenVertex) * 3,
-		sizeof(FullscreenVertex),
-		quad);
-
-	// 2) パーティクル SB(StructuredBuffer) 用 GPU & Upload バッファ
-	UINT64 sbSize = sizeof(ParticleSB) * ParticleCount;
-
-	// --- (a) デフォルトヒープ用リソース ---
-	// ローカル変数に束縛
-	CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
-	CD3DX12_RESOURCE_DESC   defaultResDesc = CD3DX12_RESOURCE_DESC::Buffer(sbSize);
-
-	HRESULT hr = g_Engine->Device()->CreateCommittedResource(
-		&defaultHeapProps,                   // ← 変数のアドレスを渡す
-		D3D12_HEAP_FLAG_NONE,
-		&defaultResDesc,                     // ← 変数のアドレスを渡す
-		D3D12_RESOURCE_STATE_COPY_DEST,
-		nullptr,
-		IID_PPV_ARGS(&m_ParticleSBGPU)
-	);
-	if (FAILED(hr)) {
-		// エラー処理
-	}
-
-	// --- (b) アップロードヒープ用リソース ---
-	CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
-	CD3DX12_RESOURCE_DESC   uploadResDesc = CD3DX12_RESOURCE_DESC::Buffer(sbSize);
-
-	hr = g_Engine->Device()->CreateCommittedResource(
-		&uploadHeapProps,                    // ← 変数のアドレスを渡す
-		D3D12_HEAP_FLAG_NONE,
-		&uploadResDesc,                      // ← 変数のアドレスを渡す
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&m_ParticleSBUpload)
-	);
-	if (FAILED(hr)) {
-		// エラー処理
-	}
-
-	// 3) SRV ディスクリプタ準備 
-	auto handle = g_Engine->CbvSrvUavHeap()->RegisterBuffer(
-		m_ParticleSBGPU,       // ID3D12Resource*
-		ParticleCount,         // 要素数
-		sizeof(ParticleSB)     // １要素のバイト幅
-	);
-	if (!handle) {
-		// エラー処理
-		printf("Particle SB 用 SRV の登録に失敗\n");
-		return false;
-	}
-	// ピクセルシェーダーで SetGraphicsRootDescriptorTable に使う GPU ハンドル
-	m_ParticleSB_SRV = handle->HandleGPU;
-
-	// 4) RootSignature 作成
-	{
-		CD3DX12_DESCRIPTOR_RANGE ranges[1];
-		ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
-
-		CD3DX12_ROOT_PARAMETER params[2];
-		// b0: screenSize + threshold
-		params[0].InitAsConstants(4, 0);
-		// t0: パーティクル SB
-		params[1].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_PIXEL);
-
-		CD3DX12_STATIC_SAMPLER_DESC sampler(0);
-		sampler.Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
-
-		CD3DX12_ROOT_SIGNATURE_DESC rsigDesc;
-		rsigDesc.Init(
-			_countof(params), params,
-			1, &sampler,
-			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-		m_MetaRootSig = new RootSignature();
-		m_MetaRootSig->Init(rsigDesc);
-	}
-
-	// 5) PSO 作成
-	{
-		m_MetaPSO = new ParticlePipelineState();
-		m_MetaPSO->SetRootSignature(m_MetaRootSig->Get());
-		// フルスクリーン用入力レイアウト
-		D3D12_INPUT_ELEMENT_DESC elems[] = {
-			{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
-			  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
-		};
-		D3D12_INPUT_LAYOUT_DESC layout{ elems, 1 };
-		m_MetaPSO->SetInputLayout(layout);
-		m_MetaPSO->SetVS(L"../x64/Debug/MetaballVS.cso");
-		m_MetaPSO->SetPS(L"../x64/Debug/MetaballPS.cso");
-		m_MetaPSO->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-	}
-
 
 	return true;
 }
 
 void Particle::Update() {
-	UpdateParticles();
-	//UpdateVertexBuffer();
+	// パラメータが変わっていれば定数バッファを更新
+	memcpy(m_paramCB->GetPtr(), &m_SPHParams, sizeof(SPHParams));
+
+	// Compute Dispatch
+	auto cmd = g_Engine->CommandList();
+	cmd->SetComputeRootSignature(m_computeRS.Get());
+	cmd->SetPipelineState(m_computePSO.Get());
+	ID3D12DescriptorHeap* heaps[] = { m_srvUavHeap.Get() };
+	cmd->SetDescriptorHeaps(1, heaps);
+
+	// b0: SPHParams, t0/u0: in/out Buffers
+	cmd->SetComputeRootConstantBufferView(0, m_paramCB->GetAddress());
+	cmd->SetComputeRootDescriptorTable(1, m_srvUavHeap->GetGPUDescriptorHandleForHeapStart());
+
+	UINT groups = (ParticleCount + 255) / 256;
+	cmd->Dispatch(groups, 1, 1);
+
+	// UAV バリア → ping-pong
+	D3D12_RESOURCE_BARRIER barrierUAV =
+		CD3DX12_RESOURCE_BARRIER::UAV(nullptr);
+	cmd->ResourceBarrier(1, &barrierUAV);
+	std::swap(m_gpuInBuffer, m_gpuOutBuffer);
+
+	// Readback 用にコピーするときのサイズ
+	UINT64 sz = sizeof(Point) * ParticleCount;
+	// （あるいは m_Particles.size() を使う）
+
+	// GPU→Readback バッファへコピー
+	cmd->CopyResource(m_readbackBuffer.Get(), m_gpuInBuffer.Get());
+
+	// コマンドを流して GPU 完了待ち
+	g_Engine->ExecuteCommandList();
+	g_Engine->WaitForGpu();
+
+	// CPU 側へマップしてデータ戻し
+	void* src = nullptr;
+	m_readbackBuffer->Map(0, nullptr, &src);
+	memcpy(m_Particles.data(), src, (size_t)sz);
+	m_readbackBuffer->Unmap(0, nullptr);
+
+	// 既存のInstanceBuffer更新へ
 	UpdateInstanceBuffer();
 
-	auto ptr = m_ConstantBuffer[0]->GetPtr<Transform>();
+	/*auto ptr = m_ConstantBuffer[0]->GetPtr<Transform>();
 	ptr->World = DirectX::XMMatrixIdentity();
 	ptr->View = DirectX::XMMatrixLookAtRH(camera->GetEyePos(), camera->GetTargetPos(), camera->GetUpward());
-	ptr->Proj = DirectX::XMMatrixPerspectiveFovRH(camera->GetFov(), camera->GetAspect(), 0.3f, 1000.0f);
+	ptr->Proj = DirectX::XMMatrixPerspectiveFovRH(camera->GetFov(), camera->GetAspect(), 0.3f, 1000.0f);*/
 }
 
 void Particle::Draw() {
-	auto commandList = g_Engine->CommandList();
-
-	int frameIndex = 0;
-
-	commandList->SetGraphicsRootSignature(m_RootSignature->Get());
-	commandList->SetPipelineState(m_PipelineState->Get());
-	commandList->SetGraphicsRootConstantBufferView(0, m_ConstantBuffer[frameIndex]->GetAddress());
-
-	// 球メッシュ頂点・インデックスバッファセット
-	auto vbView = m_MeshVertexBuffer->View();
-	auto ibView = m_MeshIndexBuffer->View();
-	commandList->IASetVertexBuffers(0, 1, &vbView);
-
-	// インスタンスバッファはスロット1にセット（InputLayoutで指定）
-	auto instView = m_InstanceBuffer->View();
-	commandList->IASetVertexBuffers(1, 1, &instView);
-
-	commandList->IASetIndexBuffer(&ibView);
-	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-	// インスタンス描画
-	commandList->DrawIndexedInstanced(
-		m_IndexCount,               // 球メッシュのインデックス数
-		(UINT)m_Particles.size(),   // インスタンス数
-		0, 0, 0);
-
-
-	// ====================================================
-	// --- Metaball 描画 ---
 	auto cmd = g_Engine->CommandList();
 
-	// SRV/UAV 用ヒープをルートにバインド
-	ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
-	cmd->SetDescriptorHeaps(_countof(heaps), heaps);
+	// Barrier for instance buffer
+	D3D12_RESOURCE_BARRIER barrier =
+		CD3DX12_RESOURCE_BARRIER::Transition(
+			m_InstanceBuffer->GetResource(),
+			D3D12_RESOURCE_STATE_COPY_DEST,            // または UAV
+			D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER
+		);
+	cmd->ResourceBarrier(1, &barrier);
 
-	cmd->SetPipelineState(m_MetaPSO->Get());
-	cmd->SetGraphicsRootSignature(m_MetaRootSig->Get());
+	cmd->SetGraphicsRootSignature(m_RootSignature->Get());
+	cmd->SetPipelineState(m_PipelineState->Get());
 
-	// b0: screenSize + threshold
-	struct {
-		float w;
-		float h;
-		float thr;
-		UINT count;
-	} cbv = {
-	(float)g_Engine->FrameBufferWidth(), (float)g_Engine->FrameBufferHeight(),
-	/*threshold=*/0.5f,
-	ParticleCount
-	};
-	cmd->SetGraphicsRoot32BitConstants(0, 4, &cbv, 0);
+	//cmd->SetGraphicsRootConstantBufferView(
+	//	/*paramIndex=*/0,
+	//	cameraCB->GetGPUVirtualAddress()
+	//);
 
-	// t0: Particle SB
-	cmd->SetGraphicsRootDescriptorTable(1, m_ParticleSB_SRV);
-
-	// VB/IA 設定
-	auto vbv = m_QuadVB->View();
-	cmd->IASetVertexBuffers(0, 1, &vbv);
+	// 0: メッシュ頂点
+	cmd->IASetVertexBuffers(0, 1, &m_vertexBufferView);
+	// 1: インスタンス行列
+	cmd->IASetVertexBuffers(1, 1, &m_instanceBufferView);
+	cmd->IASetIndexBuffer(&m_indexBufferView);
 	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-	// 三角１枚
-	cmd->DrawInstanced(3, 1, 0, 0);
+	cmd->DrawIndexedInstanced(m_indexCount, ParticleCount, 0, 0, 0);
 }
 
 
@@ -350,7 +361,7 @@ void Particle::UpdateParticles() {
 	CD3DX12_RANGE readRange(0, 0);
 	m_ParticleSBUpload->Map(0, &readRange, reinterpret_cast<void**>(&mapped));
 
-	// ① カメラ行列を用意
+	// カメラ行列を用意
 	DirectX::XMMATRIX view = DirectX::XMMatrixLookAtRH(
 		camera->GetEyePos(),
 		camera->GetTargetPos(),

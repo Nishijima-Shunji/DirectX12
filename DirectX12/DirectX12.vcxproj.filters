@@ -46,6 +46,15 @@
     <Filter Include="ソース ファイル\System\PipeLineState">
       <UniqueIdentifier>{27aff251-0c2d-4600-8a17-9e638b6a1c52}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ヘッダー ファイル\System\PipelineState">
+      <UniqueIdentifier>{f1765bf9-b13f-4fc5-be45-2fe4b1c8ed38}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\System\RootSignature">
+      <UniqueIdentifier>{69e57208-dd5c-4ee8-b18f-cb1a7a69f588}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\System\RootSignature">
+      <UniqueIdentifier>{9203efc9-a39e-474f-9092-73d8dbbc198f}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -55,9 +64,6 @@
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="Engine.cpp">
-      <Filter>ソース ファイル\System</Filter>
-    </ClCompile>
-    <ClCompile Include="RootSignature.cpp">
       <Filter>ソース ファイル\System</Filter>
     </ClCompile>
     <ClCompile Include="SharedStruct.cpp">
@@ -108,14 +114,23 @@
     <ClCompile Include="Camera.cpp">
       <Filter>ソース ファイル\Game</Filter>
     </ClCompile>
-    <ClCompile Include="SphereMeshGenerator.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
     <ClCompile Include="PipelineState.cpp">
       <Filter>ソース ファイル\System\PipeLineState</Filter>
     </ClCompile>
     <ClCompile Include="ParticlePipelineState.cpp">
       <Filter>ソース ファイル\System\PipeLineState</Filter>
+    </ClCompile>
+    <ClCompile Include="ComputePipelineState.cpp">
+      <Filter>ソース ファイル\System\PipeLineState</Filter>
+    </ClCompile>
+    <ClCompile Include="RootSignature.cpp">
+      <Filter>ソース ファイル\System\RootSignature</Filter>
+    </ClCompile>
+    <ClCompile Include="SphereMeshGenerator.cpp">
+      <Filter>ソース ファイル\System</Filter>
+    </ClCompile>
+    <ClCompile Include="ComputeRootSignature.cpp">
+      <Filter>ソース ファイル\System\RootSignature</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -126,12 +141,6 @@
       <Filter>ヘッダー ファイル\System</Filter>
     </ClInclude>
     <ClInclude Include="Engine.h">
-      <Filter>ヘッダー ファイル\System</Filter>
-    </ClInclude>
-    <ClInclude Include="PipelineState.h">
-      <Filter>ヘッダー ファイル\System</Filter>
-    </ClInclude>
-    <ClInclude Include="RootSignature.h">
       <Filter>ヘッダー ファイル\System</Filter>
     </ClInclude>
     <ClInclude Include="SharedStruct.h">
@@ -173,9 +182,6 @@
     <ClInclude Include="Game.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="ParticlePipelineState.h">
-      <Filter>ヘッダー ファイル\System</Filter>
-    </ClInclude>
     <ClInclude Include="Object.h">
       <Filter>ヘッダー ファイル\Game\Object</Filter>
     </ClInclude>
@@ -185,8 +191,23 @@
     <ClInclude Include="Camera.h">
       <Filter>ヘッダー ファイル\Game</Filter>
     </ClInclude>
+    <ClInclude Include="ParticlePipelineState.h">
+      <Filter>ヘッダー ファイル\System\PipelineState</Filter>
+    </ClInclude>
+    <ClInclude Include="PipelineState.h">
+      <Filter>ヘッダー ファイル\System\PipelineState</Filter>
+    </ClInclude>
+    <ClInclude Include="ComputePipelineState.h">
+      <Filter>ヘッダー ファイル\System\PipelineState</Filter>
+    </ClInclude>
+    <ClInclude Include="RootSignature.h">
+      <Filter>ヘッダー ファイル\System\RootSignature</Filter>
+    </ClInclude>
     <ClInclude Include="SphereMeshGenerator.h">
-      <Filter>ヘッダー ファイル</Filter>
+      <Filter>ヘッダー ファイル\System</Filter>
+    </ClInclude>
+    <ClInclude Include="ComputeRootSignature.h">
+      <Filter>ヘッダー ファイル\System\RootSignature</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -206,6 +227,9 @@
       <Filter>リソース ファイル</Filter>
     </FxCompile>
     <FxCompile Include="MetaBallPS.hlsl">
+      <Filter>リソース ファイル</Filter>
+    </FxCompile>
+    <FxCompile Include="ParticleComputeShader.hlsl">
       <Filter>リソース ファイル</Filter>
     </FxCompile>
   </ItemGroup>

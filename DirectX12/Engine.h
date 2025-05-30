@@ -16,8 +16,10 @@ public:
 public:
 	bool Init(HWND hwnd, UINT windowWidth, UINT windowHeight); // エンジン初期化
 
-	void BeginRender(); // 描画の開始処理
-	void EndRender();	// 描画の終了処理
+	void BeginRender();			// 描画の開始処理
+	void EndRender();			// 描画の終了処理
+	void ExecuteCommandList();	// コマンドリストを実行する
+	void WaitForGpu();			// GPUの処理が終わるまで待つ
 
 public: // 外からアクセスするためのGetter
 	ID3D12Device6* Device();
