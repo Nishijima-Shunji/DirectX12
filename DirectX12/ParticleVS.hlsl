@@ -5,13 +5,6 @@ cbuffer Transform : register(b0)
     matrix Proj;
 };
 
-struct Particle {
-    float3 position;
-    float3 velocity;
-};
-
-
-
 struct VSInput
 {
     float3 position : POSITION;

@@ -502,26 +502,3 @@ UINT Engine::FrameBufferHeight() const
 {
 	return m_FrameBufferHeight;
 }
-
-// コマンドリストをクローズしてキューに流す
-void Engine::ExecuteCommandList()
-{
-	// コマンドリストは BeginRender/Update などでリセット済み
-	m_pCommandList->Close();
-	ID3D12CommandList* lists[] = { m_pCommandList.Get() };
-	m_pQueue->ExecuteCommandLists(1, lists);
-}
-
-// GPU の完了をフェンスで待つ
-void Engine::WaitForGpu()
-{
-	// 現在のフレームのフェンス値を使ってシグナル→待機
-	UINT64 fence = m_fenceValue[m_CurrentBackBufferIndex];
-	m_pQueue->Signal(m_pFence.Get(), fence);
-	m_fenceValue[m_CurrentBackBufferIndex]++;
-
-	if (m_pFence->GetCompletedValue() < fence) {
-		m_pFence->SetEventOnCompletion(fence, m_fenceEvent);
-		WaitForSingleObject(m_fenceEvent, INFINITE);
-	}
-}

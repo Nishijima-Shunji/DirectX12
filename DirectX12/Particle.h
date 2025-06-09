@@ -9,8 +9,6 @@
 #include "RootSignature.h"
 #include "ParticlePipelineState.h"
 #include "ConstantBuffer.h"
-#include "ComputeRootSignature.h"
-#include "ComputePipelineState.h"
 
 
 using namespace DirectX::SimpleMath;
@@ -27,11 +25,6 @@ struct FullscreenVertex {
 struct Point {
 	Vector3 position = {};
 	Vector3 velocity = {};
-};
-
-struct ParticleCS {
-	DirectX::XMFLOAT3 position;
-	DirectX::XMFLOAT3 velocity;
 };
 
 struct SPHParams {
@@ -72,25 +65,6 @@ private:
 	ID3D12Resource* m_ParticleSBGPU = nullptr;
 	ID3D12Resource* m_ParticleSBUpload = nullptr;
 	D3D12_GPU_DESCRIPTOR_HANDLE m_ParticleSB_SRV; // SRV ハンドル
-	ComPtr<ID3D12Resource>   m_pMetaballCB;
-
-	// Compute用
-	ComPtr<ID3D12Resource>          m_gpuInBuffer;			// in：StructuredBuffer<Particle>
-	ComPtr<ID3D12Resource>          m_gpuOutBuffer;			// out：RWStructuredBuffer<Particle>
-	ComPtr<ID3D12Resource>          m_uploadBuffer;			// 初期データ転送用 UploadHeap
-	ComPtr<ID3D12DescriptorHeap>    m_srvUavHeap;			// SRV/UAVを登録するヒープ
-	ConstantBuffer*					m_paramCB = nullptr;	// SPHParams用定数バッファ
-	ComPtr<ID3D12Resource>			m_readbackBuffer;		// Readback用バッファ
-
-	ComputeRootSignature            m_computeRS;			// Compute用ルートシグネチャ
-	ComputePipelineState            m_computePSO;			// Compute用のパイプラインステート
-
-	std::unique_ptr<VertexBuffer> m_meshVB;					// メッシュ頂点バッファ
-	std::unique_ptr<VertexBuffer> m_instanceVB;				// インスタンス行列バッファ
-	D3D12_INDEX_BUFFER_VIEW       m_indexBufferView;		// 既存のインデックスバッファビュー
-	UINT                          m_vertexCount;
-	UINT                          m_indexCount;
-
 
 
 	Camera* camera;
