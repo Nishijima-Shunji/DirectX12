@@ -63,6 +63,14 @@ Particle::Particle(Camera* cam) : camera(cam) {
 }
 
 bool Particle::Init() {
+	// ディスクリプタヒープの生成
+	D3D12_DESCRIPTOR_HEAP_DESC hdesc = {};
+	hdesc.NumDescriptors = 2; // SRV + UAV
+	hdesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	hdesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	g_Engine->Device()->CreateDescriptorHeap(&hdesc, IID_PPV_ARGS(&m_srvUavHeap));
+
+
 	// 粒子生成
 	for (int i = 0; i < ParticleCount; ++i) {
 		Point p;
@@ -329,6 +337,31 @@ void Particle::Draw() {
 
 
 void Particle::UpdateParticles() {
+	// 1) 定数バッファ更新
+	memcpy(m_paramCB->GetPtr(), &m_SPHParams, sizeof(SPHParams));
+
+	// 2) Compute
+	auto cmd = g_Engine->CommandList();
+	cmd->SetComputeRootSignature(m_computeRS.Get());
+	cmd->SetPipelineState(m_computePSO.Get());
+	ID3D12DescriptorHeap* heaps[] = { m_srvUavHeap.Get() };
+	cmd->SetDescriptorHeaps(1, heaps);
+	cmd->SetComputeRootConstantBufferView(0, m_paramCB->GetAddress());
+	cmd->SetComputeRootDescriptorTable(1,
+		m_srvUavHeap->GetGPUDescriptorHandleForHeapStart());
+	UINT groups = (ParticleCount + 255) / 256;
+	cmd->Dispatch(groups, 1, 1);
+
+	// 3) UAVバリア＆ping-pong
+	D3D12_RESOURCE_BARRIER barrier =
+		CD3DX12_RESOURCE_BARRIER::UAV(nullptr);
+	cmd->ResourceBarrier(1, &barrier);
+	std::swap(m_gpuInBuffer, m_gpuOutBuffer);
+
+	// 4) （Readback→CPU更新 or 直接インスタンスバッファ更新）
+
+
+
 	int n = (int)m_Particles.size();
 
 	std::vector<float> densities(n);
