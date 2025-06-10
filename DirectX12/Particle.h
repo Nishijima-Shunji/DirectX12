@@ -9,7 +9,9 @@
 #include "RootSignature.h"
 #include "ParticlePipelineState.h"
 #include "ConstantBuffer.h"
-
+#include "ComputeRootSignature.h" 
+#include "ComputePipelineState.h"
+#include <wrl.h> 
 
 using namespace DirectX::SimpleMath;
 // GPUへ渡すパーティクル情報
@@ -66,6 +68,22 @@ private:
 	ID3D12Resource* m_ParticleSBUpload = nullptr;
 	D3D12_GPU_DESCRIPTOR_HANDLE m_ParticleSB_SRV; // SRV ハンドル
 
+	// ComputeShader用
+	// Compute 用ルートシグネチャ／PSO
+	ComputeRootSignature            m_computeRS;
+	ComputePipelineState            m_computePSO;
+
+	// SRV/UAV 用 DescriptorHeap
+	ComPtr<ID3D12DescriptorHeap>    m_srvUavHeap;
+
+	// SPHParams 用定数バッファ
+	ConstantBuffer* m_paramCB = nullptr;
+
+	// 粒子データの GPU バッファ (ping-pong)
+	ComPtr<ID3D12Resource>          m_gpuInBuffer;
+	ComPtr<ID3D12Resource>          m_gpuOutBuffer;
+
+
 
 	Camera* camera;
 	SPHParams m_SPHParams;
@@ -76,6 +94,12 @@ public:
 	bool Init();
 	void Update();
 	void Draw();
+
+
+	bool InitParticle();
+	bool InitMesh();
+	bool InitMetaball();
+	bool InitComputeShader();
 
 	void UpdateParticles();
 	void UpdateVertexBuffer();

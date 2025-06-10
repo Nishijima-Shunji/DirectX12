@@ -43,7 +43,10 @@
     <Filter Include="ソース ファイル\Game\Object">
       <UniqueIdentifier>{aaa4a290-c27b-4d81-bb41-fd0acadd1132}</UniqueIdentifier>
     </Filter>
-    <Filter Include="ソース ファイル\System\PipeLineState">
+    <Filter Include="ヘッダー ファイル\System\PSO">
+      <UniqueIdentifier>{007b888e-7bab-4bd1-bc4d-90d0e6178584}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\System\PSO">
       <UniqueIdentifier>{27aff251-0c2d-4600-8a17-9e638b6a1c52}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -112,10 +115,16 @@
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="PipelineState.cpp">
-      <Filter>ソース ファイル\System\PipeLineState</Filter>
+      <Filter>ソース ファイル\System\PSO</Filter>
     </ClCompile>
     <ClCompile Include="ParticlePipelineState.cpp">
-      <Filter>ソース ファイル\System\PipeLineState</Filter>
+      <Filter>ソース ファイル\System\PSO</Filter>
+    </ClCompile>
+    <ClCompile Include="ComputeRootSignature.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="ComputePipelineState.cpp">
+      <Filter>ソース ファイル\System\PSO</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -126,9 +135,6 @@
       <Filter>ヘッダー ファイル\System</Filter>
     </ClInclude>
     <ClInclude Include="Engine.h">
-      <Filter>ヘッダー ファイル\System</Filter>
-    </ClInclude>
-    <ClInclude Include="PipelineState.h">
       <Filter>ヘッダー ファイル\System</Filter>
     </ClInclude>
     <ClInclude Include="RootSignature.h">
@@ -173,9 +179,6 @@
     <ClInclude Include="Game.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="ParticlePipelineState.h">
-      <Filter>ヘッダー ファイル\System</Filter>
-    </ClInclude>
     <ClInclude Include="Object.h">
       <Filter>ヘッダー ファイル\Game\Object</Filter>
     </ClInclude>
@@ -185,8 +188,20 @@
     <ClInclude Include="Camera.h">
       <Filter>ヘッダー ファイル\Game</Filter>
     </ClInclude>
+    <ClInclude Include="ParticlePipelineState.h">
+      <Filter>ヘッダー ファイル\System\PSO</Filter>
+    </ClInclude>
+    <ClInclude Include="PipelineState.h">
+      <Filter>ヘッダー ファイル\System\PSO</Filter>
+    </ClInclude>
+    <ClInclude Include="ComputePipelineState.h">
+      <Filter>ヘッダー ファイル\System\PSO</Filter>
+    </ClInclude>
+    <ClInclude Include="ComputeRootSignature.h">
+      <Filter>ヘッダー ファイル\System</Filter>
+    </ClInclude>
     <ClInclude Include="SphereMeshGenerator.h">
-      <Filter>ヘッダー ファイル</Filter>
+      <Filter>ヘッダー ファイル\System</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -208,5 +223,6 @@
     <FxCompile Include="MetaBallPS.hlsl">
       <Filter>リソース ファイル</Filter>
     </FxCompile>
+    <FxCompile Include="ParticleCS.hlsl" />
   </ItemGroup>
 </Project>
