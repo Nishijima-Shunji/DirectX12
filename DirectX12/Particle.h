@@ -75,6 +75,7 @@ private:
 
 	// SRV/UAV 用 DescriptorHeap
 	ComPtr<ID3D12DescriptorHeap>    m_srvUavHeap;
+	ComPtr<ID3D12DescriptorHeap>	m_computeDescHeap;
 
 	// SPHParams 用定数バッファ
 	ConstantBuffer* m_paramCB = nullptr;
@@ -82,6 +83,12 @@ private:
 	// 粒子データの GPU バッファ (ping-pong)
 	ComPtr<ID3D12Resource>          m_gpuInBuffer;
 	ComPtr<ID3D12Resource>          m_gpuOutBuffer;
+
+	// GPU待機用のフェンス
+	ComPtr<ID3D12Fence> m_fence;
+	static constexpr UINT FrameCount = 3;
+	UINT64 m_fenceValue[FrameCount] = {};
+	HANDLE m_fenceEvent = nullptr;
 
 
 

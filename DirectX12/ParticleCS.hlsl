@@ -69,7 +69,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     }
 
     // ========================================
-    //  Integrate
+    //  “®‚«ŒvŽZ
     // ========================================
     Particle p = inParticles[i];
     float3 accel = force / density;

@@ -20,13 +20,14 @@ public:
 	void EndRender();	// 描画の終了処理
 
 public: // 外からアクセスするためのGetter
-	ID3D12Device6* Device();
-	ID3D12GraphicsCommandList* CommandList();
-	UINT CurrentBackBufferIndex();
-	UINT FrameBufferWidth() const; // フレームバッファの幅を取得
-	UINT FrameBufferHeight() const; // フレームバッファの高さを取得
-	// CBV/SRV/UAV 用 DescriptorHeap を取得
-	DescriptorHeap * CbvSrvUavHeap() { return m_pCbvSrvUavHeap; }
+	ID3D12Device6*				Device();
+	ID3D12GraphicsCommandList*	CommandList();
+	UINT						CurrentBackBufferIndex();
+	UINT						FrameBufferWidth() const; // フレームバッファの幅を取得
+	UINT						FrameBufferHeight() const; // フレームバッファの高さを取得
+	DescriptorHeap *			CbvSrvUavHeap() const { return m_pCbvSrvUavHeap; } // CBV/SRV/UAV 用 DescriptorHeap を取得
+    ID3D12CommandQueue*			CommandQueue() const { return m_pQueue.Get(); } // コマンドキューを取得
+    ID3D12CommandAllocator*		CommandAllocator(UINT index) const { return m_pAllocator[index].Get(); } // コマンドアロケーターを取得
 
 private: // DirectX12初期化に使う関数
 	bool CreateDevice();		// デバイスを生成

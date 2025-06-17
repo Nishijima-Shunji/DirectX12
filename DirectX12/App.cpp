@@ -2,6 +2,9 @@
 #include "Engine.h"
 #include "Scene.h"
 #include "Game.h"
+#include <dxgidebug.h>
+#pragma comment(lib, "dxguid.lib")
+
 
 HINSTANCE g_hInst;
 HWND g_hWnd = NULL;
@@ -105,15 +108,12 @@ void StartApp(const TCHAR* appName)
 	{
 		return;
 	}
-
-	// シーン初期化
-	/*g_Scene = new Scene();
-	if (!g_Scene->Init())
-	{
-		return;
-	}*/
-
 	// メイン処理ループ
 	MainLoop();
+	IDXGIDebug1* pDebug = nullptr;
+	if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug)))) {
+		pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_DETAIL);
+		pDebug->Release();
+	}
 }
 

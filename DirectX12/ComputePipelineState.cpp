@@ -1,4 +1,5 @@
 #include "ComputePipelineState.h"
+#include <d3dcompiler.h>
 #include "Engine.h"
 
 void ComputePipelineState::SetCS(const std::wstring& path) {

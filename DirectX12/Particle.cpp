@@ -63,16 +63,16 @@ Particle::Particle(Camera* cam) : camera(cam) {
 }
 
 bool Particle::Init() {
-	if (!InitParticle()) {
+	if (!InitParticle()) {			// Particle情報を初期化
 		return false;
 	}
-	if(!InitMesh()) {
+	if (!InitMesh()) {				// メッシュ情報を初期化
 		return false;
 	}
-	if(!InitMetaball()) {
+	if (!InitMetaball()) {			// メタボール情報を初期化
 		return false;
 	}
-	if (!InitComputeShader()) {
+	if (!InitComputeShader()) {		// コンピュートシェーダー情報を初期化
 		return false;
 	}
 
@@ -156,51 +156,53 @@ void Particle::Draw() {
 
 
 void Particle::UpdateParticles() {
+	UINT frameIndex = g_Engine->CurrentBackBufferIndex();
+
+	auto device = g_Engine->Device();
+	auto cmd = g_Engine->CommandList();
+	auto allocator = g_Engine->CommandAllocator(frameIndex);
+	auto queue = g_Engine->CommandQueue();
+
+	// FenceでGPUの完了を確認
+	if (m_fence->GetCompletedValue() < m_fenceValue[frameIndex]) {
+		m_fence->SetEventOnCompletion(m_fenceValue[frameIndex], m_fenceEvent);
+		WaitForSingleObject(m_fenceEvent, INFINITE);
+	}
+
+	// 安全にReset
+	allocator->Reset();
+	cmd->Reset(allocator, nullptr);
+
 	// 定数バッファ更新
 	memcpy(m_paramCB->GetPtr(), &m_SPHParams, sizeof(SPHParams));
 
-	// Compute
-	auto cmd = g_Engine->CommandList();
+	// ルートシグネチャとPSO
 	cmd->SetComputeRootSignature(m_computeRS.Get());
 	cmd->SetPipelineState(m_computePSO.Get());
-	ID3D12DescriptorHeap* heaps[] = { m_srvUavHeap.Get() };
+
+	// ディスクリプタヒープ設定
+	ID3D12DescriptorHeap* heaps[] = { m_computeDescHeap.Get() };
 	cmd->SetDescriptorHeaps(1, heaps);
+
 	cmd->SetComputeRootConstantBufferView(0, m_paramCB->GetAddress());
-	cmd->SetComputeRootDescriptorTable(1,
-		m_srvUavHeap->GetGPUDescriptorHandleForHeapStart());
+	cmd->SetComputeRootDescriptorTable(1, m_computeDescHeap->GetGPUDescriptorHandleForHeapStart());
+
+	// コンピュートシェーダー実行
 	UINT groups = (ParticleCount + 255) / 256;
 	cmd->Dispatch(groups, 1, 1);
 
-	// UAVバリア＆ping-pong
-	D3D12_RESOURCE_BARRIER barrier =
-		CD3DX12_RESOURCE_BARRIER::UAV(nullptr);
+	// UAVバリア（ping-pong用）
+	D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::UAV(nullptr);
 	cmd->ResourceBarrier(1, &barrier);
-	std::swap(m_gpuInBuffer, m_gpuOutBuffer);
-
-	//（Readback→CPU更新 or 直接インスタンスバッファ更新）
-
-
-
-	int n = (int)m_Particles.size();
-
-	std::vector<float> densities(n);
-	std::vector<float> pressures(n);
-	std::vector<Vector3> forces(n, { 0,0,0 });
-
-	// 密度と圧力計算
-	ComputeDensityPressure(densities, pressures);
-
-	// 力計算
-	ComputeForces(densities, pressures, forces);
-
-	// 速度・位置更新
-	Integrate(forces);
-
 
 	// CPU→UploadBuffer へ書き込み
 	ParticleSB* mapped = nullptr;
 	CD3DX12_RANGE readRange(0, 0);
 	m_ParticleSBUpload->Map(0, &readRange, reinterpret_cast<void**>(&mapped));
+	if (!mapped) {
+		printf("UploadBufferのマッピングに失敗\n");
+		return;
+	}
 
 	// カメラ行列を用意
 	DirectX::XMMATRIX view = DirectX::XMMatrixLookAtRH(
@@ -215,41 +217,38 @@ void Particle::UpdateParticles() {
 		1000.0f
 	);
 	DirectX::XMMATRIX vpT = DirectX::XMMatrixTranspose(view * proj);
-
 	float projScaleX = DirectX::XMVectorGetX(proj.r[0]);
 
 	for (int i = 0; i < ParticleCount; ++i) {
-		// ワールド空間の粒子位置
 		auto& P = m_Particles[i].position;
 		DirectX::XMVECTOR worldPos = DirectX::XMVectorSet(P.x, P.y, P.z, 1.0f);
-
-		// クリップ空間へ変換
 		DirectX::XMVECTOR clip = DirectX::XMVector3Transform(worldPos, vpT);
 		float w = DirectX::XMVectorGetW(clip);
-
-		// NDC 空間に正規化
 		DirectX::XMVECTOR ndc = DirectX::XMVectorScale(clip, 1.0f / w);
-
-		// 画面座標 (0–1) にマップ
 		float x = DirectX::XMVectorGetX(ndc) * 0.5f + 0.5f;
 		float y = 1.0f - (DirectX::XMVectorGetY(ndc) * 0.5f + 0.5f);
-
-		// Z は粒子半径を w で補正したもの
-		float z = m_SPHParams.radius * (1.0f / w);
-
-		// ワールド半径 × プロジェクションの X軸スケール ÷ w
-		float r_ndc = m_SPHParams.radius * projScaleX / w;
-		// UV(0–1)空間にマップするならさらに×0.5
-		float r_uv = r_ndc * 0.5f;
+		float r_uv = m_SPHParams.radius * projScaleX / w * 0.5f;
 
 		mapped[i] = { x, y, r_uv, 0 };
 	}
 
 	m_ParticleSBUpload->Unmap(0, nullptr);
-	g_Engine->CommandList()->CopyResource(m_ParticleSBGPU, m_ParticleSBUpload);
 
+	// CopyResource（同じ CommandList 内に配置）
+	cmd->CopyResource(m_ParticleSBGPU, m_ParticleSBUpload);
 
+	// コマンドリストを閉じる（これ以降コマンド追加しない）
+	cmd->Close();
+
+	// 実行＆フェンス
+	ID3D12CommandList* cmdLists[] = { cmd };
+	queue->ExecuteCommandLists(1, cmdLists);
+	queue->Signal(m_fence.Get(), ++m_fenceValue[frameIndex]);
+
+	// ping-pong バッファ入れ替え
+	std::swap(m_gpuInBuffer, m_gpuOutBuffer);
 }
+
 
 void Particle::ComputeDensityPressure(std::vector<float>& densities, std::vector<float>& pressures) {
 	int n = (int)m_Particles.size();
@@ -363,21 +362,20 @@ void Particle::UpdateVertexBuffer() {
 
 void Particle::UpdateInstanceBuffer()
 {
+	UINT frameIndex = g_Engine->CurrentBackBufferIndex();
+	if (m_fence->GetCompletedValue() < m_fenceValue[frameIndex]) {
+		m_fence->SetEventOnCompletion(m_fenceValue[frameIndex], m_fenceEvent);
+		WaitForSingleObject(m_fenceEvent, INFINITE);
+	}
+
 	std::vector<InstanceData> instances(m_Particles.size());
 	for (size_t i = 0; i < m_Particles.size(); ++i) {
-		// パーティクルの物理空間での位置と半径
 		auto pos = m_Particles[i].position;
 		float r = m_SPHParams.radius;
-
-		// 半径1の球メッシュを、物理半径rでスケール
 		DirectX::XMMATRIX scale = DirectX::XMMatrixScaling(r, r, r);
-		// パーティクル位置に移動
 		DirectX::XMMATRIX trans = DirectX::XMMatrixTranslation(pos.x, pos.y, pos.z);
-		DirectX::XMMATRIX world = scale * trans;
-		// 列優先に合わせて転置
-		DirectX::XMMATRIX worldT = DirectX::XMMatrixTranspose(world);
+		DirectX::XMMATRIX worldT = XMMatrixTranspose(scale * trans);
 
-		// 行データを InstanceData に書き込む
 		InstanceData& data = instances[i];
 		XMStoreFloat4(&data.row0, worldT.r[0]);
 		XMStoreFloat4(&data.row1, worldT.r[1]);
@@ -385,12 +383,16 @@ void Particle::UpdateInstanceBuffer()
 		XMStoreFloat4(&data.row3, worldT.r[3]);
 	}
 
-	// GPUバッファへアップロード
 	void* ptr = nullptr;
-	m_InstanceBuffer->GetResource()->Map(0, nullptr, &ptr);
+	HRESULT hr = m_InstanceBuffer->GetResource()->Map(0, nullptr, &ptr);
+	if (FAILED(hr) || !ptr) {
+		printf("インスタンスバッファ Map に失敗\n");
+		return;
+	}
 	memcpy(ptr, instances.data(), sizeof(InstanceData) * instances.size());
 	m_InstanceBuffer->GetResource()->Unmap(0, nullptr);
 }
+
 
 
 // ==========================================================================
@@ -436,7 +438,6 @@ bool Particle::InitParticle() {
 	// インスタンスバッファ初期化（位置＋スケール行列）
 	std::vector<DirectX::XMMATRIX> instanceMatrices(m_Particles.size(), DirectX::XMMatrixIdentity());
 	m_InstanceBuffer = new VertexBuffer(sizeof(DirectX::XMMATRIX) * instanceMatrices.size(), sizeof(DirectX::XMMATRIX), instanceMatrices.data());
-
 	if (!m_InstanceBuffer) {
 		printf("インスタンスバッファ作成失敗\n");
 		return false;
@@ -466,7 +467,7 @@ bool Particle::InitParticle() {
 }
 
 bool Particle::InitMesh() {
-// 半径 1 の低ポリ球を生成
+	// 半径 1 の低ポリ球を生成
 	auto mesh = CreateLowPolySphere(1.0f, 0);
 	m_IndexCount = (UINT)mesh.indices.size();
 
@@ -595,7 +596,102 @@ bool Particle::InitMetaball() {
 	return true;
 }
 
-bool Particle::InitComputeShader() {
+bool Particle::InitComputeShader()
+{
+	// コンピュートシェーダー用のリソースを初期化
+	ID3D12Device* device = g_Engine->Device();
+
+	// フェンスの初期化
+	device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence));
+	m_fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
+	// GPUバッファの作成（入力・出力）
+	UINT elementCount = static_cast<UINT>(m_Particles.size());
+	UINT elementSize = sizeof(Point);
+	UINT bufferSize = elementCount * elementSize;
+
+	CD3DX12_HEAP_PROPERTIES heapProp(D3D12_HEAP_TYPE_DEFAULT);
+	CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+
+	// 入力用バッファ
+	HRESULT hr = device->CreateCommittedResource( &heapProp, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,	nullptr, IID_PPV_ARGS(&m_gpuInBuffer));
+	if (FAILED(hr)) {
+		printf("m_gpuInBuffer 作成失敗\n");
+		return false;
+	}
+
+	// 出力用バッファ
+	hr = device->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_gpuOutBuffer));
+	if (FAILED(hr)) {
+		printf("m_gpuOutBuffer 作成失敗\n");
+		return false;
+	}
+
+	// Compute用ルートシグネチャの初期化
+	if (!m_computeRS.InitForSPH()) {
+		return false;
+	}
+
+	// Compute PSO 設定
+	m_computePSO.SetRootSignature(m_computeRS.Get());
+	m_computePSO.SetCS(L"../x64/Debug/ParticleCS.cso"); // ※コンパイル済みCSOを前提にしている
+	m_computePSO.Create();
+
+	// 定数バッファ（SPHParams）を作成
+	m_paramCB = new ConstantBuffer(sizeof(SPHParams));
+	if (!m_paramCB || !m_paramCB->IsValid()) {
+		printf("Compute用定数バッファの作成に失敗\n");
+		return false;
+	}
+
+	// 初期値書き込み
+	memcpy(m_paramCB->GetPtr(), &m_SPHParams, sizeof(SPHParams));
+
+	// ディスクリプタヒープ（CBV, SRV, UAV）作成
+	D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
+	heapDesc.NumDescriptors = 3;
+	heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	if (FAILED(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_computeDescHeap)))) {
+		return false;
+	}
+
+	// 定数バッファ（m_paramCB）→ CBV作成
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+	cbvDesc.BufferLocation = m_paramCB->GetAddress();
+	cbvDesc.SizeInBytes = (sizeof(SPHParams) + 255) & ~255;
+
+	auto handle = m_computeDescHeap->GetCPUDescriptorHandleForHeapStart();
+	device->CreateConstantBufferView(&cbvDesc, handle);
+
+	UINT handleSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+	// SRV 作成（m_gpuInBuffer）
+	handle.ptr += handleSize;
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	srvDesc.Buffer.FirstElement = 0;
+	srvDesc.Buffer.NumElements = static_cast<UINT>(m_Particles.size());
+	srvDesc.Buffer.StructureByteStride = sizeof(Point);
+	srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+	srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+	device->CreateShaderResourceView(m_gpuInBuffer.Get(), &srvDesc, handle);
+
+	// UAV 作成（m_gpuOutBuffer）
+	handle.ptr += handleSize;
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+	uavDesc.Buffer.FirstElement = 0;
+	uavDesc.Buffer.NumElements = static_cast<UINT>(m_Particles.size());
+	uavDesc.Buffer.StructureByteStride = sizeof(Point);
+	uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+	uavDesc.Format = DXGI_FORMAT_UNKNOWN;
+
+	device->CreateUnorderedAccessView(m_gpuOutBuffer.Get(), nullptr, &uavDesc, handle);
 
 	return true;
 }
+
+
