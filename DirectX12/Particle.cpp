@@ -158,10 +158,10 @@ void Particle::Draw() {
 void Particle::UpdateParticles() {
 	UINT frameIndex = g_Engine->CurrentBackBufferIndex();
 
-	auto device = g_Engine->Device();
-	auto cmd = g_Engine->CommandList();
-	auto allocator = g_Engine->CommandAllocator(frameIndex);
-	auto queue = g_Engine->CommandQueue();
+	auto device		= g_Engine->Device();
+	auto cmd		= g_Engine->CommandList();
+	auto allocator	= g_Engine->CommandAllocator(frameIndex);
+	auto queue		= g_Engine->CommandQueue();
 
 	// FenceでGPUの完了を確認
 	if (m_fence->GetCompletedValue() < m_fenceValue[frameIndex]) {
@@ -174,6 +174,7 @@ void Particle::UpdateParticles() {
 	cmd->Reset(allocator, nullptr);
 
 	// 定数バッファ更新
+	m_SPHParams.particleCount = static_cast<UINT>(m_Particles.size());
 	memcpy(m_paramCB->GetPtr(), &m_SPHParams, sizeof(SPHParams));
 
 	// ルートシグネチャとPSO
@@ -185,7 +186,8 @@ void Particle::UpdateParticles() {
 	cmd->SetDescriptorHeaps(1, heaps);
 
 	cmd->SetComputeRootConstantBufferView(0, m_paramCB->GetAddress());
-	cmd->SetComputeRootDescriptorTable(1, m_computeDescHeap->GetGPUDescriptorHandleForHeapStart());
+	cmd->SetComputeRootDescriptorTable(1, m_srvHandle);
+	cmd->SetComputeRootDescriptorTable(2, m_uavHandle);
 
 	// コンピュートシェーダー実行
 	UINT groups = (ParticleCount + 255) / 256;
@@ -234,10 +236,10 @@ void Particle::UpdateParticles() {
 
 	m_ParticleSBUpload->Unmap(0, nullptr);
 
-	// CopyResource（同じ CommandList 内に配置）
+	// CopyResource（CommandList内に配置）
 	cmd->CopyResource(m_ParticleSBGPU, m_ParticleSBUpload);
 
-	// コマンドリストを閉じる（これ以降コマンド追加しない）
+	// コマンドリストを閉じる
 	cmd->Close();
 
 	// 実行＆フェンス
@@ -408,12 +410,13 @@ bool Particle::InitParticle() {
 		m_Particles.push_back(p);
 	}
 	// 粒子のパラメーターの初期化
-	m_SPHParams.restDensity = 1000.0f;	//
-	m_SPHParams.particleMass = 1.0f;		// 重さ
+	m_SPHParams.restDensity = 1000.0f;	// 
+	m_SPHParams.particleMass = 1.0f;	// 重さ
 	m_SPHParams.viscosity = 5.0f;		// 粘性
 	m_SPHParams.stiffness = 1.0f;		// 剛性
-	m_SPHParams.radius = 0.1f;		//
-	m_SPHParams.timeStep = 0.016f;	//
+	m_SPHParams.radius = 0.1f;			// 
+	m_SPHParams.timeStep = 0.016f;		// 
+	m_SPHParams.particleCount = ParticleCount;
 
 	// ディスクリプタヒープの生成
 	D3D12_DESCRIPTOR_HEAP_DESC hdesc = {};
@@ -690,6 +693,12 @@ bool Particle::InitComputeShader()
 	uavDesc.Format = DXGI_FORMAT_UNKNOWN;
 
 	device->CreateUnorderedAccessView(m_gpuOutBuffer.Get(), nullptr, &uavDesc, handle);
+
+	// ヒープ先頭を取得
+	auto gpuHeapStart = m_computeDescHeap->GetGPUDescriptorHandleForHeapStart();
+
+	m_srvHandle.ptr = gpuHeapStart.ptr + handleSize * 1;   // t0
+	m_uavHandle.ptr = gpuHeapStart.ptr + handleSize * 2;   // u0
 
 	return true;
 }

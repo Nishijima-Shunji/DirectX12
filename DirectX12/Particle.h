@@ -15,7 +15,6 @@
 
 using namespace DirectX::SimpleMath;
 // GPUへ渡すパーティクル情報
-// float4(x_ndc, y_ndc, radius_ndc, unused)
 using ParticleSB = DirectX::XMFLOAT4;
 
 
@@ -24,11 +23,13 @@ struct FullscreenVertex {
 	DirectX::XMFLOAT2 pos;
 };
 
+// パーティクルの位置と速度
 struct Point {
 	Vector3 position = {};
 	Vector3 velocity = {};
 };
 
+// パーティクルの物理パラメータ
 struct SPHParams {
 	float restDensity = 1000.0f;
 	float particleMass = 1.0f;
@@ -36,6 +37,7 @@ struct SPHParams {
 	float stiffness = 200.0f;
 	float radius = 0.1f;
 	float timeStep = 0.016f;
+	UINT particleCount = 0;
 };
 
 struct InstanceData {
@@ -48,6 +50,7 @@ struct InstanceData {
 class Particle : public Object
 {
 private:
+	// パーティクルの情報
 	std::vector<Point>		m_Particles;
 	VertexBuffer* m_VertexBuffer = nullptr;
 	RootSignature* m_RootSignature = nullptr;
@@ -57,7 +60,7 @@ private:
 	// 球体表示用
 	VertexBuffer* m_MeshVertexBuffer = nullptr;  // 球メッシュ頂点バッファ
 	IndexBuffer* m_MeshIndexBuffer = nullptr;    // 球メッシュインデックスバッファ
-	UINT m_IndexCount = 0;                        // 球メッシュのインデックス数
+	UINT m_IndexCount = 0;                       // 球メッシュのインデックス数
 	VertexBuffer* m_InstanceBuffer = nullptr;    // インスタンス行列バッファ
 
 	// Metaball 用
@@ -66,7 +69,8 @@ private:
 	ParticlePipelineState* m_MetaPSO = nullptr;
 	ID3D12Resource* m_ParticleSBGPU = nullptr;
 	ID3D12Resource* m_ParticleSBUpload = nullptr;
-	D3D12_GPU_DESCRIPTOR_HANDLE m_ParticleSB_SRV; // SRV ハンドル
+	D3D12_GPU_DESCRIPTOR_HANDLE m_ParticleSB_SRV; // SRVハンドル
+
 
 	// ComputeShader用
 	// Compute 用ルートシグネチャ／PSO
@@ -81,8 +85,10 @@ private:
 	ConstantBuffer* m_paramCB = nullptr;
 
 	// 粒子データの GPU バッファ (ping-pong)
-	ComPtr<ID3D12Resource>          m_gpuInBuffer;
-	ComPtr<ID3D12Resource>          m_gpuOutBuffer;
+	ComPtr<ID3D12Resource>			m_gpuInBuffer;
+	ComPtr<ID3D12Resource>			m_gpuOutBuffer;
+	D3D12_GPU_DESCRIPTOR_HANDLE		m_srvHandle{};	// t0
+	D3D12_GPU_DESCRIPTOR_HANDLE		m_uavHandle{};	// u0
 
 	// GPU待機用のフェンス
 	ComPtr<ID3D12Fence> m_fence;
@@ -102,12 +108,13 @@ public:
 	void Update();
 	void Draw();
 
-
+	// 初期化関数
 	bool InitParticle();
 	bool InitMesh();
 	bool InitMetaball();
 	bool InitComputeShader();
 
+	// 更新関数
 	void UpdateParticles();
 	void UpdateVertexBuffer();
 	void UpdateInstanceBuffer();
