@@ -1,19 +1,12 @@
 #pragma once
 #include "BaseScene.h"
 #include <DirectXMath.h>
+#include "Camera.h"
 
 class Scene : public BaseScene
 {
 private:
-	float rotateY = 0.0f;
-	float posX = 0.0f;
-	float posY = 0.0f;
-	float posZ = 0.0f;
-
-	DirectX::XMVECTOR eyePos;
-	DirectX::XMVECTOR targetPos;
-	DirectX::XMVECTOR upward;
-	float fov;
+	Camera* camera = nullptr;
 
 
 public:

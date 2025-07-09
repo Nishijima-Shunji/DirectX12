@@ -11,6 +11,10 @@ cbuffer SPHParams : register(b0) {
     uint  particleCount; // 粒子数
 };
 
+cbuffer ViewProjCB : register(b1) {
+    float4x4 viewProj;   // ビュー投影行列
+};
+
 // GPU 上の粒子構造体
 struct Particle {
     float3 position;
@@ -92,24 +96,29 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     if (p.position.y < -1 || p.position.y > 5) p.velocity.y *= -0.1f;
     if (p.position.z < -1 || p.position.z > 1) p.velocity.z *= -0.1f;
 
-    
-    // ========================================
-    //  メタボール用の情報を出力
-    // ========================================
-     // 通常のシミュ結果は outParticles に
-    outParticles[i] = p;
+   // ワールド座標（float3）
+    float3 worldPos = p.position;
 
-    // メタボール用に UV or NDC 変換＆半径セットして outMeta に
+    // ワールド → クリップ空間
+    float4 clipPos = mul(float4(worldPos, 1.0f), viewProj);
+
+    // NDC に正規化
+    clipPos /= clipPos.w;
+
+    // NDC → UV
+    float2 uv;
+    uv.x = clipPos.x * 0.5f + 0.5f;
+    uv.y = -clipPos.y * 0.5f + 0.5f; // Y反転（左上原点のテクスチャに合わせる）
+
+    // 書き込み
     ParticleMeta m;
-    // ワールド空間の位置が NDC(-1～+1) なら UV = (ndc*0.5+0.5)
-    float2 ndc = p.position.xy;
-    m.x = ndc.x * 0.5 + 0.5;
-    m.y = ndc.y * 0.5 + 0.5;
+    m.x = uv.x;
+    m.y = uv.y;
     m.r = radius;
     m.pad = 0;
-    
+
     // ========================================
-    //  結果を出力
+    //  出力
     // ========================================
     outMeta[i] = m;
 }

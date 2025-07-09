@@ -16,6 +16,8 @@ private:
 	DirectX::XMVECTOR upward;
 	float fov;
 	float aspect;
+	float yaw = 0.0f;   // 左右回転（Y軸）
+	float pitch = 0.0f; // 上下回転（X軸）
 
 	DirectX::XMMATRIX viewMatrix;
 	DirectX::XMMATRIX projMatrix;

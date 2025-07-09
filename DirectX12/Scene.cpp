@@ -36,6 +36,7 @@ namespace fs = std::filesystem;
 
 Scene::Scene(Game* game) : BaseScene(game) {
 	Init();
+
 }
 
 std::wstring ReplaceExtension(const std::wstring& origin, const char* ext)
@@ -49,6 +50,17 @@ std::vector< DescriptorHandle*> materialHandles; // テクスチャ用のハンドル一覧
 
 bool Scene::Init()
 {
+	camera = new Camera();
+	g_Engine->RegisterObj("SceneCamera", camera);
+
+	for (size_t i = 0; i < Engine::FRAME_BUFFER_COUNT; i++) {
+		constantBuffer[i] = new ConstantBuffer(sizeof(Transform));
+		auto ptr = constantBuffer[i]->GetPtr<Transform>();
+		ptr->World = XMMatrixIdentity();
+		ptr->View = camera->GetViewMatrix();
+		ptr->Proj = camera->GetProjMatrix();
+	}
+
 	ImportSettings importSetting =				// 自作の読み込み設定構造体
 	{
 		modelFile,
@@ -94,29 +106,6 @@ bool Scene::Init()
 		}
 
 		indexBuffers.push_back(pIB);
-	}
-
-	// 行列変換
-	eyePos = XMVectorSet(0.0f, 0.0f, 5.0f, 0.0f);										// 視点の位置
-	targetPos = XMVectorZero();															// 視点を向ける座標
-	upward = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);										// 上方向を表すベクトル
-	fov = XMConvertToRadians(37.5);														// 視野角
-	auto aspect = static_cast<float>(WINDOW_WIDTH) / static_cast<float>(WINDOW_HEIGHT); // アスペクト比
-
-	for (size_t i = 0; i < Engine::FRAME_BUFFER_COUNT; i++)
-	{
-		constantBuffer[i] = new ConstantBuffer(sizeof(Transform));
-		if (!constantBuffer[i]->IsValid())
-		{
-			printf("変換行列用定数バッファの生成に失敗\n");
-			return false;
-		}
-
-		// 変換行列の登録
-		auto ptr = constantBuffer[i]->GetPtr<Transform>();
-		ptr->World = XMMatrixIdentity();
-		ptr->View = XMMatrixLookAtRH(eyePos, targetPos, upward);
-		ptr->Proj = XMMatrixPerspectiveFovRH(fov, aspect, 0.3f, 1000.0f);
 	}
 
 	// マテリアルの読み込み
@@ -180,43 +169,12 @@ bool Scene::Init()
 
 void Scene::Update()
 {
-	// カメラ移動
-	if (GetAsyncKeyState('A')) {
-		posX -= 0.1f;
-	}
-	if (GetAsyncKeyState('D')) {
-		posX += 0.1f;
-	}
-	if (GetAsyncKeyState('W')) {
-		posZ -= 0.1f;
-	}
-	if (GetAsyncKeyState('S')) {
-		posZ += 0.1f;
-	}
-	if (GetAsyncKeyState('Q')) {
-		posY -= 0.1f;
-	}
-	if (GetAsyncKeyState('E')) {
-		posY += 0.1f;
-	}
-
-	// カメラ位置を更新
-	eyePos = XMVectorSet(
-		posX,
-		posY,
-		posZ,
-		XMVectorGetW(eyePos));
-
-	// 正面を見るようにする
-	XMVECTOR forward = XMVectorSet(0, 0, -1, 0); // 右手座標系でカメラ前方は -Z
-	targetPos = XMVectorAdd(eyePos, forward);
-
-	// カメラの情報を更新する
+	camera->Update();
 	auto currentIndex = g_Engine->CurrentBackBufferIndex();
 	auto ptr = constantBuffer[currentIndex]->GetPtr<Transform>();
-
 	ptr->World = XMMatrixIdentity();
-	ptr->View = XMMatrixLookAtRH(eyePos, targetPos, upward);
+	ptr->View = camera->GetViewMatrix();
+	ptr->Proj = camera->GetProjMatrix();
 
 	if (GetAsyncKeyState(VK_SPACE)) {
 		m_game->ChangeScene("Game");

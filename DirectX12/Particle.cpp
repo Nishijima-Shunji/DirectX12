@@ -58,7 +58,7 @@ DirectX::XMFLOAT3& operator+=(DirectX::XMFLOAT3& a, const DirectX::XMFLOAT3& b) 
 // =============================================================================
 // main
 // =============================================================================
-Particle::Particle(Camera* cam) : camera(cam) {
+Particle::Particle(Camera* cam) : m_camera(cam) {
 	Init();
 }
 
@@ -91,8 +91,8 @@ void Particle::Draw() {
 
 	auto ptr = m_ConstantBuffer[0]->GetPtr<Transform>();
 	ptr->World = DirectX::XMMatrixIdentity();
-	ptr->View = camera->GetViewMatrix();
-	ptr->Proj = camera->GetProjMatrix();
+	ptr->View = m_camera->GetViewMatrix();
+	ptr->Proj = m_camera->GetProjMatrix();
 
 	commandList->SetGraphicsRootSignature(m_RootSignature->Get());
 	commandList->SetPipelineState(m_PipelineState->Get());
@@ -151,6 +151,7 @@ void Particle::UpdateParticles() {
 	ID3D12DescriptorHeap* heaps[] = { m_computeDescHeap.Get() };
 	cmd->SetDescriptorHeaps(1, heaps);
 	cmd->SetComputeRootConstantBufferView(0, m_paramCB->GetAddress());
+	cmd->SetComputeRootConstantBufferView(1, m_cbViewProj->GetAddress());
 	cmd->SetComputeRootDescriptorTable(1, m_srvHandle);
 	cmd->SetComputeRootDescriptorTable(2, m_uavHandle);
 	cmd->SetComputeRootDescriptorTable(3, m_metaUAVHandle); // outMeta (u1)
@@ -430,54 +431,50 @@ bool Particle::InitMetaball() {
 	}
 
 	// 描画用ディスクリプタヒープに SRV を登録
-	{
-		auto handle = g_Engine->CbvSrvUavHeap()->RegisterBuffer(
-			m_gpuMetaBuffer.Get(),
-			elementCount,
-			elementSize
-		);
-		if (!handle) {
-			printf("描画用 SRV 登録失敗\n");
-			return false;
-		}
-		m_metaSRVHandle = handle->HandleGPU;  // DrawMetaball で使う
+	auto handle = g_Engine->CbvSrvUavHeap()->RegisterBuffer(
+		m_gpuMetaBuffer.Get(),
+		elementCount,
+		elementSize
+	);
+	if (!handle) {
+		printf("描画用 SRV 登録失敗\n");
+		return false;
 	}
+	m_metaSRVHandle = handle->HandleGPU;  // DrawMetaball で使う
 
 
 	// ルートシグネチャ／PSO の作成
-	{
-		CD3DX12_DESCRIPTOR_RANGE ranges[1] = {};
-		ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
+	CD3DX12_DESCRIPTOR_RANGE ranges[1] = {};
+	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
 
-		CD3DX12_ROOT_PARAMETER params[2];
-		params[0].InitAsConstants(4, 0);                       // b0
-		params[1].InitAsDescriptorTable(1, &ranges[0],
-			D3D12_SHADER_VISIBILITY_PIXEL);
+	CD3DX12_ROOT_PARAMETER params[2];
+	params[0].InitAsConstants(4, 0);                       // b0
+	params[1].InitAsDescriptorTable(1, &ranges[0],
+		D3D12_SHADER_VISIBILITY_PIXEL);
 
-		CD3DX12_STATIC_SAMPLER_DESC sampler(0);
-		sampler.Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+	CD3DX12_STATIC_SAMPLER_DESC sampler(0);
+	sampler.Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
 
-		CD3DX12_ROOT_SIGNATURE_DESC rsDesc;
-		rsDesc.Init(_countof(params), params,
-			1, &sampler,
-			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+	CD3DX12_ROOT_SIGNATURE_DESC rsDesc;
+	rsDesc.Init(_countof(params), params,
+		1, &sampler,
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-		m_MetaRootSig = new RootSignature();
-		m_MetaRootSig->Init(rsDesc);
+	m_MetaRootSig = new RootSignature();
+	m_MetaRootSig->Init(rsDesc);
 
-		m_MetaPSO = new ParticlePipelineState();
-		m_MetaPSO->SetRootSignature(m_MetaRootSig->Get());
-		// フルスクリーン三角用
-		D3D12_INPUT_ELEMENT_DESC elems[] = {
-			{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
-			  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
-		};
-		D3D12_INPUT_LAYOUT_DESC layout{ elems, 1 };
-		m_MetaPSO->SetInputLayout(layout);
-		m_MetaPSO->SetVS(L"MetaBallVS.cso");
-		m_MetaPSO->SetPS(L"MetaBallPS.cso");
-		m_MetaPSO->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-	}
+	m_MetaPSO = new ParticlePipelineState();
+	m_MetaPSO->SetRootSignature(m_MetaRootSig->Get());
+	// フルスクリーン三角用
+	D3D12_INPUT_ELEMENT_DESC elems[] = {
+		{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
+		  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+	};
+	D3D12_INPUT_LAYOUT_DESC layout{ elems, 1 };
+	m_MetaPSO->SetInputLayout(layout);
+	m_MetaPSO->SetVS(L"MetaBallVS.cso");
+	m_MetaPSO->SetPS(L"MetaBallPS.cso");
+	m_MetaPSO->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 
 	return true;
 }
@@ -554,6 +551,13 @@ bool Particle::InitComputeShader()
 	m_paramCB = new ConstantBuffer(sizeof(SPHParams));
 	if (!m_paramCB || !m_paramCB->IsValid()) {
 		printf("Compute用定数バッファの作成に失敗\n");
+		return false;
+	}
+
+	// ビュープロジェクション用定数バッファを作成
+	m_cbViewProj = new ConstantBuffer(sizeof(DirectX::XMMATRIX));
+	if (!m_cbViewProj || !m_cbViewProj->IsValid()) {
+		printf("viewProj用定数バッファの作成に失敗\n");
 		return false;
 	}
 
@@ -704,6 +708,16 @@ void Particle::DrawMetaball() {
 
 	// t0: metaball
 	cmd->SetGraphicsRootDescriptorTable(1, m_metaSRVHandle);
+
+	// カメラから取得（前提済み）
+
+	DirectX::XMMATRIX view = m_camera->GetViewMatrix();
+	DirectX::XMMATRIX proj = m_camera->GetProjMatrix();
+	DirectX::XMMATRIX viewProj = DirectX::XMMatrixMultiply(view, proj);
+
+	viewProj = XMMatrixTranspose(viewProj);
+	m_cbViewProj->GetPtr<DirectX::XMMATRIX>()[0] = viewProj;
+	cmd->SetComputeRootConstantBufferView(1, m_cbViewProj->GetAddress());
 
 	// VB/IA 設定
 	auto vbv = m_QuadVB->View();

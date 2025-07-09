@@ -84,6 +84,8 @@ private:
 	// 描画用に描画ヒープへ登録する SRV の GPU ハンドル
 	D3D12_GPU_DESCRIPTOR_HANDLE m_metaSRVHandle;
 
+	ConstantBuffer* m_cbViewProj = nullptr; // ビュー・プロジェクション行列用定数バッファ
+
 	// ComputeShader用
 	// Compute 用ルートシグネチャ／PSO
 	ComputeRootSignature            m_computeRS;
@@ -119,7 +121,7 @@ private:
 	UINT64											m_computeFenceCounter = 0;
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_computeCommandLists[FrameCount];
 
-	Camera* camera;
+	Camera* m_camera;
 	SPHParams m_SPHParams;
 
 	int ParticleCount = 80;
