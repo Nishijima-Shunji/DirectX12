@@ -27,6 +27,13 @@ struct FullscreenVertex {
 struct Point {
 	Vector3 position = {};
 	Vector3 velocity = {};
+	float radius = 0.1f; // パーティクルの半径
+};
+
+struct ParticleMeta {
+	float x, y;    // スクリーン空間(0～1) or NDC(-1～1) 座標
+	float r;       // 半径（スクリーン空間 or NDC いずれかに合わせる）
+	float pad;     // 16 バイト境界合わせ
 };
 
 // パーティクルの物理パラメータ
@@ -37,7 +44,7 @@ struct SPHParams {
 	float stiffness = 200.0f;
 	float radius = 0.1f;
 	float timeStep = 0.016f;
-	UINT particleCount = 0;
+	UINT particleCount = 80;
 };
 
 struct InstanceData {
@@ -67,10 +74,15 @@ private:
 	VertexBuffer* m_QuadVB = nullptr;
 	RootSignature* m_MetaRootSig = nullptr;
 	ParticlePipelineState* m_MetaPSO = nullptr;
-	ID3D12Resource* m_ParticleSBGPU = nullptr;
-	ID3D12Resource* m_ParticleSBUpload = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_ParticleSBGPU = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_ParticleSBUpload = nullptr;
 	D3D12_GPU_DESCRIPTOR_HANDLE m_ParticleSB_SRV; // SRVハンドル
-
+	// ComputeShader の outMeta UAV 用リソース
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuMetaBuffer;
+	// ComputeDescriptorHeap に登録する outMeta UAV の GPU ハンドル
+	D3D12_GPU_DESCRIPTOR_HANDLE m_metaUAVHandle;
+	// 描画用に描画ヒープへ登録する SRV の GPU ハンドル
+	D3D12_GPU_DESCRIPTOR_HANDLE m_metaSRVHandle;
 
 	// ComputeShader用
 	// Compute 用ルートシグネチャ／PSO
@@ -90,18 +102,27 @@ private:
 	D3D12_GPU_DESCRIPTOR_HANDLE		m_srvHandle{};	// t0
 	D3D12_GPU_DESCRIPTOR_HANDLE		m_uavHandle{};	// u0
 
+
 	// GPU待機用のフェンス
 	ComPtr<ID3D12Fence> m_fence;
 	static constexpr UINT FrameCount = 3;
 	UINT64 m_fenceValue[FrameCount] = {};
 	HANDLE m_fenceEvent = nullptr;
+	UINT64 m_fenceCounter = 0;
 
-
+	// Compute用のフェンス
+	static constexpr UINT FrameCountCOM = 3;
+	Microsoft::WRL::ComPtr<ID3D12CommandAllocator>	m_computeAllocators[FrameCount];
+	Microsoft::WRL::ComPtr<ID3D12Fence>				m_computeFence;
+	UINT64											m_computeFenceValues[FrameCount] = {};
+	HANDLE											m_computeFenceEvent = nullptr;
+	UINT64											m_computeFenceCounter = 0;
+	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_computeCommandLists[FrameCount];
 
 	Camera* camera;
 	SPHParams m_SPHParams;
 
-	int ParticleCount = 200;
+	int ParticleCount = 80;
 public:
 	Particle(Camera* cam);
 	bool Init();
@@ -116,8 +137,9 @@ public:
 
 	// 更新関数
 	void UpdateParticles();
-	void UpdateVertexBuffer();
-	void UpdateInstanceBuffer();
+
+	// 描画関数
+	void DrawMetaball();
 
 	// SPH用の関数
 	void ComputeDensityPressure(std::vector<float>& densities, std::vector<float>& pressures);

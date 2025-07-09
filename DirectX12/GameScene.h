@@ -10,13 +10,13 @@
 class GameScene : public BaseScene
 {
 private:
-	std::unique_ptr<Particle> particle;
-	Camera* cam;
+	ConstantBuffer* constantBuffer[Engine::FRAME_BUFFER_COUNT];
 
+	std::unique_ptr<Particle> particle;
 public:
 	GameScene(Game* game);
 	~GameScene();
-	bool Init() override; 
+	bool Init() override;
 	void Update() override;
 	void Draw() override;
 };

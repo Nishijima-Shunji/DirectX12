@@ -1,4 +1,4 @@
-// register(b0) は後で ConstantBuffer に紐づけ
+// register(b0)は後でConstantBufferに紐づけ
 cbuffer ScreenCB : register(b0)
 {
     float2 screenSize;   // (幅, 高さ)
@@ -6,9 +6,15 @@ cbuffer ScreenCB : register(b0)
     float pad0, pad1;
 };
 
-// t0 に StructuredBuffer<float4> パーティクル配列をバインド
-StructuredBuffer<float4> Particles : register(t0);
-// float4(x_ndc, y_ndc, radius_ndc, unused)
+// t0 にStructuredBuffer<float4> パーティクル配列をバインド
+struct ParticleMeta
+{
+    float x;    // UV or NDC.x
+    float y;    // UV or NDC.y
+    float r;    // 半径
+    float pad;  // ダミー
+};
+StructuredBuffer<ParticleMeta> Particles : register(t0);
 
 struct VSInput
 {

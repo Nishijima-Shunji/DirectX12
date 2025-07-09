@@ -76,24 +76,23 @@ bool Particle::Init() {
 		return false;
 	}
 
+
 	return true;
 }
 
 void Particle::Update() {
 	UpdateParticles();
-	//UpdateVertexBuffer();
-	UpdateInstanceBuffer();
-
-	auto ptr = m_ConstantBuffer[0]->GetPtr<Transform>();
-	ptr->World = DirectX::XMMatrixIdentity();
-	ptr->View = DirectX::XMMatrixLookAtRH(camera->GetEyePos(), camera->GetTargetPos(), camera->GetUpward());
-	ptr->Proj = DirectX::XMMatrixPerspectiveFovRH(camera->GetFov(), camera->GetAspect(), 0.3f, 1000.0f);
 }
 
 void Particle::Draw() {
 	auto commandList = g_Engine->CommandList();
 
-	int frameIndex = 0;
+	int frameIndex = g_Engine->CurrentBackBufferIndex();
+
+	auto ptr = m_ConstantBuffer[0]->GetPtr<Transform>();
+	ptr->World = DirectX::XMMatrixIdentity();
+	ptr->View = camera->GetViewMatrix();
+	ptr->Proj = camera->GetProjMatrix();
 
 	commandList->SetGraphicsRootSignature(m_RootSignature->Get());
 	commandList->SetPipelineState(m_PipelineState->Get());
@@ -111,145 +110,97 @@ void Particle::Draw() {
 	commandList->IASetIndexBuffer(&ibView);
 	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-	// インスタンス描画
-	commandList->DrawIndexedInstanced(
-		m_IndexCount,               // 球メッシュのインデックス数
-		(UINT)m_Particles.size(),   // インスタンス数
-		0, 0, 0);
+	//// インスタンス描画
+	//commandList->DrawIndexedInstanced(
+	//	m_IndexCount,               // 球メッシュのインデックス数
+	//	(UINT)m_Particles.size(),   // インスタンス数
+	//	0, 0, 0);
 
 
-	// ====================================================
-	// --- Metaball 描画 ---
-	auto cmd = g_Engine->CommandList();
-
-	// SRV/UAV 用ヒープをルートにバインド
-	ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
-	cmd->SetDescriptorHeaps(_countof(heaps), heaps);
-
-	cmd->SetPipelineState(m_MetaPSO->Get());
-	cmd->SetGraphicsRootSignature(m_MetaRootSig->Get());
-
-	// b0: screenSize + threshold
-	struct {
-		float w;
-		float h;
-		float thr;
-		UINT count;
-	} cbv = {
-	(float)g_Engine->FrameBufferWidth(), (float)g_Engine->FrameBufferHeight(),
-	/*threshold=*/0.5f,
-	ParticleCount
-	};
-	cmd->SetGraphicsRoot32BitConstants(0, 4, &cbv, 0);
-
-	// t0: Particle SB
-	cmd->SetGraphicsRootDescriptorTable(1, m_ParticleSB_SRV);
-
-	// VB/IA 設定
-	auto vbv = m_QuadVB->View();
-	cmd->IASetVertexBuffers(0, 1, &vbv);
-	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
-	// 三角１枚
-	cmd->DrawInstanced(3, 1, 0, 0);
+	// メタボール描画
+	DrawMetaball();
 }
 
 
 void Particle::UpdateParticles() {
 	UINT frameIndex = g_Engine->CurrentBackBufferIndex();
+	auto device = g_Engine->Device();
+	auto queue = g_Engine->ComputeCommandQueue();
+	auto cmd = m_computeCommandLists[frameIndex].Get();
 
-	auto device		= g_Engine->Device();
-	auto cmd		= g_Engine->CommandList();
-	auto allocator	= g_Engine->CommandAllocator(frameIndex);
-	auto queue		= g_Engine->CommandQueue();
-
-	// FenceでGPUの完了を確認
-	if (m_fence->GetCompletedValue() < m_fenceValue[frameIndex]) {
-		m_fence->SetEventOnCompletion(m_fenceValue[frameIndex], m_fenceEvent);
-		WaitForSingleObject(m_fenceEvent, INFINITE);
+	// 前フレームが終わるまで待つ
+	UINT64 waitVal = m_computeFenceValues[frameIndex];
+	if (m_computeFence->GetCompletedValue() < waitVal) {
+		m_computeFence->SetEventOnCompletion(waitVal, m_computeFenceEvent);
+		WaitForSingleObject(m_computeFenceEvent, INFINITE);
 	}
 
-	// 安全にReset
-	allocator->Reset();
-	cmd->Reset(allocator, nullptr);
+	// Compute専用アロケーターとコマンドリストをリセット
+	auto compAlloc = m_computeAllocators[frameIndex].Get();
+	compAlloc->Reset();
+
+	cmd->Reset(m_computeAllocators[frameIndex].Get(), nullptr);
 
 	// 定数バッファ更新
 	m_SPHParams.particleCount = static_cast<UINT>(m_Particles.size());
 	memcpy(m_paramCB->GetPtr(), &m_SPHParams, sizeof(SPHParams));
 
-	// ルートシグネチャとPSO
-	cmd->SetComputeRootSignature(m_computeRS.Get());
+	// Computeシェーダー実行設定
 	cmd->SetPipelineState(m_computePSO.Get());
-
-	// ディスクリプタヒープ設定
+	cmd->SetComputeRootSignature(m_computeRS.Get());
 	ID3D12DescriptorHeap* heaps[] = { m_computeDescHeap.Get() };
 	cmd->SetDescriptorHeaps(1, heaps);
-
 	cmd->SetComputeRootConstantBufferView(0, m_paramCB->GetAddress());
 	cmd->SetComputeRootDescriptorTable(1, m_srvHandle);
 	cmd->SetComputeRootDescriptorTable(2, m_uavHandle);
+	cmd->SetComputeRootDescriptorTable(3, m_metaUAVHandle); // outMeta (u1)
 
-	// コンピュートシェーダー実行
 	UINT groups = (ParticleCount + 255) / 256;
 	cmd->Dispatch(groups, 1, 1);
 
-	// UAVバリア（ping-pong用）
-	D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::UAV(nullptr);
-	cmd->ResourceBarrier(1, &barrier);
+	// UAV バリア：UAV 書き込み完了を待つ
+	D3D12_RESOURCE_BARRIER uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(nullptr);
+	cmd->ResourceBarrier(1, &uavBarrier);
 
-	// CPU→UploadBuffer へ書き込み
-	ParticleSB* mapped = nullptr;
-	CD3DX12_RANGE readRange(0, 0);
-	m_ParticleSBUpload->Map(0, &readRange, reinterpret_cast<void**>(&mapped));
-	if (!mapped) {
-		printf("UploadBufferのマッピングに失敗\n");
-		return;
-	}
-
-	// カメラ行列を用意
-	DirectX::XMMATRIX view = DirectX::XMMatrixLookAtRH(
-		camera->GetEyePos(),
-		camera->GetTargetPos(),
-		camera->GetUpward()
-	);
-	DirectX::XMMATRIX proj = DirectX::XMMatrixPerspectiveFovRH(
-		camera->GetFov(),
-		camera->GetAspect(),
-		0.3f,
-		1000.0f
-	);
-	DirectX::XMMATRIX vpT = DirectX::XMMatrixTranspose(view * proj);
-	float projScaleX = DirectX::XMVectorGetX(proj.r[0]);
-
-	for (int i = 0; i < ParticleCount; ++i) {
-		auto& P = m_Particles[i].position;
-		DirectX::XMVECTOR worldPos = DirectX::XMVectorSet(P.x, P.y, P.z, 1.0f);
-		DirectX::XMVECTOR clip = DirectX::XMVector3Transform(worldPos, vpT);
-		float w = DirectX::XMVectorGetW(clip);
-		DirectX::XMVECTOR ndc = DirectX::XMVectorScale(clip, 1.0f / w);
-		float x = DirectX::XMVectorGetX(ndc) * 0.5f + 0.5f;
-		float y = 1.0f - (DirectX::XMVectorGetY(ndc) * 0.5f + 0.5f);
-		float r_uv = m_SPHParams.radius * projScaleX / w * 0.5f;
-
-		mapped[i] = { x, y, r_uv, 0 };
-	}
-
-	m_ParticleSBUpload->Unmap(0, nullptr);
-
-	// CopyResource（CommandList内に配置）
-	cmd->CopyResource(m_ParticleSBGPU, m_ParticleSBUpload);
-
-	// コマンドリストを閉じる
-	cmd->Close();
-
-	// 実行＆フェンス
-	ID3D12CommandList* cmdLists[] = { cmd };
-	queue->ExecuteCommandLists(1, cmdLists);
-	queue->Signal(m_fence.Get(), ++m_fenceValue[frameIndex]);
-
-	// ping-pong バッファ入れ替え
+	// Ping-Pong バッファ＆ディスクリプタ更新
 	std::swap(m_gpuInBuffer, m_gpuOutBuffer);
+	std::swap(m_srvHandle, m_uavHandle);
+
+	// CPU ディスクリプタヒープ先頭／インクリメント取得
+	auto cpuStart = m_computeDescHeap->GetCPUDescriptorHandleForHeapStart();
+	UINT inc = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+	// SRV (t0) を更新
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	srvDesc.Buffer.NumElements = ParticleCount;
+	srvDesc.Buffer.StructureByteStride = sizeof(Point);
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	device->CreateShaderResourceView(m_gpuInBuffer.Get(), &srvDesc, CD3DX12_CPU_DESCRIPTOR_HANDLE(cpuStart, 1, inc));
+
+	// UAV (u0) を更新
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+	uavDesc.Buffer.NumElements = ParticleCount;
+	uavDesc.Buffer.StructureByteStride = sizeof(Point);
+	device->CreateUnorderedAccessView(m_gpuOutBuffer.Get(), nullptr, &uavDesc, CD3DX12_CPU_DESCRIPTOR_HANDLE(cpuStart, 2, inc));
+
+
+	// コマンド送信
+	cmd->Close();
+	ID3D12CommandList* lists[]{ cmd };
+	queue->ExecuteCommandLists(1, lists);
+
+	UINT64 nextVal = ++m_computeFenceCounter;
+	queue->Signal(m_computeFence.Get(), nextVal);
+	m_computeFenceValues[frameIndex] = nextVal;
+
+	// グラフィックス側でもこのフェンス値を待つ
+	auto graphicsQ = g_Engine->CommandQueue();
+	graphicsQ->Wait(m_computeFence.Get(), nextVal);
 }
+
+
 
 
 void Particle::ComputeDensityPressure(std::vector<float>& densities, std::vector<float>& pressures) {
@@ -349,53 +300,6 @@ void Particle::Integrate(const std::vector<Vector3>& forces) {
 	}
 }
 
-// 描画前にGPUバッファに反映させる
-void Particle::UpdateVertexBuffer() {
-	std::vector<ParticleVertex> vertices(m_Particles.size());
-	for (size_t i = 0; i < m_Particles.size(); ++i) {
-		vertices[i].position = m_Particles[i].position;
-	}
-
-	void* ptr = nullptr;
-	m_VertexBuffer->GetResource()->Map(0, nullptr, &ptr);
-	memcpy(ptr, vertices.data(), sizeof(ParticleVertex) * vertices.size());
-	m_VertexBuffer->GetResource()->Unmap(0, nullptr);
-}
-
-void Particle::UpdateInstanceBuffer()
-{
-	UINT frameIndex = g_Engine->CurrentBackBufferIndex();
-	if (m_fence->GetCompletedValue() < m_fenceValue[frameIndex]) {
-		m_fence->SetEventOnCompletion(m_fenceValue[frameIndex], m_fenceEvent);
-		WaitForSingleObject(m_fenceEvent, INFINITE);
-	}
-
-	std::vector<InstanceData> instances(m_Particles.size());
-	for (size_t i = 0; i < m_Particles.size(); ++i) {
-		auto pos = m_Particles[i].position;
-		float r = m_SPHParams.radius;
-		DirectX::XMMATRIX scale = DirectX::XMMatrixScaling(r, r, r);
-		DirectX::XMMATRIX trans = DirectX::XMMatrixTranslation(pos.x, pos.y, pos.z);
-		DirectX::XMMATRIX worldT = XMMatrixTranspose(scale * trans);
-
-		InstanceData& data = instances[i];
-		XMStoreFloat4(&data.row0, worldT.r[0]);
-		XMStoreFloat4(&data.row1, worldT.r[1]);
-		XMStoreFloat4(&data.row2, worldT.r[2]);
-		XMStoreFloat4(&data.row3, worldT.r[3]);
-	}
-
-	void* ptr = nullptr;
-	HRESULT hr = m_InstanceBuffer->GetResource()->Map(0, nullptr, &ptr);
-	if (FAILED(hr) || !ptr) {
-		printf("インスタンスバッファ Map に失敗\n");
-		return;
-	}
-	memcpy(ptr, instances.data(), sizeof(InstanceData) * instances.size());
-	m_InstanceBuffer->GetResource()->Unmap(0, nullptr);
-}
-
-
 
 // ==========================================================================
 // 初期化処理関係
@@ -457,8 +361,8 @@ bool Particle::InitParticle() {
 	m_PipelineState = new ParticlePipelineState();
 	m_PipelineState->SetInputLayout(ParticleVertex::ParticleInputLayout);
 	m_PipelineState->SetRootSignature(m_RootSignature->Get());
-	m_PipelineState->SetVS(L"../x64/Debug/ParticleVS.cso");
-	m_PipelineState->SetPS(L"../x64/Debug/ParticlePS.cso");
+	m_PipelineState->SetVS(L"ParticleVS.cso");
+	m_PipelineState->SetPS(L"ParticlePS.cso");
 
 	m_PipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 	if (!m_PipelineState->IsValid()) {
@@ -494,108 +398,87 @@ bool Particle::InitMesh() {
 }
 
 bool Particle::InitMetaball() {
-	// フルスクリーントライアングル頂点バッファ生成
-	FullscreenVertex quad[3] = {
-		{{-1,  1}},
-		{{ 3,  1}},
-		{{-1, -3}}
-	};
+	auto device = g_Engine->Device();
+
+	// フルスクリーントライアングル頂点バッファ
+	FullscreenVertex quad[3] = { {{-1,1}}, {{3,1}}, {{-1,-3}} };
 	m_QuadVB = new VertexBuffer(
 		sizeof(FullscreenVertex) * 3,
 		sizeof(FullscreenVertex),
-		quad);
+		quad
+	);
 
-	// パーティクル SB(StructuredBuffer) 用 GPU & Upload バッファ
-	UINT64 sbSize = sizeof(ParticleSB) * ParticleCount;
-
-	// --- デフォルトヒープ用リソース ---
-	// ローカル変数に束縛
-	CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
-	CD3DX12_RESOURCE_DESC   defaultResDesc = CD3DX12_RESOURCE_DESC::Buffer(sbSize);
-
-	HRESULT hr = g_Engine->Device()->CreateCommittedResource(
-		&defaultHeapProps,                   // ← 変数のアドレスを渡す
-		D3D12_HEAP_FLAG_NONE,
-		&defaultResDesc,                     // ← 変数のアドレスを渡す
-		D3D12_RESOURCE_STATE_COPY_DEST,
+	// ParticleMeta 用 GPU バッファを作成
+	UINT elementCount = (UINT)m_Particles.size();
+	UINT elementSize = sizeof(ParticleMeta);      // =16 バイト
+	UINT bufferSize = elementCount * elementSize;
+	CD3DX12_HEAP_PROPERTIES heapDef(D3D12_HEAP_TYPE_DEFAULT);
+	CD3DX12_RESOURCE_DESC   descDef = CD3DX12_RESOURCE_DESC::Buffer(
+		bufferSize,
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS  // UAV 用にフラグ
+	);
+	HRESULT hr = device->CreateCommittedResource(
+		&heapDef, D3D12_HEAP_FLAG_NONE,
+		&descDef,
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 		nullptr,
-		IID_PPV_ARGS(&m_ParticleSBGPU)
+		IID_PPV_ARGS(&m_gpuMetaBuffer)
 	);
 	if (FAILED(hr)) {
-		printf("デフォルトヒープ作成失敗\n");
+		printf("m_gpuMetaBuffer 作成失敗: 0x%08X\n", hr);
 		return false;
 	}
 
-	// --- アップロードヒープ用リソース ---
-	CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
-	CD3DX12_RESOURCE_DESC   uploadResDesc = CD3DX12_RESOURCE_DESC::Buffer(sbSize);
-
-	hr = g_Engine->Device()->CreateCommittedResource(
-		&uploadHeapProps,                    // ← 変数のアドレスを渡す
-		D3D12_HEAP_FLAG_NONE,
-		&uploadResDesc,                      // ← 変数のアドレスを渡す
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&m_ParticleSBUpload)
-	);
-	if (FAILED(hr)) {
-		printf("アップロードヒープ作成失敗\n");
-		return false;
-	}
-
-	// SRV ディスクリプタ準備 
-	auto handle = g_Engine->CbvSrvUavHeap()->RegisterBuffer(
-		m_ParticleSBGPU,       // ID3D12Resource*
-		ParticleCount,         // 要素数
-		sizeof(ParticleSB)     // １要素のバイト幅
-	);
-	if (!handle) {
-		// エラー処理
-		printf("Particle SB 用 SRV の登録に失敗\n");
-		return false;
-	}
-	// ピクセルシェーダーで SetGraphicsRootDescriptorTable に使う GPU ハンドル
-	m_ParticleSB_SRV = handle->HandleGPU;
-
-	// RootSignature 作成
+	// 描画用ディスクリプタヒープに SRV を登録
 	{
-		CD3DX12_DESCRIPTOR_RANGE ranges[1];
+		auto handle = g_Engine->CbvSrvUavHeap()->RegisterBuffer(
+			m_gpuMetaBuffer.Get(),
+			elementCount,
+			elementSize
+		);
+		if (!handle) {
+			printf("描画用 SRV 登録失敗\n");
+			return false;
+		}
+		m_metaSRVHandle = handle->HandleGPU;  // DrawMetaball で使う
+	}
+
+
+	// ルートシグネチャ／PSO の作成
+	{
+		CD3DX12_DESCRIPTOR_RANGE ranges[1] = {};
 		ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
 
 		CD3DX12_ROOT_PARAMETER params[2];
-		// b0: screenSize + threshold
-		params[0].InitAsConstants(4, 0);
-		// t0: パーティクル SB
-		params[1].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_PIXEL);
+		params[0].InitAsConstants(4, 0);                       // b0
+		params[1].InitAsDescriptorTable(1, &ranges[0],
+			D3D12_SHADER_VISIBILITY_PIXEL);
 
 		CD3DX12_STATIC_SAMPLER_DESC sampler(0);
 		sampler.Init(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
 
-		CD3DX12_ROOT_SIGNATURE_DESC rsigDesc;
-		rsigDesc.Init(
-			_countof(params), params,
+		CD3DX12_ROOT_SIGNATURE_DESC rsDesc;
+		rsDesc.Init(_countof(params), params,
 			1, &sampler,
 			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
 		m_MetaRootSig = new RootSignature();
-		m_MetaRootSig->Init(rsigDesc);
-	}
+		m_MetaRootSig->Init(rsDesc);
 
-	// PSO 作成
-	{
 		m_MetaPSO = new ParticlePipelineState();
 		m_MetaPSO->SetRootSignature(m_MetaRootSig->Get());
-		// フルスクリーン用入力レイアウト
+		// フルスクリーン三角用
 		D3D12_INPUT_ELEMENT_DESC elems[] = {
 			{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0,
 			  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 		};
 		D3D12_INPUT_LAYOUT_DESC layout{ elems, 1 };
 		m_MetaPSO->SetInputLayout(layout);
-		m_MetaPSO->SetVS(L"../x64/Debug/MetaballVS.cso");
-		m_MetaPSO->SetPS(L"../x64/Debug/MetaballPS.cso");
+		m_MetaPSO->SetVS(L"MetaBallVS.cso");
+		m_MetaPSO->SetPS(L"MetaBallPS.cso");
 		m_MetaPSO->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 	}
+
 	return true;
 }
 
@@ -603,6 +486,30 @@ bool Particle::InitComputeShader()
 {
 	// コンピュートシェーダー用のリソースを初期化
 	ID3D12Device* device = g_Engine->Device();
+
+	// Compute専用アロケーターをフレーム数分作成
+	for (UINT i = 0; i < FrameCount; ++i) {
+		HRESULT hr = device->CreateCommandAllocator(
+			D3D12_COMMAND_LIST_TYPE_COMPUTE,
+			IID_PPV_ARGS(&m_computeAllocators[i]));
+		if (FAILED(hr)) {
+			printf("ComputeAllocator[%u] の作成に失敗 HRESULT=0x%08X\n", i, hr);
+			return false;
+		}
+
+		device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, m_computeAllocators[i].Get(), nullptr, IID_PPV_ARGS(&m_computeCommandLists[i]));
+		// 生成後は一度 Close() しておく
+		m_computeCommandLists[i]->Close();
+	}
+
+	// Compute専用フェンス
+	HRESULT hr = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_computeFence));
+	if (FAILED(hr)) {
+		printf("ComputeFence の作成に失敗 HRESULT=0x%08X\n", hr);
+		return false;
+	}
+	m_computeFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+
 
 	// フェンスの初期化
 	device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence));
@@ -617,7 +524,8 @@ bool Particle::InitComputeShader()
 	CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
 	// 入力用バッファ
-	HRESULT hr = device->CreateCommittedResource( &heapProp, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,	nullptr, IID_PPV_ARGS(&m_gpuInBuffer));
+	hr = device->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr, IID_PPV_ARGS(&m_gpuInBuffer));
+	m_gpuInBuffer->SetName(L"Particle_In");
 	if (FAILED(hr)) {
 		printf("m_gpuInBuffer 作成失敗\n");
 		return false;
@@ -625,10 +533,12 @@ bool Particle::InitComputeShader()
 
 	// 出力用バッファ
 	hr = device->CreateCommittedResource(&heapProp, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_gpuOutBuffer));
+	m_gpuOutBuffer->SetName(L"Particle_Out");
 	if (FAILED(hr)) {
 		printf("m_gpuOutBuffer 作成失敗\n");
 		return false;
 	}
+
 
 	// Compute用ルートシグネチャの初期化
 	if (!m_computeRS.InitForSPH()) {
@@ -637,7 +547,7 @@ bool Particle::InitComputeShader()
 
 	// Compute PSO 設定
 	m_computePSO.SetRootSignature(m_computeRS.Get());
-	m_computePSO.SetCS(L"../x64/Debug/ParticleCS.cso"); // ※コンパイル済みCSOを前提にしている
+	m_computePSO.SetCS(L"ParticleCS.cso");
 	m_computePSO.Create();
 
 	// 定数バッファ（SPHParams）を作成
@@ -652,7 +562,7 @@ bool Particle::InitComputeShader()
 
 	// ディスクリプタヒープ（CBV, SRV, UAV）作成
 	D3D12_DESCRIPTOR_HEAP_DESC heapDesc = {};
-	heapDesc.NumDescriptors = 3;
+	heapDesc.NumDescriptors = 4;
 	heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	if (FAILED(device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(&m_computeDescHeap)))) {
@@ -700,7 +610,113 @@ bool Particle::InitComputeShader()
 	m_srvHandle.ptr = gpuHeapStart.ptr + handleSize * 1;   // t0
 	m_uavHandle.ptr = gpuHeapStart.ptr + handleSize * 2;   // u0
 
+
+	// CPU 側ハンドルを slot3 にオフセット
+	D3D12_CPU_DESCRIPTOR_HANDLE cpuUAV = m_computeDescHeap->GetCPUDescriptorHandleForHeapStart();
+	cpuUAV.ptr += handleSize * 3;
+
+	// outMeta 用 UAV の記述
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDescMeta = {};
+	uavDescMeta.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+	uavDescMeta.Buffer.FirstElement = 0;
+	uavDescMeta.Buffer.NumElements = static_cast<UINT>(m_Particles.size());
+	uavDescMeta.Buffer.StructureByteStride = sizeof(ParticleMeta);
+	uavDescMeta.Format = DXGI_FORMAT_UNKNOWN;
+
+	// UAV 作成
+	device->CreateUnorderedAccessView(m_gpuMetaBuffer.Get(), nullptr, &uavDescMeta, cpuUAV);
+
+	// GPU 側ハンドルを同じ slot3 で計算して保持
+	m_metaUAVHandle = m_computeDescHeap->GetGPUDescriptorHandleForHeapStart();
+	m_metaUAVHandle.ptr += handleSize * 3;
+
+
+	// 初期データを GPU 入力バッファにコピー
+	ComPtr<ID3D12Resource> uploadBuf;
+	CD3DX12_HEAP_PROPERTIES upProps(D3D12_HEAP_TYPE_UPLOAD);
+	CD3DX12_RESOURCE_DESC   resDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+	device->CreateCommittedResource(&upProps, D3D12_HEAP_FLAG_NONE, &resDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&uploadBuf));
+	if (FAILED(hr)) {
+		printf("アップロードバッファの作成に失敗\n");
+		return false;
+	}
+
+
+	// メモリ書き込み
+	void* p;  uploadBuf->Map(0, nullptr, &p);
+	memcpy(p, m_Particles.data(), bufferSize);
+	uploadBuf->Unmap(0, nullptr);
+
+	// コマンドで inBuffer にコピー
+	auto cmd = g_Engine->CommandList();
+	auto alloc = g_Engine->CommandAllocator(0);
+	alloc->Reset();
+	cmd->Reset(alloc, nullptr);
+	cmd->CopyResource(m_gpuInBuffer.Get(), uploadBuf.Get());
+	CD3DX12_RESOURCE_BARRIER br = CD3DX12_RESOURCE_BARRIER::Transition(m_gpuInBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	cmd->ResourceBarrier(1, &br);
+	cmd->Close();
+	ID3D12CommandList* lists[]{ cmd };
+	g_Engine->CommandQueue()->ExecuteCommandLists(1, lists);
+	g_Engine->Flush();
+
+	Sleep(10);
+
 	return true;
+}
+
+
+// ==========================================================================
+// 描画処理関係
+// ==========================================================================
+// Metaball 描画
+void Particle::DrawMetaball() {
+	auto cmd = g_Engine->CommandList();
+
+	// UAVバリア
+	D3D12_RESOURCE_BARRIER uavBar = CD3DX12_RESOURCE_BARRIER::UAV(m_gpuMetaBuffer.Get());
+	cmd->ResourceBarrier(1, &uavBar);
+
+	// ステート遷移
+	D3D12_RESOURCE_BARRIER trans = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_gpuMetaBuffer.Get(),
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+	);
+	cmd->ResourceBarrier(1, &trans);
+
+	// SRV/UAV 用ヒープをルートにバインド
+	ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
+	cmd->SetDescriptorHeaps(_countof(heaps), heaps);
+
+	cmd->SetPipelineState(m_MetaPSO->Get());
+	cmd->SetGraphicsRootSignature(m_MetaRootSig->Get());
+
+	// b0: screenSize + threshold
+	struct {
+		float w;
+		float h;
+		float thr;
+		UINT count;
+	} cbv = {
+	(float)g_Engine->FrameBufferWidth(), (float)g_Engine->FrameBufferHeight(), 0.5f, ParticleCount };
+	cmd->SetGraphicsRoot32BitConstants(0, 4, &cbv, 0);
+
+	// t0: metaball
+	cmd->SetGraphicsRootDescriptorTable(1, m_metaSRVHandle);
+
+	// VB/IA 設定
+	auto vbv = m_QuadVB->View();
+	cmd->IASetVertexBuffers(0, 1, &vbv);
+	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	cmd->DrawInstanced(3, 1, 0, 0);
+
+	D3D12_RESOURCE_BARRIER back = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_gpuMetaBuffer.Get(),
+		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS
+	);
+	cmd->ResourceBarrier(1, &back);
 }
 
 

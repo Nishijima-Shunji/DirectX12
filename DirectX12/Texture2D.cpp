@@ -6,7 +6,7 @@
 
 using namespace DirectX;
 
-// std::string(マルチバイト文字列)からstd::wstring(ワイド文字列)を得る。AssimpLoaderと同じものだけど、共用にするのがめんどくさかったので許してください
+// std::string(マルチバイト文字列)からstd::wstring(ワイド文字列)を得る
 std::wstring GetWideString(const std::string& str)
 {
 	auto num1 = MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED | MB_ERR_INVALID_CHARS, str.c_str(), -1, nullptr, 0);

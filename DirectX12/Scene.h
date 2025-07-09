@@ -8,6 +8,7 @@ private:
 	float rotateY = 0.0f;
 	float posX = 0.0f;
 	float posY = 0.0f;
+	float posZ = 0.0f;
 
 	DirectX::XMVECTOR eyePos;
 	DirectX::XMVECTOR targetPos;

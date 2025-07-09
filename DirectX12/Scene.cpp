@@ -165,8 +165,8 @@ bool Scene::Init()
 	pipelineState = new PipelineState();
 	pipelineState->SetInputLayout(Vertex::InputLayout);
 	pipelineState->SetRootSignature(rootSignature->Get());
-	pipelineState->SetVS(L"../x64/Debug/SimpleVS.cso");
-	pipelineState->SetPS(L"../x64/Debug/SimplePS.cso");
+	pipelineState->SetVS(L"SimpleVS.cso");
+	pipelineState->SetPS(L"SimplePS.cso");
 	pipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 	if (!pipelineState->IsValid())
 	{
@@ -180,11 +180,6 @@ bool Scene::Init()
 
 void Scene::Update()
 {
-	//rotateY += 0.02f;
-	//auto currentIndex = g_Engine->CurrentBackBufferIndex();						// 現在のフレーム番号を取得
-	//auto currentTransform = constantBuffer[currentIndex]->GetPtr<Transform>();	// 現在のフレーム番号に対応する定数バッファを取得
-	//currentTransform->World = DirectX::XMMatrixRotationY(rotateY);				// Y軸で回転させる
-
 	// カメラ移動
 	if (GetAsyncKeyState('A')) {
 		posX -= 0.1f;
@@ -192,10 +187,16 @@ void Scene::Update()
 	if (GetAsyncKeyState('D')) {
 		posX += 0.1f;
 	}
+	if (GetAsyncKeyState('W')) {
+		posZ -= 0.1f;
+	}
 	if (GetAsyncKeyState('S')) {
+		posZ += 0.1f;
+	}
+	if (GetAsyncKeyState('Q')) {
 		posY -= 0.1f;
 	}
-	if (GetAsyncKeyState('W')) {
+	if (GetAsyncKeyState('E')) {
 		posY += 0.1f;
 	}
 
@@ -203,7 +204,7 @@ void Scene::Update()
 	eyePos = XMVectorSet(
 		posX,
 		posY,
-		XMVectorGetZ(eyePos),
+		posZ,
 		XMVectorGetW(eyePos));
 
 	// 正面を見るようにする

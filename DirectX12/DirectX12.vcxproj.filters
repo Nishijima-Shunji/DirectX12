@@ -49,6 +49,18 @@
     <Filter Include="ソース ファイル\System\PSO">
       <UniqueIdentifier>{27aff251-0c2d-4600-8a17-9e638b6a1c52}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ソース ファイル\System\RootSignature">
+      <UniqueIdentifier>{421e6b6b-0945-43dc-bc3d-25379287678a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\System\DescriptorHeap">
+      <UniqueIdentifier>{06d66024-58d4-4dbf-8479-7048966dac86}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\System\RootSignature">
+      <UniqueIdentifier>{454015c4-1e83-45a9-a1b3-1b54b79e1d80}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\System\DescriptorHeap">
+      <UniqueIdentifier>{2f229c0a-2929-458c-b0f9-f271e89040ba}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -58,9 +70,6 @@
       <Filter>ソース ファイル</Filter>
     </ClCompile>
     <ClCompile Include="Engine.cpp">
-      <Filter>ソース ファイル\System</Filter>
-    </ClCompile>
-    <ClCompile Include="RootSignature.cpp">
       <Filter>ソース ファイル\System</Filter>
     </ClCompile>
     <ClCompile Include="SharedStruct.cpp">
@@ -76,9 +85,6 @@
       <Filter>ソース ファイル\System\Buffer</Filter>
     </ClCompile>
     <ClCompile Include="AssimpLoader.cpp">
-      <Filter>ソース ファイル\System</Filter>
-    </ClCompile>
-    <ClCompile Include="DiscriptorHeaap.cpp">
       <Filter>ソース ファイル\System</Filter>
     </ClCompile>
     <ClCompile Include="Texture2D.cpp">
@@ -120,24 +126,24 @@
     <ClCompile Include="ParticlePipelineState.cpp">
       <Filter>ソース ファイル\System\PSO</Filter>
     </ClCompile>
-    <ClCompile Include="ComputeRootSignature.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
     <ClCompile Include="ComputePipelineState.cpp">
       <Filter>ソース ファイル\System\PSO</Filter>
+    </ClCompile>
+    <ClCompile Include="RootSignature.cpp">
+      <Filter>ソース ファイル\System\RootSignature</Filter>
+    </ClCompile>
+    <ClCompile Include="ComputeRootSignature.cpp">
+      <Filter>ソース ファイル\System\RootSignature</Filter>
+    </ClCompile>
+    <ClCompile Include="DiscriptorHeap.cpp">
+      <Filter>ソース ファイル\System\DescriptorHeap</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="App.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="DescriptorHeap.h">
-      <Filter>ヘッダー ファイル\System</Filter>
-    </ClInclude>
     <ClInclude Include="Engine.h">
-      <Filter>ヘッダー ファイル\System</Filter>
-    </ClInclude>
-    <ClInclude Include="RootSignature.h">
       <Filter>ヘッダー ファイル\System</Filter>
     </ClInclude>
     <ClInclude Include="SharedStruct.h">
@@ -197,11 +203,17 @@
     <ClInclude Include="ComputePipelineState.h">
       <Filter>ヘッダー ファイル\System\PSO</Filter>
     </ClInclude>
-    <ClInclude Include="ComputeRootSignature.h">
-      <Filter>ヘッダー ファイル\System</Filter>
-    </ClInclude>
     <ClInclude Include="SphereMeshGenerator.h">
       <Filter>ヘッダー ファイル\System</Filter>
+    </ClInclude>
+    <ClInclude Include="ComputeRootSignature.h">
+      <Filter>ヘッダー ファイル\System\RootSignature</Filter>
+    </ClInclude>
+    <ClInclude Include="RootSignature.h">
+      <Filter>ヘッダー ファイル\System\RootSignature</Filter>
+    </ClInclude>
+    <ClInclude Include="DescriptorHeap.h">
+      <Filter>ヘッダー ファイル\System\DescriptorHeap</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

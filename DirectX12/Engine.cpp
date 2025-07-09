@@ -138,6 +138,7 @@ bool Engine::Init(HWND hwnd, UINT windowWidth, UINT windowHeight)
 // コマンドキューを作成
 bool Engine::CreateCommandQueue()
 {
+	// 描画用のコマンドキューを作成
 	D3D12_COMMAND_QUEUE_DESC desc = {};
 	desc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 	desc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
@@ -145,6 +146,15 @@ bool Engine::CreateCommandQueue()
 	desc.NodeMask = 0;
 
 	auto hr = m_pDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(m_pQueue.ReleaseAndGetAddressOf()));
+
+
+	// コンピュートシェーダー用のコマンドキューを作成
+	desc.Type = D3D12_COMMAND_LIST_TYPE_COMPUTE;
+	desc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
+	desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+
+	hr = m_pDevice->CreateCommandQueue(&desc, IID_PPV_ARGS(m_pComputeQueue.ReleaseAndGetAddressOf()));
+
 
 	return SUCCEEDED(hr);
 }
@@ -475,6 +485,19 @@ void Engine::EndRender()
 	m_CurrentBackBufferIndex = m_pSwapChain->GetCurrentBackBufferIndex();
 }
 
+// GPU完了まで待機
+void Engine::Flush()
+{
+	UINT64 fenceValue = 0;
+	m_pQueue->Signal(m_pFence.Get(), ++fenceValue);
+
+	if (m_pFence->GetCompletedValue() < fenceValue)
+	{
+		m_pFence->SetEventOnCompletion(fenceValue, m_fenceEvent);
+		WaitForSingleObject(m_fenceEvent, INFINITE);
+	}
+}
+
 // デバイス情報を取得用
 ID3D12Device6* Engine::Device()
 {
@@ -502,3 +525,5 @@ UINT Engine::FrameBufferHeight() const
 {
 	return m_FrameBufferHeight;
 }
+
+

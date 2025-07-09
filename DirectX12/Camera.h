@@ -1,12 +1,15 @@
 #pragma once
 #include <DirectXMath.h>
+#include "Object.h"
 
-class Camera
+class Camera : public Object
 {
 private:
 	float rotateY = 0.0f;
 	float posX = 0.0f;
 	float posY = 0.0f;
+	float posZ = 0.0f;
+
 
 	DirectX::XMVECTOR eyePos;
 	DirectX::XMVECTOR targetPos;
@@ -14,15 +17,20 @@ private:
 	float fov;
 	float aspect;
 
+	DirectX::XMMATRIX viewMatrix;
+	DirectX::XMMATRIX projMatrix;
+
 public:
 	Camera();
-	void Init();
+	bool Init();
 	void Update();
 
-	DirectX::XMVECTOR GetEyePos()		{ return eyePos; };
-	DirectX::XMVECTOR GetTargetPos()	{ return targetPos; };
-	DirectX::XMVECTOR GetUpward()		{ return upward; };
-	float GetFov()						{ return fov; };
-	float GetAspect()					{ return aspect; };
+	DirectX::XMVECTOR GetEyePos() { return eyePos; };
+	DirectX::XMVECTOR GetTargetPos() { return targetPos; };
+	DirectX::XMVECTOR GetUpward() { return upward; };
+	float GetFov() { return fov; };
+	float GetAspect() { return aspect; };
+	DirectX::XMMATRIX GetViewMatrix() const { return viewMatrix; }
+	DirectX::XMMATRIX GetProjMatrix() const { return projMatrix; }
 };
 
