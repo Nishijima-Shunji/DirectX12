@@ -11,6 +11,9 @@ public:
     // u0: outParticles
     // u1: outMeta
 
+        CD3DX12_DESCRIPTOR_RANGE srvRange;
+        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
+
         CD3DX12_ROOT_PARAMETER params[5] = {};
 
         // CBV b0

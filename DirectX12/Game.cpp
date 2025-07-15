@@ -1,4 +1,3 @@
-// Game.cpp
 #include <windows.h>
 #include "Game.h"
 #include "Engine.h"

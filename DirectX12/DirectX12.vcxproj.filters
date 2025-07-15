@@ -138,6 +138,9 @@
     <ClCompile Include="DiscriptorHeap.cpp">
       <Filter>ソース ファイル\System\DescriptorHeap</Filter>
     </ClCompile>
+    <ClCompile Include="MetaBallPipelineState.cpp">
+      <Filter>ソース ファイル\System\PSO</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="App.h">
@@ -214,6 +217,12 @@
     </ClInclude>
     <ClInclude Include="DescriptorHeap.h">
       <Filter>ヘッダー ファイル\System\DescriptorHeap</Filter>
+    </ClInclude>
+    <ClInclude Include="MetaBallPipelineState.h">
+      <Filter>ヘッダー ファイル\System\PSO</Filter>
+    </ClInclude>
+    <ClInclude Include="IActor.h">
+      <Filter>ヘッダー ファイル\Game</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
