@@ -7,6 +7,7 @@
 
 #include "Camera.h"
 #include "Particle.h"
+#include "FluidSystem.h"
 
 class GameScene : public BaseScene
 {
@@ -14,8 +15,9 @@ private:
 	ConstantBuffer* constantBuffer[Engine::FRAME_BUFFER_COUNT];
     ID3D12GraphicsCommandList* commandList = nullptr;
 
+    // ===== オブジェクト =====
+    FluidSystem  m_fluid;
     std::unique_ptr<Particle> particle;
-
     std::vector<std::unique_ptr<IActor>> m_objects;
     //Generator                          m_generator;
 
