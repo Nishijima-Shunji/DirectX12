@@ -8,7 +8,7 @@ private:
 public:
 	TitleScene(Game* game);
 	~TitleScene();
-	void Update() override;
+	void Update(float deltaTime) override;
 	void Draw() override;
 };
 

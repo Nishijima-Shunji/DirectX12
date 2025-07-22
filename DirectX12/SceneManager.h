@@ -19,7 +19,7 @@ public:
     void PushScene(const std::string& name);
     void PopScene();
 
-    void Update();
+    void Update(float deltaTime);
     void Render();
 };
 

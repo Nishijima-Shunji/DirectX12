@@ -13,8 +13,8 @@ Camera::Camera() {
 
 bool Camera::Init() {
 	// 行列変換
-	eyePos = DirectX::XMVectorSet(0.0f, 0.0f, 5.0f, 0.0f);		// 視点の位置
-	targetPos = DirectX::XMVectorSet(0.0f, -4.0f, 0.0f, 0.0f);	// 視点を向ける座標
+	eyePos = DirectX::XMVectorSet(0.0f, 0.0f, 2.0f, 0.0f);		// 視点の位置
+	targetPos = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);	// 視点を向ける座標
 	upward = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);		// 上方向を表すベクトル
 	fov = DirectX::XMConvertToRadians(75.0);
 	// 視野角
@@ -23,7 +23,7 @@ bool Camera::Init() {
 	return 0;
 }
 
-void Camera::Update() {
+void Camera::Update(float deltaTime) {
 	// 回転角（ヨー・ピッチ）
 	static float yaw = 0.0f;
 	static float pitch = 0.0f;
@@ -62,12 +62,12 @@ void Camera::Update() {
 	XMVECTOR right = XMVector3TransformNormal(XMVectorSet(1, 0, 0, 0), rotMat);
 
 	// 移動
-	if (GetAsyncKeyState('W') & 0x8000) eyePos += forward * 0.1f;
-	if (GetAsyncKeyState('S') & 0x8000) eyePos -= forward * 0.1f;
-	if (GetAsyncKeyState('A') & 0x8000) eyePos -= right * 0.1f;
-	if (GetAsyncKeyState('D') & 0x8000) eyePos += right * 0.1f;
-	if (GetAsyncKeyState('E') & 0x8000) eyePos += XMVectorSet(0, 1, 0, 0) * 0.1f;
-	if (GetAsyncKeyState('Q') & 0x8000) eyePos -= XMVectorSet(0, 1, 0, 0) * 0.1f;
+	if (GetAsyncKeyState('W') & 0x8000) eyePos += forward * 0.05f;
+	if (GetAsyncKeyState('S') & 0x8000) eyePos -= forward * 0.05f;
+	if (GetAsyncKeyState('A') & 0x8000) eyePos -= right * 0.05f;
+	if (GetAsyncKeyState('D') & 0x8000) eyePos += right * 0.05f;
+	if (GetAsyncKeyState('E') & 0x8000) eyePos += XMVectorSet(0, 1, 0, 0) * 0.05f;
+	if (GetAsyncKeyState('Q') & 0x8000) eyePos -= XMVectorSet(0, 1, 0, 0) * 0.05f;
 
 	// ターゲット = 前方
 	targetPos = XMVectorAdd(eyePos, forward);
@@ -76,4 +76,29 @@ void Camera::Update() {
 	viewMatrix = XMMatrixLookAtRH(eyePos, targetPos, XMVectorSet(0, 1, 0, 0));
 	projMatrix = XMMatrixPerspectiveFovRH(fov, aspect, 0.1f, 1000.0f);
 
+}
+
+DirectX::XMFLOAT4X4 Camera::GetInvViewProj() const
+{
+	// View×Proj 行列を掛ける
+	XMMATRIX view = GetViewMatrix();
+	XMMATRIX proj = GetProjMatrix();
+	XMMATRIX viewProj = XMMatrixMultiply(view, proj);
+
+	// 逆行列を計算
+	XMVECTOR det;
+	XMMATRIX invVP = XMMatrixInverse(&det, viewProj);
+
+	// 格納して返す
+	DirectX::XMFLOAT4X4 out;
+	XMStoreFloat4x4(&out, invVP);
+	return out;
+}
+
+DirectX::XMFLOAT3 Camera::GetPosition()
+{
+	XMVECTOR eye = GetEyePos();
+	DirectX::XMFLOAT3 pos;
+	XMStoreFloat3(&pos, eye);
+	return pos;
 }

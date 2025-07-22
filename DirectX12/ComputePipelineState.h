@@ -1,4 +1,3 @@
-// ComputePipelineState.h
 #pragma once
 #include "ComPtr.h"
 #include <d3dx12.h>
@@ -13,7 +12,7 @@ private:
 public:
     ComputePipelineState() { desc.NodeMask = 0; }
     void SetRootSignature(ID3D12RootSignature* rs) { desc.pRootSignature = rs; }
-    // .cso ‚ğ“Ç‚İ‚Ş
+    // cso‚ğ“Ç‚İ‚Ş
     void SetCS(const std::wstring& path);
     void Create();
     ID3D12PipelineState* Get() const { return m_pso.Get(); }

@@ -7,7 +7,7 @@ public:
 	virtual ~Object() = default;
 
 	virtual bool Init() { return true; };
-	virtual void Update() {};
+	virtual void Update(float deltaTime) {};
 	virtual void Draw() {};
 };
 

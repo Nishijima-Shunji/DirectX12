@@ -25,7 +25,7 @@ private:
 public:
 	Camera();
 	bool Init();
-	void Update();
+	void Update(float deltaTime);
 
 	DirectX::XMVECTOR GetEyePos() { return eyePos; };
 	DirectX::XMVECTOR GetTargetPos() { return targetPos; };
@@ -34,5 +34,7 @@ public:
 	float GetAspect() { return aspect; };
 	DirectX::XMMATRIX GetViewMatrix() const { return viewMatrix; }
 	DirectX::XMMATRIX GetProjMatrix() const { return projMatrix; }
+	DirectX::XMFLOAT4X4 GetInvViewProj() const;
+	DirectX::XMFLOAT3   GetPosition();
 };
 

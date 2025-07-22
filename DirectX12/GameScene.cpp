@@ -9,6 +9,8 @@
 
 using namespace DirectX;
 
+GameScene* GameScene::g_pCurrentScene = nullptr;
+
 GameScene::GameScene(Game* game) : BaseScene(game) {
 	printf("GameScene生成\n");
 	Init();
@@ -30,26 +32,28 @@ bool GameScene::Init() {
 	
 	// 流体システムの初期化
 	auto device = g_Engine->Device();
-	auto rtvFormat = g_Engine->GetSwapChainFormat();
+	const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
 	const UINT maxParticles = 1024;
 	const UINT threadGroupCount = 16;
 	m_fluid.Init(device, rtvFormat, maxParticles, threadGroupCount);
 
-	m_fluid.UseGPU(true); // GPU でシミュレーションを行かどうか
+	m_fluid.UseGPU(false); // GPU でシミュレーションを行かどうか
 
 
 	return true;
 }
 
-void GameScene::Update() {
-	g_Engine->GetObj<Camera>("Camera")->Update();
-	particle->Update();
+void GameScene::Update(float deltaTime) {
+	g_Engine->GetObj<Camera>("Camera")->Update(deltaTime);
+	particle->Update(deltaTime);
+	auto cmd = g_Engine->CommandList();
+	m_fluid.Simulate(cmd, deltaTime);
 
 	// 全体のupdate
-	for (auto& actor : m_objects) {
-		if (actor->IsAlive)
-			actor->Update(/*dt*/);
+	for (auto& obj : m_objects) {
+		if (obj->IsAlive)
+			obj->Update(deltaTime);
 	}
 
 	m_objects.erase(
@@ -62,14 +66,17 @@ void GameScene::Update() {
 		m_objects.end()
 	);
 
-	if (GetAsyncKeyState('Q')) {
+	if (GetAsyncKeyState('L')) {
 		m_game->ChangeScene("Scene");
 	}
 }
 
 void GameScene::Draw() {
 	commandList = g_Engine->CommandList(); // コマンドリストを取得
-
+	auto cmd = g_Engine->CommandList();
+	auto invViewProj = g_Engine->GetObj<Camera>("Camera")->GetInvViewProj();
+	auto cameraPos   = g_Engine->GetObj<Camera>("Camera")->GetPosition();
+	m_fluid.Render(cmd, invViewProj, cameraPos, 1.0f);
 
 	particle->Draw();
 

@@ -3,6 +3,9 @@
 #include "Scene.h"
 #include "Game.h"
 #include <dxgidebug.h>
+#include <chrono>
+#include <string>
+
 #pragma comment(lib, "dxguid.lib")
 
 
@@ -83,6 +86,11 @@ void MainLoop()
 	MSG msg = {};
 	Game game;
 
+	using clock = std::chrono::high_resolution_clock;
+	auto prevTime = clock::now();
+	int  frameCount = 0;
+	float elapsed = 0.0f;
+
 	while (WM_QUIT != msg.message)
 	{
 		if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
@@ -92,8 +100,31 @@ void MainLoop()
 		}
 		else
 		{
-			game.Update();
+			// デルタタイム計算
+			auto now = clock::now();
+			float dt = std::chrono::duration<float>(now - prevTime).count();
+			prevTime = now;
+
+			// ゲーム更新・描画
+			game.Update(dt);
 			game.Render();
+
+			//// フレームを提示
+			//g_Engine->EndRender();
+			//g_Engine->m_pSwapChain->Present(1, 0);
+
+			// ─── FPS 計測・表示 ─────────
+			frameCount++;
+			elapsed += dt;
+			if (elapsed >= 1.0f)
+			{
+				// ウィンドウタイトルに FPS を表示
+				wchar_t buf[64];
+				swprintf(buf, 64, L"FPS: %d", frameCount);
+				SetWindowText(g_hWnd, buf);
+				frameCount = 0;
+				elapsed = 0.0f;
+			}
 		}
 	}
 }

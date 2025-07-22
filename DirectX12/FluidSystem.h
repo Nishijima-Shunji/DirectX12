@@ -5,13 +5,8 @@
 #include <d3d12.h>
 #include <wrl.h>
 #include <DirectXMath.h>
-using Microsoft::WRL::ComPtr;
+#include "SharedStruct.h"
 
-// CPU→GPU 共有の粒子メタデータ
-struct ParticleMeta {
-    DirectX::XMFLOAT3 pos;   // ワールド空間位置
-    float               r;   // 半径
-};
 
 class FluidSystem {
 public:

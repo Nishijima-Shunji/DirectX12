@@ -42,7 +42,7 @@ bool Particle::Init() {
 		m_ConstantBuffer[i] = new ConstantBuffer(sizeof(Transform));
 		if (!m_ConstantBuffer[i]->IsValid())
 		{
-			printf("文字化け\n");
+			
 			return false;
 		}
 
@@ -56,7 +56,7 @@ bool Particle::Init() {
 	// 
 	m_RootSignature = new RootSignature();
 	if (!m_RootSignature->IsValid()) {
-		printf("RootSignature�쐬�Ɏ��s\n");
+		printf("RootSignature失敗\n");
 		return false;
 	}
 
@@ -76,7 +76,7 @@ bool Particle::Init() {
 	return true;
 }
 
-void Particle::Update() {
+void Particle::Update(float deltaTime) {
 	UpdateParticles();
 	UpdateVertexBuffer();
 

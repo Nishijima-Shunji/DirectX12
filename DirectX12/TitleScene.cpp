@@ -13,7 +13,7 @@ TitleScene::~TitleScene() {
 	printf("TitleScene”jŠü\n");
 }
 
-void TitleScene::Update() {
+void TitleScene::Update(float deltaTime) {
 	if (GetAsyncKeyState(VK_SPACE)) {
 		m_game->ChangeScene("Game");
 	}

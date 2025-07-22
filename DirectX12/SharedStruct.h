@@ -6,11 +6,11 @@
 
 struct Vertex
 {
-	DirectX::XMFLOAT3 Position; // ??u???W
-	DirectX::XMFLOAT3 Normal;   // ?@??
-	DirectX::XMFLOAT2 UV;       // uv???W
-	DirectX::XMFLOAT3 Tangent;  // ????
-	DirectX::XMFLOAT4 Color;    // ???_?F
+	DirectX::XMFLOAT3 Position;
+	DirectX::XMFLOAT3 Normal;
+	DirectX::XMFLOAT2 UV;
+	DirectX::XMFLOAT3 Tangent;
+	DirectX::XMFLOAT4 Color;
 
 	static const D3D12_INPUT_LAYOUT_DESC InputLayout;
 
@@ -21,15 +21,15 @@ private:
 
 struct alignas(256) Transform
 {
-	DirectX::XMMATRIX World;    // ???[???h?s??
-	DirectX::XMMATRIX View;     // ?r???[?s??
-	DirectX::XMMATRIX Proj;     // ???e?s??
+	DirectX::XMMATRIX World;
+	DirectX::XMMATRIX View;
+	DirectX::XMMATRIX Proj;
 };
 
 struct Mesh {
-	std::vector<Vertex> Vertices;	// ???_?f?[?^??z??
-	std::vector<uint32_t> Indices;	// ?C???f?b?N?X??z??
-	std::wstring DiffuseMap;		// ?e?N?X?`????t?@?C???p?X
+	std::vector<Vertex> Vertices;
+	std::vector<uint32_t> Indices;
+	std::wstring DiffuseMap;
 };
 
 struct ParticleVertex {

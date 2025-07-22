@@ -197,9 +197,6 @@
     <ClInclude Include="Particle.h">
       <Filter>ヘッダー ファイル\Game\Object</Filter>
     </ClInclude>
-    <ClInclude Include="Camera.h">
-      <Filter>ヘッダー ファイル\Game</Filter>
-    </ClInclude>
     <ClInclude Include="ParticlePipelineState.h">
       <Filter>ヘッダー ファイル\System\PSO</Filter>
     </ClInclude>
@@ -229,6 +226,9 @@
     </ClInclude>
     <ClInclude Include="FluidSystem.h">
       <Filter>ヘッダー ファイル\Game</Filter>
+    </ClInclude>
+    <ClInclude Include="Camera.h">
+      <Filter>ヘッダー ファイル\Game\Object</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

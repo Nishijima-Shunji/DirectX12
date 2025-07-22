@@ -27,7 +27,7 @@ public:
 	GameScene(Game* game);
 	~GameScene();
 	bool Init() override;
-	void Update() override;
+	void Update(float deltaTime) override;
 	void Draw() override;
 
 	// シーン内に生成するための静的メソッド
@@ -47,7 +47,7 @@ private:
 	// シーン内での生成と破棄を実装するメソッド
     template<typename T, typename... Args>
     void SpawnImpl(Args&&... args) {
-        m_actors.push_back(
+        m_objects.push_back(
             std::make_unique<T>(std::forward<Args>(args)...)
         );
     }

@@ -11,7 +11,7 @@ public:
     virtual ~BaseScene() = default;
     virtual bool Init() { return true; }       // ‰Šú‰»
     virtual void Exit() {}       // I—¹ˆ—
-    virtual void Update() = 0;
+    virtual void Update(float delta) = 0;
     virtual void Draw() = 0;
 };
 

@@ -1,6 +1,6 @@
 #include "MetaBallPipelineState.h"
 #include <d3dcompiler.h>
-#include "CD3DX12.h"
+#include "d3dx12.h"
 
 namespace graphics {
 
@@ -39,14 +39,27 @@ namespace graphics {
         ComPtr<ID3D12PipelineState>& outPSO)
     {
         // シェーダーコンパイル
-        auto vs = CompileShader(L"MetaBallVS.hlsl", nullptr, "main", "vs_5_0");
-        auto ps = CompileShader(L"MetaBallPS.hlsl", nullptr, "main", "ps_5_0");
+        ComPtr<ID3DBlob> vsBlob;
+        HRESULT hr = D3DReadFileToBlob(L"MetaBallVS.cso", &vsBlob);
+        if (FAILED(hr)) {
+           return;
+           
+        }
+        
+        ComPtr<ID3DBlob> psBlob;
+        hr = D3DReadFileToBlob(L"MetaBallPS.cso", &psBlob);
+        if (FAILED(hr)) {
+            return;
+            
+        }
+        
+
 
         // PSO 設定
         D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
         desc.pRootSignature = rootSig;
-        desc.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
-        desc.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+        desc.VS = CD3DX12_SHADER_BYTECODE(vsBlob.Get());
+        desc.PS = CD3DX12_SHADER_BYTECODE(psBlob.Get());
         desc.InputLayout = { nullptr, 0 };
         desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         desc.NumRenderTargets = 1;

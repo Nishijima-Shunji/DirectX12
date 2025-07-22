@@ -39,7 +39,7 @@ private:
 public:
 	Particle(Camera* cam);
 	bool Init();
-	void Update();
+	void Update(float deltaTime);
 	void Draw();
 
 	void UpdateParticles();

@@ -167,9 +167,9 @@ bool Scene::Init()
 	return true;
 }
 
-void Scene::Update()
+void Scene::Update(float deltaTime)
 {
-	camera->Update();
+	camera->Update(deltaTime);
 	auto currentIndex = g_Engine->CurrentBackBufferIndex();
 	auto ptr = constantBuffer[currentIndex]->GetPtr<Transform>();
 	ptr->World = XMMatrixIdentity();

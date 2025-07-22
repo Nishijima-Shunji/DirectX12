@@ -10,7 +10,7 @@ private:
     Camera m_camera;
 public:
     Game();
-    void Update();
+    void Update(float deltaTime);
     void Render();
     
     Camera* GetCamera() { return &m_camera; }

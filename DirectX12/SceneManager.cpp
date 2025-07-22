@@ -36,10 +36,10 @@ void SceneManager::PopScene()
 }
 
 
-void SceneManager::Update()
+void SceneManager::Update(float deltaTime)
 {
 	if (!m_SceneStack.empty()) {
-		m_SceneStack.top()->Update();
+		m_SceneStack.top()->Update(deltaTime);
 	}
 }
 
