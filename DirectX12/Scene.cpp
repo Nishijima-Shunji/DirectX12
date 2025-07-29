@@ -28,9 +28,9 @@ PipelineState* pipelineState;
 IndexBuffer* indexBuffer;
 const wchar_t* modelFile = L"assets/korosuke.fbx";
 
-std::vector<Mesh> meshes;					// ƒƒbƒVƒ…‚Ì”z—ñ
-std::vector<VertexBuffer*> vertexBuffers;	// ƒƒbƒVƒ…‚Ì”•ª‚Ì’¸“_ƒoƒbƒtƒ@
-std::vector<IndexBuffer*> indexBuffers;		// ƒƒbƒVƒ…‚Ì”•ª‚ÌƒCƒ“ƒfƒbƒNƒXƒoƒbƒtƒ@
+std::vector<Mesh> meshes;					// ãƒ¡ãƒƒã‚·ãƒ¥ã®é…åˆ—
+std::vector<VertexBuffer*> vertexBuffers;	// ãƒ¡ãƒƒã‚·ãƒ¥ã®æ•°åˆ†ã®é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡
+std::vector<IndexBuffer*> indexBuffers;		// ãƒ¡ãƒƒã‚·ãƒ¥ã®æ•°åˆ†ã®ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒãƒƒãƒ•ã‚¡
 
 namespace fs = std::filesystem;
 
@@ -46,7 +46,7 @@ std::wstring ReplaceExtension(const std::wstring& origin, const char* ext)
 }
 
 DescriptorHeap* descriptorHeap;
-std::vector< DescriptorHandle*> materialHandles; // ƒeƒNƒXƒ`ƒƒ—p‚Ìƒnƒ“ƒhƒ‹ˆê——
+std::vector< DescriptorHandle*> materialHandles; // ãƒ†ã‚¯ã‚¹ãƒãƒ£ç”¨ã®ãƒãƒ³ãƒ‰ãƒ«ä¸€è¦§
 
 bool Scene::Init()
 {
@@ -61,12 +61,12 @@ bool Scene::Init()
 		ptr->Proj = camera->GetProjMatrix();
 	}
 
-	ImportSettings importSetting =				// ©ì‚Ì“Ç‚İ‚İİ’è\‘¢‘Ì
+	ImportSettings importSetting =				// è‡ªä½œã®èª­ã¿è¾¼ã¿è¨­å®šæ§‹é€ ä½“
 	{
 		modelFile,
 		meshes,
 		false,
-		true // ƒAƒŠƒVƒA‚Ìƒ‚ƒfƒ‹‚ÍAƒeƒNƒXƒ`ƒƒ‚ÌUV‚ÌV‚¾‚¯”½“]‚µ‚Ä‚é‚Á‚Û‚¢H‚Ì‚Å“Ç‚İ‚İ‚ÉUVÀ•W‚ğ‹t“]‚³‚¹‚é
+		true // ã‚¢ãƒªã‚·ã‚¢ã®ãƒ¢ãƒ‡ãƒ«ã¯ã€ãƒ†ã‚¯ã‚¹ãƒãƒ£ã®UVã®Vã ã‘åè»¢ã—ã¦ã‚‹ã£ã½ã„ï¼Ÿã®ã§èª­ã¿è¾¼ã¿æ™‚ã«UVåº§æ¨™ã‚’é€†è»¢ã•ã›ã‚‹
 	};
 
 	AssimpLoader loader;
@@ -75,7 +75,7 @@ bool Scene::Init()
 		return false;
 	}
 
-	// ƒƒbƒVƒ…‚Ì”‚¾‚¯’¸“_ƒoƒbƒtƒ@‚ğ—pˆÓ‚·‚é
+	// ãƒ¡ãƒƒã‚·ãƒ¥ã®æ•°ã ã‘é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã‚’ç”¨æ„ã™ã‚‹
 	vertexBuffers.reserve(meshes.size());
 	for (size_t i = 0; i < meshes.size(); i++)
 	{
@@ -85,14 +85,14 @@ bool Scene::Init()
 		auto pVB = new VertexBuffer(size, stride, vertices);
 		if (!pVB->IsValid())
 		{
-			printf("’¸“_ƒoƒbƒtƒ@‚Ì¶¬‚É¸”s\n");
+			printf("é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ã®ç”Ÿæˆã«å¤±æ•—\n");
 			return false;
 		}
 
 		vertexBuffers.push_back(pVB);
 	}
 
-	// ƒƒbƒVƒ…‚Ì”‚¾‚¯ƒCƒ“ƒfƒbƒNƒXƒoƒbƒtƒ@‚ğ—pˆÓ‚·‚é
+	// ãƒ¡ãƒƒã‚·ãƒ¥ã®æ•°ã ã‘ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒãƒƒãƒ•ã‚¡ã‚’ç”¨æ„ã™ã‚‹
 	indexBuffers.reserve(meshes.size());
 	for (size_t i = 0; i < meshes.size(); i++)
 	{
@@ -101,56 +101,56 @@ bool Scene::Init()
 		auto pIB = new IndexBuffer(size, indices);
 		if (!pIB->IsValid())
 		{
-			printf("ƒCƒ“ƒfƒbƒNƒXƒoƒbƒtƒ@‚Ì¶¬‚É¸”s\n");
+			printf("ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒãƒƒãƒ•ã‚¡ã®ç”Ÿæˆã«å¤±æ•—\n");
 			return false;
 		}
 
 		indexBuffers.push_back(pIB);
 	}
 
-	// ƒ}ƒeƒŠƒAƒ‹‚Ì“Ç‚İ‚İ
+	// ãƒãƒ†ãƒªã‚¢ãƒ«ã®èª­ã¿è¾¼ã¿
 	materialHandles.clear();
 	descriptorHeap = new DescriptorHeap();
 	for (size_t i = 0; i < meshes.size(); i++)
 	{
-		// ƒeƒNƒXƒ`ƒƒƒtƒ@ƒCƒ‹ƒpƒX‚Ì¶¬iTGAŒ`®‚É•ÏŠ·j
+		// ãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ•ã‚¡ã‚¤ãƒ«ãƒ‘ã‚¹ã®ç”Ÿæˆï¼ˆTGAå½¢å¼ã«å¤‰æ›ï¼‰
 		auto texPath = ReplaceExtension(meshes[i].DiffuseMap, "png");
 
-		// ƒeƒNƒXƒ`ƒƒ‚ğ“Ç‚İ‚Ş
+		// ãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’èª­ã¿è¾¼ã‚€
 		auto mainTex = Texture2D::Get(texPath);
 
-		// ƒeƒNƒXƒ`ƒƒ‚ªŒ©‚Â‚©‚ç‚È‚¢ê‡AƒfƒtƒHƒ‹ƒg‚ÌƒeƒNƒXƒ`ƒƒ‚ğg—p
+		// ãƒ†ã‚¯ã‚¹ãƒãƒ£ãŒè¦‹ã¤ã‹ã‚‰ãªã„å ´åˆã€ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã®ãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’ä½¿ç”¨
 		if (!mainTex) {
-			printf("ƒeƒNƒXƒ`ƒƒ‚Ì“Ç‚İ‚İ‚É¸”s‚µ‚Ü‚µ‚½: %ws ¨ ƒfƒtƒHƒ‹ƒg‚ÌƒeƒNƒXƒ`ƒƒ‚ğg—p‚µ‚Ü‚·\n", texPath.c_str());
+			printf("ãƒ†ã‚¯ã‚¹ãƒãƒ£ã®èª­ã¿è¾¼ã¿ã«å¤±æ•—ã—ã¾ã—ãŸ: %ws â†’ ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã®ãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’ä½¿ç”¨ã—ã¾ã™\n", texPath.c_str());
 
-			// ‰¼‚ÌƒfƒtƒHƒ‹ƒgƒeƒNƒXƒ`ƒƒi—á‚¦‚Î”’F‚ÌƒeƒNƒXƒ`ƒƒj‚ğg—p‚·‚é
+			// ä»®ã®ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆãƒ†ã‚¯ã‚¹ãƒãƒ£ï¼ˆä¾‹ãˆã°ç™½è‰²ã®ãƒ†ã‚¯ã‚¹ãƒãƒ£ï¼‰ã‚’ä½¿ç”¨ã™ã‚‹
 			mainTex = Texture2D::Get(L"assets/default.png");
 
 			if (!mainTex) {
-				printf("ƒfƒtƒHƒ‹ƒg‚ÌƒeƒNƒXƒ`ƒƒ‚à“Ç‚İ‚ß‚Ü‚¹‚ñ‚Å‚µ‚½B\n");
-				continue;  // ƒfƒtƒHƒ‹ƒgƒeƒNƒXƒ`ƒƒ‚à“Ç‚İ‚ß‚È‚¯‚ê‚ÎŸ‚ÌƒƒbƒVƒ…‚Öi‚Ş
+				printf("ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆã®ãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚‚èª­ã¿è¾¼ã‚ã¾ã›ã‚“ã§ã—ãŸã€‚\n");
+				continue;  // ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚‚èª­ã¿è¾¼ã‚ãªã‘ã‚Œã°æ¬¡ã®ãƒ¡ãƒƒã‚·ãƒ¥ã¸é€²ã‚€
 			}
 		}
 
-		// ƒeƒNƒXƒ`ƒƒ‚ª–³–‚Éæ“¾‚Å‚«‚½ê‡AƒfƒBƒXƒNƒŠƒvƒ^ƒq[ƒv‚É“o˜^
+		// ãƒ†ã‚¯ã‚¹ãƒãƒ£ãŒç„¡äº‹ã«å–å¾—ã§ããŸå ´åˆã€ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ’ãƒ¼ãƒ—ã«ç™»éŒ²
 		auto handle = descriptorHeap->Register(mainTex);
 		if (!handle) {
 			printf("Register() failed: handle is nullptr\n");
-			continue;  // “o˜^‚É¸”s‚µ‚½ê‡‚ÍŸ‚ÌƒƒbƒVƒ…‚Öi‚Ş
+			continue;  // ç™»éŒ²ã«å¤±æ•—ã—ãŸå ´åˆã¯æ¬¡ã®ãƒ¡ãƒƒã‚·ãƒ¥ã¸é€²ã‚€
 		}
 
-		materialHandles.push_back(handle);  // ƒnƒ“ƒhƒ‹‚ğ•Û
+		materialHandles.push_back(handle);  // ãƒãƒ³ãƒ‰ãƒ«ã‚’ä¿æŒ
 	}
 
-	// ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ[‚Ìì¬
+	// ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ãƒ¼ã®ä½œæˆ
 	rootSignature = new RootSignature();
 	if (!rootSignature->IsValid())
 	{
-		printf("ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ‚Ì¶¬‚É¸”s\n");
+		printf("ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ã®ç”Ÿæˆã«å¤±æ•—\n");
 		return false;
 	}
 
-	// ƒpƒCƒvƒ‰ƒCƒ“ƒXƒe[ƒg‚Ìì¬
+	// ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ã‚¹ãƒ†ãƒ¼ãƒˆã®ä½œæˆ
 	pipelineState = new PipelineState();
 	pipelineState->SetInputLayout(Vertex::InputLayout);
 	pipelineState->SetRootSignature(rootSignature->Get());
@@ -159,11 +159,11 @@ bool Scene::Init()
 	pipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 	if (!pipelineState->IsValid())
 	{
-		printf("ƒpƒCƒvƒ‰ƒCƒ“ƒXƒe[ƒg‚Ì¶¬‚É¸”s\n");
+		printf("ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ã‚¹ãƒ†ãƒ¼ãƒˆã®ç”Ÿæˆã«å¤±æ•—\n");
 		return false;
 	}
 
-	printf("ƒV[ƒ“‚Ì‰Šú‰»‚É¬Œ÷\n");
+	printf("ã‚·ãƒ¼ãƒ³ã®åˆæœŸåŒ–ã«æˆåŠŸ\n");
 	return true;
 }
 
@@ -185,7 +185,41 @@ void Scene::Draw()
 {
 	auto currentIndex = g_Engine->CurrentBackBufferIndex();
 	auto commandList = g_Engine->CommandList();
-	auto materialHeap = descriptorHeap->GetHeap(); // ƒfƒBƒXƒNƒŠƒvƒ^ƒq[ƒv
+Scene::~Scene()
+{
+        for (size_t i = 0; i < Engine::FRAME_BUFFER_COUNT; i++) {
+                delete constantBuffer[i];
+                constantBuffer[i] = nullptr;
+        }
+
+        for (auto vb : vertexBuffers) {
+                delete vb;
+        }
+        vertexBuffers.clear();
+
+        for (auto ib : indexBuffers) {
+                delete ib;
+        }
+        indexBuffers.clear();
+
+        for (auto handle : materialHandles) {
+                delete handle;
+        }
+        materialHandles.clear();
+
+        delete descriptorHeap;
+        descriptorHeap = nullptr;
+
+        delete rootSignature;
+        rootSignature = nullptr;
+        delete pipelineState;
+        pipelineState = nullptr;
+
+        delete camera;
+        camera = nullptr;
+        printf("Scene\xE7\xB5\xB3\xE4\xBA\x86\n");
+}
+	auto materialHeap = descriptorHeap->GetHeap(); // ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ’ãƒ¼ãƒ—
 
 	for (size_t i = 0; i < meshes.size(); i++)
 	{
@@ -200,8 +234,8 @@ void Scene::Draw()
 		commandList->IASetVertexBuffers(0, 1, &vbView);
 		commandList->IASetIndexBuffer(&ibView);
 
-		commandList->SetDescriptorHeaps(1, &materialHeap); // g—p‚·‚éƒfƒBƒXƒNƒŠƒvƒ^ƒq[ƒv‚ğƒZƒbƒg
-		commandList->SetGraphicsRootDescriptorTable(1, materialHandles[i]->HandleGPU); // ‚»‚ÌƒƒbƒVƒ…‚É‘Î‰‚·‚éƒfƒBƒXƒNƒŠƒvƒ^ƒe[ƒuƒ‹‚ğƒZƒbƒg
+		commandList->SetDescriptorHeaps(1, &materialHeap); // ä½¿ç”¨ã™ã‚‹ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ’ãƒ¼ãƒ—ã‚’ã‚»ãƒƒãƒˆ
+		commandList->SetGraphicsRootDescriptorTable(1, materialHandles[i]->HandleGPU); // ãã®ãƒ¡ãƒƒã‚·ãƒ¥ã«å¯¾å¿œã™ã‚‹ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ†ãƒ¼ãƒ–ãƒ«ã‚’ã‚»ãƒƒãƒˆ
 
 		commandList->DrawIndexedInstanced(meshes[i].Indices.size(), 1, 0, 0, 0);
 	}

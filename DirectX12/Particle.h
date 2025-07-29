@@ -22,12 +22,13 @@ private:
 	PipelineState* m_PipelineState = nullptr;
 	ConstantBuffer* m_ConstantBuffer[Engine::FRAME_BUFFER_COUNT] = {};
 
-	// グラフィックス描画用
+        ~Particle();
+	// 繧ｰ繝ｩ繝輔ぅ繝�繧ｯ繧ｹ謠冗判逕ｨ
 	ComPtr<ID3D12RootSignature>    m_graphicsRS;
 	PipelineState*				   m_graphicsPS;
 	ComPtr<ID3D12Resource>         m_graphicsCB;
 
-	// コンピュート用
+	// 繧ｳ繝ｳ繝斐Η繝ｼ繝育畑
 	ComPtr<ID3D12RootSignature>    m_computeRS;
 	PipelineState*				   m_computePS;
 	ComPtr<ID3D12Resource>         m_computeUAV;

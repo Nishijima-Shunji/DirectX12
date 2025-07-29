@@ -18,7 +18,7 @@ DescriptorHeap::DescriptorHeap()
 
 	auto device = g_Engine->Device();
 
-	// ƒfƒBƒXƒNƒŠƒvƒ^ƒq[ƒv‚ð¶¬
+	// ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ’ãƒ¼ãƒ—ã‚’ç”Ÿæˆ
 	auto hr = device->CreateDescriptorHeap(
 		&desc,
 		IID_PPV_ARGS(m_pHeap.ReleaseAndGetAddressOf()));
@@ -29,7 +29,7 @@ DescriptorHeap::DescriptorHeap()
 		return;
 	}
 
-	m_IncrementSize = device->GetDescriptorHandleIncrementSize(desc.Type); // ƒfƒBƒXƒNƒŠƒvƒ^ƒq[ƒv1ŒÂ‚Ìƒƒ‚ƒŠƒTƒCƒY‚ð•Ô‚·
+	m_IncrementSize = device->GetDescriptorHandleIncrementSize(desc.Type); // ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ’ãƒ¼ãƒ—1å€‹ã®ãƒ¡ãƒ¢ãƒªã‚µã‚¤ã‚ºã‚’è¿”ã™
 	m_IsValid = true;
 }
 
@@ -48,11 +48,11 @@ DescriptorHandle* DescriptorHeap::Register(Texture2D* texture)
 
 	DescriptorHandle* pHandle = new DescriptorHandle();
 
-	auto handleCPU = m_pHeap->GetCPUDescriptorHandleForHeapStart(); // ƒfƒBƒXƒNƒŠƒvƒ^ƒq[ƒv‚ÌÅ‰‚ÌƒAƒhƒŒƒX
-	handleCPU.ptr += m_IncrementSize * count; // Å‰‚ÌƒAƒhƒŒƒX‚©‚çcount”Ô–Ú‚ª¡‰ñ’Ç‰Á‚³‚ê‚½ƒŠƒ\[ƒX‚Ìƒnƒ“ƒhƒ‹
+	auto handleCPU = m_pHeap->GetCPUDescriptorHandleForHeapStart(); // ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ’ãƒ¼ãƒ—ã®æœ€åˆã®ã‚¢ãƒ‰ãƒ¬ã‚¹
+	handleCPU.ptr += m_IncrementSize * count; // æœ€åˆã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‹ã‚‰countç•ªç›®ãŒä»Šå›žè¿½åŠ ã•ã‚ŒãŸãƒªã‚½ãƒ¼ã‚¹ã®ãƒãƒ³ãƒ‰ãƒ«
 
-	auto handleGPU = m_pHeap->GetGPUDescriptorHandleForHeapStart(); // ƒfƒBƒXƒNƒŠƒvƒ^ƒq[ƒv‚ÌÅ‰‚ÌƒAƒhƒŒƒX
-	handleGPU.ptr += m_IncrementSize * count; // Å‰‚ÌƒAƒhƒŒƒX‚©‚çcount”Ô–Ú‚ª¡‰ñ’Ç‰Á‚³‚ê‚½ƒŠƒ\[ƒX‚Ìƒnƒ“ƒhƒ‹
+	auto handleGPU = m_pHeap->GetGPUDescriptorHandleForHeapStart(); // ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ’ãƒ¼ãƒ—ã®æœ€åˆã®ã‚¢ãƒ‰ãƒ¬ã‚¹
+	handleGPU.ptr += m_IncrementSize * count; // æœ€åˆã®ã‚¢ãƒ‰ãƒ¬ã‚¹ã‹ã‚‰countç•ªç›®ãŒä»Šå›žè¿½åŠ ã•ã‚ŒãŸãƒªã‚½ãƒ¼ã‚¹ã®ãƒãƒ³ãƒ‰ãƒ«
 
 	pHandle->HandleCPU = handleCPU;
 	pHandle->HandleGPU = handleGPU;
@@ -60,10 +60,10 @@ DescriptorHandle* DescriptorHeap::Register(Texture2D* texture)
 	auto device = g_Engine->Device();
 	auto resource = texture->Resource();
 	auto desc = texture->ViewDesc();
-	device->CreateShaderResourceView(resource, &desc, pHandle->HandleCPU); // ƒVƒF[ƒ_[ƒŠƒ\[ƒXƒrƒ…[ì¬
+	device->CreateShaderResourceView(resource, &desc, pHandle->HandleCPU); // ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ãƒªã‚½ãƒ¼ã‚¹ãƒ“ãƒ¥ãƒ¼ä½œæˆ
 
 	m_pHandles.push_back(pHandle);
-	return pHandle; // ƒnƒ“ƒhƒ‹‚ð•Ô‚·
+	return pHandle; // ãƒãƒ³ãƒ‰ãƒ«ã‚’è¿”ã™
 }
 
 DescriptorHandle* DescriptorHeap::RegisterBuffer(
@@ -76,7 +76,16 @@ DescriptorHandle* DescriptorHeap::RegisterBuffer(
 
 	auto pHandle = new DescriptorHandle();
 
-	// CPU/GPU —¼•û‚Ìƒnƒ“ƒhƒ‹‚ðŽæ“¾
+DescriptorHeap::~DescriptorHeap()
+{
+        for (auto handle : m_pHandles) {
+                delete handle;
+        }
+        m_pHandles.clear();
+        m_pHeap.Reset();
+        m_IsValid = false;
+}
+	// CPU/GPU ä¸¡æ–¹ã®ãƒãƒ³ãƒ‰ãƒ«ã‚’å–å¾—
 	auto cpu = m_pHeap->GetCPUDescriptorHandleForHeapStart();
 	cpu.ptr += m_IncrementSize * count;
 	auto gpu = m_pHeap->GetGPUDescriptorHandleForHeapStart();
@@ -85,7 +94,7 @@ DescriptorHandle* DescriptorHeap::RegisterBuffer(
 	pHandle->HandleCPU = cpu;
 	pHandle->HandleGPU = gpu;
 
-	// SRV ƒfƒXƒNƒŠƒvƒ^‚ðì¬
+	// SRV ãƒ‡ã‚¹ã‚¯ãƒªãƒ—ã‚¿ã‚’ä½œæˆ
 	D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
 	desc.Format = DXGI_FORMAT_UNKNOWN;
 	desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -94,7 +103,7 @@ DescriptorHandle* DescriptorHeap::RegisterBuffer(
 	desc.Buffer.StructureByteStride = stride;
 	desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
-	// ŽÀÛ‚É GPU ‚Öƒrƒ…[‚ð‘‚«ž‚Þ
+	// å®Ÿéš›ã« GPU ã¸ãƒ“ãƒ¥ãƒ¼ã‚’æ›¸ãè¾¼ã‚€
 	g_Engine->Device()->CreateShaderResourceView(
 		resource, &desc, cpu);
 

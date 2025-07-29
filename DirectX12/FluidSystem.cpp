@@ -16,31 +16,31 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 
 	CD3DX12_ROOT_SIGNATURE_DESC rsDesc(1, &rp, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
 
-	// ƒVƒŠƒAƒ‰ƒCƒY
+	// ã‚·ãƒªã‚¢ãƒ©ã‚¤ã‚º
 	ComPtr<ID3DBlob> blob, errBlob;
 	HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &errBlob);
 	if (FAILED(hr)) {
 		if (errBlob) {
 			OutputDebugStringA((char*)errBlob->GetBufferPointer());
 		}
-		wprintf(L"RootSignature ƒVƒŠƒAƒ‰ƒCƒY¸”s: 0x%08X\n", hr);
+		wprintf(L"RootSignature ã‚·ãƒªã‚¢ãƒ©ã‚¤ã‚ºå¤±æ•—: 0x%08X\n", hr);
 		return;
 	}
 
-	// ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ¶¬
+	// ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ç”Ÿæˆ
 	hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_computeRS));
 	if (FAILED(hr)) {
-		wprintf(L"[Error] RootSignature ¶¬¸”s: 0x%08X\n", hr);
+		wprintf(L"[Error] RootSignature ç”Ÿæˆå¤±æ•—: 0x%08X\n", hr);
 		return;
 	}
 
-	// ComputePSO‚ğ‰Šú‰»
+	// ComputePSOã‚’åˆæœŸåŒ–
 	m_computePS.SetDevice(device);
 	m_computePS.SetRootSignature(m_computeRS.Get());
 	m_computePS.SetCS(L"ParticleCS.cso");
 	m_computePS.Create();
 
-	// —±qƒoƒbƒtƒ@‚ÆUAVƒq[ƒv
+	// ç²’å­ãƒãƒƒãƒ•ã‚¡ã¨UAVãƒ’ãƒ¼ãƒ—
 	D3D12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Buffer(sizeof(ParticleMeta) * maxParticles, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 	CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
 	device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_particleBuffer));
@@ -56,8 +56,8 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	uavd.Buffer.StructureByteStride = sizeof(ParticleMeta);
 	device->CreateUnorderedAccessView(m_particleBuffer.Get(), nullptr, &uavd, m_uavHeap->GetCPUDescriptorHandleForHeapStart());
 
-	// •`‰æ—pƒpƒCƒvƒ‰ƒCƒ“¶¬
-	// ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ
+	// æç”»ç”¨ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ç”Ÿæˆ
+	// ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£
 	CD3DX12_DESCRIPTOR_RANGE graRange;
 	range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 	CD3DX12_ROOT_PARAMETER graRootParam[2];
@@ -77,7 +77,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	m_graphicsPS->SetPS(L"MetaBallPS.cso");
 	m_graphicsPS->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 
-	// SRV ƒq[ƒv
+	// SRV ãƒ’ãƒ¼ãƒ—
 	D3D12_DESCRIPTOR_HEAP_DESC hd2 = {};
 	hd2.NumDescriptors = 1;
 	hd2.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -92,7 +92,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	device->CreateShaderResourceView(m_particleBuffer.Get(), &srvd,
 		m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
 
-	// ’è”ƒoƒbƒtƒ@
+	// å®šæ•°ãƒãƒƒãƒ•ã‚¡
 	D3D12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 	D3D12_RESOURCE_DESC   cbd = CD3DX12_RESOURCE_DESC::Buffer(sizeof(DirectX::XMFLOAT4X4) +
 		sizeof(DirectX::XMFLOAT3) + sizeof(UINT) + 4);
@@ -100,7 +100,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
 		IID_PPV_ARGS(&m_graphicsCB));
 
-	// ƒAƒbƒvƒ[ƒhƒq[ƒv‚ğì¬
+	// ã‚¢ãƒƒãƒ—ãƒ­ãƒ¼ãƒ‰ãƒ’ãƒ¼ãƒ—ã‚’ä½œæˆ
 	CD3DX12_HEAP_PROPERTIES uploadProps(D3D12_HEAP_TYPE_UPLOAD);
 	CD3DX12_RESOURCE_DESC   uploadDesc =
 		CD3DX12_RESOURCE_DESC::Buffer(sizeof(ParticleMeta) * m_maxParticles);
@@ -116,7 +116,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 
 void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 	if (m_useGpu) {
-		// GPU ƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“
+		// GPU ã‚·ãƒŸãƒ¥ãƒ¬ãƒ¼ã‚·ãƒ§ãƒ³
 		auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(m_particleBuffer.Get());
 		cmd->ResourceBarrier(1, &uavBarrier);
 		cmd->SetComputeRootSignature(m_computeRS.Get());
@@ -128,12 +128,12 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 		cmd->Dispatch(m_threadGroupCount, 1, 1);
 	}
 	else {
-		// CPU ƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“
+		// CPU ã‚·ãƒŸãƒ¥ãƒ¬ãƒ¼ã‚·ãƒ§ãƒ³
 		for (UINT i = 0; i < m_maxParticles; ++i) {
-			// m_cpuParticles[i].pos ‚ğXV (ŠÈˆÕ—áFY+=dt)
+			// m_cpuParticles[i].pos ã‚’æ›´æ–° (ç°¡æ˜“ä¾‹ï¼šY+=dt)
 			m_cpuParticles[i].pos.y += dt;
 		}
-		// CPU¨GPU “]‘—
+		// CPUâ†’GPU è»¢é€
 		D3D12_SUBRESOURCE_DATA srcData = {};
 		srcData.pData = m_cpuParticles.data();
 		srcData.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
@@ -143,7 +143,11 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 }
 
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4X4& invViewProj, const DirectX::XMFLOAT3& camPos, float isoLevel) {
-	// ’è”ƒoƒbƒtƒ@XV
+FluidSystem::~FluidSystem()
+{
+        delete m_graphicsPS;
+}
+	// å®šæ•°ãƒãƒƒãƒ•ã‚¡æ›´æ–°
 	struct MetaCB { DirectX::XMFLOAT4X4 invVP; DirectX::XMFLOAT3 cam; float iso; UINT count; } cb;
 	cb.invVP = invViewProj;
 	cb.cam = camPos;
@@ -154,7 +158,7 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4
 	memcpy(p, &cb, sizeof(cb));
 	m_graphicsCB->Unmap(0, nullptr);
 
-	// •`‰æ
+	// æç”»
 	cmd->SetDescriptorHeaps(1, m_graphicsSrvHeap.GetAddressOf());
 	cmd->SetGraphicsRootSignature(m_graphicsRS.Get());
 	cmd->SetPipelineState(m_graphicsPS->Get());

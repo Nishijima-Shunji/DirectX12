@@ -162,5 +162,17 @@ void Particle::UpdateVertexBuffer() {
 	void* ptr = nullptr;
 	m_VertexBuffer->GetResource()->Map(0, nullptr, &ptr);
 	memcpy(ptr, vertices.data(), sizeof(ParticleVertex) * vertices.size());
+
 	m_VertexBuffer->GetResource()->Unmap(0, nullptr);
+
+}
+Particle::~Particle()
+{
+        delete m_VertexBuffer;
+        for (size_t i = 0; i < Engine::FRAME_BUFFER_COUNT; i++) {
+                delete m_ConstantBuffer[i];
+                m_ConstantBuffer[i] = nullptr;
+        }
+        delete m_RootSignature;
+        delete m_PipelineState;
 }
