@@ -6,6 +6,7 @@
 #include <wrl.h>
 #include <DirectXMath.h>
 #include "SharedStruct.h"
+#include "ConstantBuffer.h"
 
 
 class FluidSystem {
@@ -35,6 +36,10 @@ private:
     ComPtr<ID3D12DescriptorHeap>  m_uavHeap;      // UAV を持つヒープ
     ComPtr<ID3D12DescriptorHeap>  m_graphicsSrvHeap; // SRV 用ヒープ
     ComPtr<ID3D12Resource>        m_uploadHeap;
+
+    // Compute 用定数バッファ
+    ConstantBuffer*               m_sphParamCB = nullptr;
+    ConstantBuffer*               m_viewProjCB = nullptr;
 
     // コンピュート用パイプライン
     ComPtr<ID3D12RootSignature>    m_computeRS;

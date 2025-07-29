@@ -3,6 +3,22 @@
 #include <algorithm>
 #include <d3dcompiler.h>
 #include "Engine.h"
+#include "Camera.h"
+
+struct SPHParamsCB {
+    float restDensity;
+    float particleMass;
+    float viscosity;
+    float stiffness;
+    float radius;
+    float timeStep;
+    uint32_t particleCount;
+    float pad; // padding to 16 bytes multiple
+};
+
+struct ViewProjCB {
+    DirectX::XMFLOAT4X4 viewProj;
+};
 
 void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         UINT maxParticles, UINT threadGroupCount) {
@@ -148,6 +164,27 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         device->CreateCommittedResource(&upProps, D3D12_HEAP_FLAG_NONE, &uploadDesc,
                 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
                 IID_PPV_ARGS(&m_uploadHeap));
+
+        // Compute用定数バッファ作成
+        m_sphParamCB = new ConstantBuffer(sizeof(SPHParamsCB));
+        m_viewProjCB = new ConstantBuffer(sizeof(ViewProjCB));
+
+        // 初期値設定
+        if (m_sphParamCB && m_sphParamCB->IsValid()) {
+            auto* cb = m_sphParamCB->GetPtr<SPHParamsCB>();
+            cb->restDensity   = 1000.0f;
+            cb->particleMass  = 1.0f;
+            cb->viscosity     = 1.0f;
+            cb->stiffness     = 200.0f;
+            cb->radius        = 0.1f;
+            cb->timeStep      = 0.016f;
+            cb->particleCount = m_maxParticles;
+        }
+
+        if (m_viewProjCB && m_viewProjCB->IsValid()) {
+            auto* cb = m_viewProjCB->GetPtr<ViewProjCB>();
+            DirectX::XMStoreFloat4x4(&cb->viewProj, DirectX::XMMatrixIdentity());
+        }
 }
 
 void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
@@ -165,8 +202,24 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
                 uavHandle.ptr += handleSize;
 
                 // Root parameter order: b0, b1, t0, u0, u1
-                cmd->SetComputeRootConstantBufferView(0, 0);
-                cmd->SetComputeRootConstantBufferView(1, 0);
+                // 定数バッファ更新
+                if (m_sphParamCB && m_sphParamCB->IsValid()) {
+                    auto* cb = m_sphParamCB->GetPtr<SPHParamsCB>();
+                    cb->timeStep      = dt;
+                    cb->particleCount = m_maxParticles;
+                }
+
+                if (m_viewProjCB && m_viewProjCB->IsValid()) {
+                    auto* cam = g_Engine->GetObj<Camera>("Camera");
+                    if (cam) {
+                        auto mat = cam->GetViewMatrix() * cam->GetProjMatrix();
+                        auto* cb = m_viewProjCB->GetPtr<ViewProjCB>();
+                        DirectX::XMStoreFloat4x4(&cb->viewProj, mat);
+                    }
+                }
+
+                cmd->SetComputeRootConstantBufferView(0, m_sphParamCB->GetAddress());
+                cmd->SetComputeRootConstantBufferView(1, m_viewProjCB->GetAddress());
                 cmd->SetComputeRootDescriptorTable(2, srvHandle);
                 cmd->SetComputeRootDescriptorTable(3, uavHandle);
                 cmd->SetComputeRootDescriptorTable(4, uavHandle); // same buffer for now
