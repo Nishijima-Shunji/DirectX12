@@ -12,12 +12,15 @@ using namespace DirectX;
 GameScene* GameScene::g_pCurrentScene = nullptr;
 
 GameScene::GameScene(Game* game) : BaseScene(game) {
-	printf("GameScene¶¬\n");
+	if (g_pCurrentScene == this) {
+		g_pCurrentScene = nullptr;
+	}
+	printf("GameSceneç”Ÿæˆ\n");
 	Init();
 }
 
 GameScene::~GameScene() {
-	printf("GameScene”jŠü\n");
+	printf("GameSceneç ´æ£„\n");
 	m_objects.clear();
 }
 
@@ -30,7 +33,7 @@ bool GameScene::Init() {
 
 	//particle = std::make_unique<Particle>(camera);
 	
-	// —¬‘ÌƒVƒXƒeƒ€‚Ì‰Šú‰»
+	// æµä½“ã‚·ã‚¹ãƒ†ãƒ ã®åˆæœŸåŒ–
 	auto device = g_Engine->Device();
 	const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
@@ -38,7 +41,7 @@ bool GameScene::Init() {
 	const UINT threadGroupCount = 16;
 	m_fluid.Init(device, rtvFormat, maxParticles, threadGroupCount);
 
-	m_fluid.UseGPU(true); // GPU ‚ÅƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“‚ğs‚©‚Ç‚¤‚©
+	m_fluid.UseGPU(true); // GPU ã§ã‚·ãƒŸãƒ¥ãƒ¬ãƒ¼ã‚·ãƒ§ãƒ³ã‚’è¡Œã‹ã©ã†ã‹
 
 
 	return true;
@@ -50,7 +53,7 @@ void GameScene::Update(float deltaTime) {
 	auto cmd = g_Engine->CommandList();
 	m_fluid.Simulate(cmd, deltaTime);
 
-	// ‘S‘Ì‚Ìupdate
+	// å…¨ä½“ã®update
 	for (auto& obj : m_objects) {
 		if (obj->IsAlive)
 			obj->Update(deltaTime);
@@ -72,7 +75,7 @@ void GameScene::Update(float deltaTime) {
 }
 
 void GameScene::Draw() {
-	commandList = g_Engine->CommandList(); // ƒRƒ}ƒ“ƒhƒŠƒXƒg‚ğæ“¾
+	commandList = g_Engine->CommandList(); // ã‚³ãƒãƒ³ãƒ‰ãƒªã‚¹ãƒˆã‚’å–å¾—
 	auto cmd = g_Engine->CommandList();
 	auto invViewProj = g_Engine->GetObj<Camera>("Camera")->GetInvViewProj();
 	auto cameraPos   = g_Engine->GetObj<Camera>("Camera")->GetPosition();
