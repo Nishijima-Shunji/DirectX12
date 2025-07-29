@@ -106,8 +106,11 @@ void MainLoop()
 			prevTime = now;
 
 			// ゲーム更新・描画
+			g_Engine->BeginRender();
 			game.Update(dt);
 			game.Render();
+			g_Engine->EndRender();
+
 
 			//// フレームを提示
 			//g_Engine->EndRender();

@@ -27,9 +27,9 @@ void Game::Update(float deltaTime)
 // =======================================================================================
 void Game::Render()
 {
-    g_Engine->BeginRender();
+    //g_Engine->BeginRender();
     m_SceneManager.Render();
-    g_Engine->EndRender();
+    //g_Engine->EndRender();
 }
 
 // =======================================================================================
