@@ -1,5 +1,5 @@
 #pragma once
-#include "Comptr.h"
+#include "ComPtr.h"
 #include "ComputePipelineState.h"
 #include "PipelineState.h"
 #include <d3d12.h>
@@ -10,37 +10,37 @@
 
 class FluidSystem {
 public:
-    // ‰Šú‰»: ƒfƒoƒCƒXERTVŒ`®EÅ‘å—±q”EƒXƒŒƒbƒhƒOƒ‹[ƒv”
+    // åˆæœŸåŒ–: ãƒ‡ãƒã‚¤ã‚¹ãƒ»RTVå½¢å¼ãƒ»æœ€å¤§ç²’å­æ•°ãƒ»ã‚¹ãƒ¬ãƒƒãƒ‰ã‚°ãƒ«ãƒ¼ãƒ—æ•°
     void Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         UINT maxParticles, UINT threadGroupCount);
 
-    // CPU/GPU Ø‚è‘Ö‚¦
+    // CPU/GPU åˆ‡ã‚Šæ›¿ãˆ
     void UseGPU(bool enable) { m_useGpu = enable; }
 
-    // ƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“ (CPU or ComputeShader)
+    // ã‚·ãƒŸãƒ¥ãƒ¬ãƒ¼ã‚·ãƒ§ãƒ³ (CPU or ComputeShader)
     void Simulate(ID3D12GraphicsCommandList* cmd, float dt);
 
-    // 3Dƒƒ^ƒ{[ƒ‹•`‰æ
+    // 3Dãƒ¡ã‚¿ãƒœãƒ¼ãƒ«æç”»
     void Render(ID3D12GraphicsCommandList* cmd,
         const DirectX::XMFLOAT4X4& invViewProj,
         const DirectX::XMFLOAT3& camPos,
         float isoLevel);
 
 private:
-    // CPU ‘¤ƒp[ƒeƒBƒNƒ‹”z—ñ
+    // CPU å´ãƒ‘ãƒ¼ãƒ†ã‚£ã‚¯ãƒ«é…åˆ—
     std::vector<ParticleMeta>     m_cpuParticles;
 
-    // GPU —pƒoƒbƒtƒ@ (SRV/UAV‹¤—p)
+    // GPU ç”¨ãƒãƒƒãƒ•ã‚¡ (SRV/UAVå…±ç”¨)
     ComPtr<ID3D12Resource>        m_particleBuffer;
-    ComPtr<ID3D12DescriptorHeap>  m_uavHeap;      // UAV ‚ğ‚Âƒq[ƒv
-    ComPtr<ID3D12DescriptorHeap>  m_graphicsSrvHeap; // SRV —pƒq[ƒv
+    ComPtr<ID3D12DescriptorHeap>  m_uavHeap;      // UAV ã‚’æŒã¤ãƒ’ãƒ¼ãƒ—
+    ComPtr<ID3D12DescriptorHeap>  m_graphicsSrvHeap; // SRV ç”¨ãƒ’ãƒ¼ãƒ—
     ComPtr<ID3D12Resource>        m_uploadHeap;
 
-    // ƒRƒ“ƒsƒ…[ƒg—pƒpƒCƒvƒ‰ƒCƒ“
+    // ã‚³ãƒ³ãƒ”ãƒ¥ãƒ¼ãƒˆç”¨ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³
     ComPtr<ID3D12RootSignature>    m_computeRS;
     ComputePipelineState           m_computePS;
 
-    // •`‰æ—pƒpƒCƒvƒ‰ƒCƒ“
+    // æç”»ç”¨ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³
     ComPtr<ID3D12RootSignature>    m_graphicsRS;
     PipelineState* m_graphicsPS;
     ComPtr<ID3D12Resource>         m_graphicsCB;
