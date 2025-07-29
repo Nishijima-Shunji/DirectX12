@@ -144,7 +144,6 @@
     <ClCompile Include="BaseScene.cpp" />
     <ClCompile Include="Camera.cpp" />
     <ClCompile Include="ComputePipelineState.cpp" />
-    <ClCompile Include="ComputeRootSignature.cpp" />
     <ClCompile Include="ConstantBuffer.cpp" />
     <ClCompile Include="DiscriptorHeap.cpp" />
     <ClCompile Include="Engine.cpp" />

@@ -132,9 +132,6 @@
     <ClCompile Include="RootSignature.cpp">
       <Filter>ソース ファイル\System\RootSignature</Filter>
     </ClCompile>
-    <ClCompile Include="ComputeRootSignature.cpp">
-      <Filter>ソース ファイル\System\RootSignature</Filter>
-    </ClCompile>
     <ClCompile Include="DiscriptorHeap.cpp">
       <Filter>ソース ファイル\System\DescriptorHeap</Filter>
     </ClCompile>
