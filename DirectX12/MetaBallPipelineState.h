@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Comptr.h"
+#include "ComPtr.h"
 #include <d3d12.h>
 #include <wrl.h>
 
@@ -10,7 +10,7 @@ namespace graphics {
 
     struct MetaBallPipeline
     {
-        // ‰Šú‰»
+        // Ââ€°Å Ãºâ€°Â»
         static void CreateRootSignature(ID3D12Device* device,
             ComPtr<ID3D12RootSignature>& outRootSig);
 

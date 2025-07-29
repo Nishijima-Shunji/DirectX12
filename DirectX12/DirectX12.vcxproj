@@ -146,7 +146,7 @@
     <ClCompile Include="ComputePipelineState.cpp" />
     <ClCompile Include="ComputeRootSignature.cpp" />
     <ClCompile Include="ConstantBuffer.cpp" />
-    <ClCompile Include="DiscriptorHeap.cpp" />
+    <ClCompile Include="DescriptorHeap.cpp" />
     <ClCompile Include="Engine.cpp" />
     <ClCompile Include="FluidSystem.cpp" />
     <ClCompile Include="Game.cpp" />
@@ -172,7 +172,7 @@
     <ClInclude Include="AssimpLoader.h" />
     <ClInclude Include="BaseScene.h" />
     <ClInclude Include="Camera.h" />
-    <ClInclude Include="Comptr.h" />
+    <ClInclude Include="ComPtr.h" />
     <ClInclude Include="ComputePipelineState.h" />
     <ClInclude Include="ComputeRootSignature.h" />
     <ClInclude Include="ConstantBuffer.h" />

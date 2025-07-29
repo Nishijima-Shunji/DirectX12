@@ -135,7 +135,7 @@
     <ClCompile Include="ComputeRootSignature.cpp">
       <Filter>ソース ファイル\System\RootSignature</Filter>
     </ClCompile>
-    <ClCompile Include="DiscriptorHeap.cpp">
+    <ClCompile Include="DescriptorHeap.cpp">
       <Filter>ソース ファイル\System\DescriptorHeap</Filter>
     </ClCompile>
     <ClCompile Include="MetaBallPipelineState.cpp">
@@ -167,7 +167,7 @@
     <ClInclude Include="AssimpLoader.h">
       <Filter>ヘッダー ファイル\System</Filter>
     </ClInclude>
-    <ClInclude Include="Comptr.h">
+    <ClInclude Include="ComPtr.h">
       <Filter>ヘッダー ファイル\System</Filter>
     </ClInclude>
     <ClInclude Include="Texture2D.h">
