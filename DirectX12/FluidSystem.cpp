@@ -1,14 +1,17 @@
 #include "FluidSystem.h"
 #include "d3dx12.h"
 #include <algorithm>
+#include <d3dcompiler.h>
+#include "Engine.h"
 
 void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
-	UINT maxParticles, UINT threadGroupCount) {
-	m_maxParticles = maxParticles;
-	m_threadGroupCount = threadGroupCount;
-	m_cpuParticles.resize(maxParticles);
+        UINT maxParticles, UINT threadGroupCount) {
+        m_maxParticles = maxParticles;
+        m_threadGroupCount = threadGroupCount;
+        m_cpuParticles.resize(maxParticles);
 
-        // RootSignature
+        // ---------------------------------------------------------------------
+        // Compute root signature
         // 0 : SRV (t0)
         // 1 : UAV (u1)
         // 2 : Constants (b0)
@@ -23,9 +26,47 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         params[1].InitAsDescriptorTable(1, &uavRange, D3D12_SHADER_VISIBILITY_ALL);
         params[2].InitAsConstants(1, 0);
 
-        CD3DX12_ROOT_SIGNATURE_DESC rsDesc(_countof(params), params, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+        CD3DX12_ROOT_SIGNATURE_DESC rsDesc(_countof(params), params, 0, nullptr,
+                D3D12_ROOT_SIGNATURE_FLAG_NONE);
 
-        device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_particleBuffer));
+        ComPtr<ID3DBlob> blob, error;
+        HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1,
+                &blob, &error);
+        if (FAILED(hr)) {
+                if (error) {
+                        wprintf(L"[Error] RootSignature Serialize failed: %s\n", (char*)error->GetBufferPointer());
+                }
+                return;
+        }
+
+        hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(),
+                IID_PPV_ARGS(&m_computeRS));
+        if (FAILED(hr)) {
+                wprintf(L"[Error] RootSignature 生成失敗: 0x%08X\n", hr);
+                return;
+        }
+
+        // ---------------------------------------------------------------------
+        // Compute PSO
+        m_computePS.SetDevice(device);
+        m_computePS.SetRootSignature(m_computeRS.Get());
+        m_computePS.SetCS(L"ParticleCS.cso");
+        m_computePS.Create();
+
+        // ---------------------------------------------------------------------
+        // Particle buffer and descriptor heap (SRV + UAV)
+        D3D12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Buffer(
+                sizeof(ParticleMeta) * maxParticles,
+                D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+        device->CreateCommittedResource(
+                &heapProps,
+                D3D12_HEAP_FLAG_NONE,
+                &rd,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                nullptr,
+                IID_PPV_ARGS(&m_particleBuffer));
+
         D3D12_DESCRIPTOR_HEAP_DESC hd = {};
         hd.NumDescriptors = 2; // SRV + UAV
         hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -49,33 +90,6 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         uavd.Buffer.NumElements = maxParticles;
         uavd.Buffer.StructureByteStride = sizeof(ParticleMeta);
         device->CreateUnorderedAccessView(m_particleBuffer.Get(), nullptr, &uavd, handle);
-	hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_computeRS));
-	if (FAILED(hr)) {
-		wprintf(L"[Error] RootSignature 生成失敗: 0x%08X\n", hr);
-		return;
-	}
-
-	// ComputePSOを初期化
-	m_computePS.SetDevice(device);
-	m_computePS.SetRootSignature(m_computeRS.Get());
-	m_computePS.SetCS(L"ParticleCS.cso");
-	m_computePS.Create();
-
-	// 粒子バッファとUAVヒープ
-	D3D12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Buffer(sizeof(ParticleMeta) * maxParticles, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-	CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-	device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_particleBuffer));
-	D3D12_DESCRIPTOR_HEAP_DESC hd = {};
-	hd.NumDescriptors = 1;
-	hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_uavHeap));
-
-	D3D12_UNORDERED_ACCESS_VIEW_DESC uavd = {};
-	uavd.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-	uavd.Buffer.NumElements = maxParticles;
-	uavd.Buffer.StructureByteStride = sizeof(ParticleMeta);
-	device->CreateUnorderedAccessView(m_particleBuffer.Get(), nullptr, &uavd, m_uavHeap->GetCPUDescriptorHandleForHeapStart());
 
 	// 描画用パイプライン生成
 	// ルートシグネチャ
@@ -113,46 +127,42 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	device->CreateShaderResourceView(m_particleBuffer.Get(), &srvd,
 		m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
 
-	// 定数バッファ
-	D3D12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	D3D12_RESOURCE_DESC   cbd = CD3DX12_RESOURCE_DESC::Buffer(sizeof(DirectX::XMFLOAT4X4) +
-		sizeof(DirectX::XMFLOAT3) + sizeof(UINT) + 4);
-	device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &cbd,
-		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-		IID_PPV_ARGS(&m_graphicsCB));
+        // 定数バッファ
+        D3D12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        D3D12_RESOURCE_DESC   cbd = CD3DX12_RESOURCE_DESC::Buffer(sizeof(DirectX::XMFLOAT4X4) +
+                sizeof(DirectX::XMFLOAT3) + sizeof(UINT) + 4);
+        device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &cbd,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                IID_PPV_ARGS(&m_graphicsCB));
 
+        // アップロードヒープ (CPU→GPU 転送用)
+        CD3DX12_HEAP_PROPERTIES upProps(D3D12_HEAP_TYPE_UPLOAD);
+        D3D12_RESOURCE_DESC uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(ParticleMeta) * maxParticles);
+        device->CreateCommittedResource(&upProps, D3D12_HEAP_FLAG_NONE, &uploadDesc,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                IID_PPV_ARGS(&m_uploadHeap));
+}
+
+void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
+        if (m_useGpu) {
+                // GPU シミュレーション
+                auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(m_particleBuffer.Get());
+                cmd->ResourceBarrier(1, &uavBarrier);
+                cmd->SetComputeRootSignature(m_computeRS.Get());
                 ID3D12DescriptorHeap* heaps[] = { m_uavHeap.Get() };
                 cmd->SetDescriptorHeaps(1, heaps);
+
                 UINT handleSize = g_Engine->Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_uavHeap->GetGPUDescriptorHandleForHeapStart();
                 D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = srvHandle;
                 uavHandle.ptr += handleSize;
+
                 cmd->SetComputeRootDescriptorTable(0, srvHandle);
                 cmd->SetComputeRootDescriptorTable(1, uavHandle);
                 cmd->SetPipelineState(m_computePS.Get());
                 cmd->SetComputeRoot32BitConstants(2, 1, &dt, 0);
                 cmd->Dispatch(m_threadGroupCount, 1, 1);
-		D3D12_HEAP_FLAG_NONE,
-		&uploadDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(&m_uploadHeap)
-	);
-}
-
-void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
-	if (m_useGpu) {
-		// GPU シミュレーション
-		auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(m_particleBuffer.Get());
-		cmd->ResourceBarrier(1, &uavBarrier);
-		cmd->SetComputeRootSignature(m_computeRS.Get());
-		ID3D12DescriptorHeap* heaps[] = { m_uavHeap.Get() };
-		cmd->SetDescriptorHeaps(1, heaps);
-		cmd->SetComputeRootDescriptorTable(0, m_uavHeap->GetGPUDescriptorHandleForHeapStart());
-		cmd->SetPipelineState(m_computePS.Get());
-		cmd->SetComputeRoot32BitConstants(1, 1, &dt, 0);
-		cmd->Dispatch(m_threadGroupCount, 1, 1);
-	}
+        }
 	else {
 		// CPU シミュレーション
 		for (UINT i = 0; i < m_maxParticles; ++i) {
