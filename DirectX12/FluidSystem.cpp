@@ -8,39 +8,60 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	m_threadGroupCount = threadGroupCount;
 	m_cpuParticles.resize(maxParticles);
 
-	CD3DX12_DESCRIPTOR_RANGE range;
-	range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+        // RootSignature
+        // 0 : SRV (t0)
+        // 1 : UAV (u1)
+        // 2 : Constants (b0)
+        CD3DX12_DESCRIPTOR_RANGE srvRange;
+        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
-	CD3DX12_ROOT_PARAMETER rp;
-	rp.InitAsDescriptorTable(1, &range, D3D12_SHADER_VISIBILITY_ALL);
+        CD3DX12_DESCRIPTOR_RANGE uavRange;
+        uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
 
-	CD3DX12_ROOT_SIGNATURE_DESC rsDesc(1, &rp, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+        CD3DX12_ROOT_PARAMETER params[3];
+        params[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
+        params[1].InitAsDescriptorTable(1, &uavRange, D3D12_SHADER_VISIBILITY_ALL);
+        params[2].InitAsConstants(1, 0);
 
-	// ÉVÉäÉAÉâÉCÉY
-	ComPtr<ID3DBlob> blob, errBlob;
-	HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &errBlob);
-	if (FAILED(hr)) {
-		if (errBlob) {
-			OutputDebugStringA((char*)errBlob->GetBufferPointer());
-		}
-		wprintf(L"RootSignature ÉVÉäÉAÉâÉCÉYé∏îs: 0x%08X\n", hr);
-		return;
-	}
+        CD3DX12_ROOT_SIGNATURE_DESC rsDesc(_countof(params), params, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
 
-	// ÉãÅ[ÉgÉVÉOÉlÉ`ÉÉê∂ê¨
+        device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_particleBuffer));
+        D3D12_DESCRIPTOR_HEAP_DESC hd = {};
+        hd.NumDescriptors = 2; // SRV + UAV
+        hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+        device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_uavHeap));
+
+        UINT handleSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        D3D12_CPU_DESCRIPTOR_HANDLE handle = m_uavHeap->GetCPUDescriptorHandleForHeapStart();
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        srvDesc.Buffer.NumElements = maxParticles;
+        srvDesc.Buffer.StructureByteStride = sizeof(ParticleMeta);
+        srvDesc.Format = DXGI_FORMAT_UNKNOWN;
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        device->CreateShaderResourceView(m_particleBuffer.Get(), &srvDesc, handle);
+
+        handle.ptr += handleSize;
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uavd = {};
+        uavd.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+        uavd.Buffer.NumElements = maxParticles;
+        uavd.Buffer.StructureByteStride = sizeof(ParticleMeta);
+        device->CreateUnorderedAccessView(m_particleBuffer.Get(), nullptr, &uavd, handle);
 	hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_computeRS));
 	if (FAILED(hr)) {
-		wprintf(L"[Error] RootSignature ê∂ê¨é∏îs: 0x%08X\n", hr);
+		wprintf(L"[Error] RootSignature ÁîüÊàêÂ§±Êïó: 0x%08X\n", hr);
 		return;
 	}
 
-	// ComputePSOÇèâä˙âª
+	// ComputePSO„ÇíÂàùÊúüÂåñ
 	m_computePS.SetDevice(device);
 	m_computePS.SetRootSignature(m_computeRS.Get());
 	m_computePS.SetCS(L"ParticleCS.cso");
 	m_computePS.Create();
 
-	// ó±éqÉoÉbÉtÉ@Ç∆UAVÉqÅ[Év
+	// Á≤íÂ≠ê„Éê„ÉÉ„Éï„Ç°„Å®UAV„Éí„Éº„Éó
 	D3D12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Buffer(sizeof(ParticleMeta) * maxParticles, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 	CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
 	device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_particleBuffer));
@@ -56,8 +77,8 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	uavd.Buffer.StructureByteStride = sizeof(ParticleMeta);
 	device->CreateUnorderedAccessView(m_particleBuffer.Get(), nullptr, &uavd, m_uavHeap->GetCPUDescriptorHandleForHeapStart());
 
-	// ï`âÊópÉpÉCÉvÉâÉCÉìê∂ê¨
-	// ÉãÅ[ÉgÉVÉOÉlÉ`ÉÉ
+	// ÊèèÁîªÁî®„Éë„Ç§„Éó„É©„Ç§„É≥ÁîüÊàê
+	// „É´„Éº„Éà„Ç∑„Ç∞„Éç„ÉÅ„É£
 	CD3DX12_DESCRIPTOR_RANGE graRange;
 	range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 	CD3DX12_ROOT_PARAMETER graRootParam[2];
@@ -77,7 +98,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	m_graphicsPS->SetPS(L"MetaBallPS.cso");
 	m_graphicsPS->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 
-	// SRV ÉqÅ[Év
+	// SRV „Éí„Éº„Éó
 	D3D12_DESCRIPTOR_HEAP_DESC hd2 = {};
 	hd2.NumDescriptors = 1;
 	hd2.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -92,7 +113,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	device->CreateShaderResourceView(m_particleBuffer.Get(), &srvd,
 		m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
 
-	// íËêîÉoÉbÉtÉ@
+	// ÂÆöÊï∞„Éê„ÉÉ„Éï„Ç°
 	D3D12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 	D3D12_RESOURCE_DESC   cbd = CD3DX12_RESOURCE_DESC::Buffer(sizeof(DirectX::XMFLOAT4X4) +
 		sizeof(DirectX::XMFLOAT3) + sizeof(UINT) + 4);
@@ -100,12 +121,17 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
 		IID_PPV_ARGS(&m_graphicsCB));
 
-	// ÉAÉbÉvÉçÅ[ÉhÉqÅ[ÉvÇçÏê¨
-	CD3DX12_HEAP_PROPERTIES uploadProps(D3D12_HEAP_TYPE_UPLOAD);
-	CD3DX12_RESOURCE_DESC   uploadDesc =
-		CD3DX12_RESOURCE_DESC::Buffer(sizeof(ParticleMeta) * m_maxParticles);
-	device->CreateCommittedResource(
-		&uploadProps,
+                ID3D12DescriptorHeap* heaps[] = { m_uavHeap.Get() };
+                cmd->SetDescriptorHeaps(1, heaps);
+                UINT handleSize = g_Engine->Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+                D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_uavHeap->GetGPUDescriptorHandleForHeapStart();
+                D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = srvHandle;
+                uavHandle.ptr += handleSize;
+                cmd->SetComputeRootDescriptorTable(0, srvHandle);
+                cmd->SetComputeRootDescriptorTable(1, uavHandle);
+                cmd->SetPipelineState(m_computePS.Get());
+                cmd->SetComputeRoot32BitConstants(2, 1, &dt, 0);
+                cmd->Dispatch(m_threadGroupCount, 1, 1);
 		D3D12_HEAP_FLAG_NONE,
 		&uploadDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
@@ -116,7 +142,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 
 void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 	if (m_useGpu) {
-		// GPU ÉVÉ~ÉÖÉåÅ[ÉVÉáÉì
+		// GPU „Ç∑„Éü„É•„É¨„Éº„Ç∑„Éß„É≥
 		auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(m_particleBuffer.Get());
 		cmd->ResourceBarrier(1, &uavBarrier);
 		cmd->SetComputeRootSignature(m_computeRS.Get());
@@ -128,12 +154,12 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 		cmd->Dispatch(m_threadGroupCount, 1, 1);
 	}
 	else {
-		// CPU ÉVÉ~ÉÖÉåÅ[ÉVÉáÉì
+		// CPU „Ç∑„Éü„É•„É¨„Éº„Ç∑„Éß„É≥
 		for (UINT i = 0; i < m_maxParticles; ++i) {
-			// m_cpuParticles[i].pos ÇçXêV (ä»à’ó·ÅFY+=dt)
+			// m_cpuParticles[i].pos „ÇíÊõ¥Êñ∞ (Á∞°Êòì‰æãÔºöY+=dt)
 			m_cpuParticles[i].pos.y += dt;
 		}
-		// CPUÅ®GPU ì]ëó
+		// CPU‚ÜíGPU Ëª¢ÈÄÅ
 		D3D12_SUBRESOURCE_DATA srcData = {};
 		srcData.pData = m_cpuParticles.data();
 		srcData.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
@@ -143,7 +169,7 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 }
 
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4X4& invViewProj, const DirectX::XMFLOAT3& camPos, float isoLevel) {
-	// íËêîÉoÉbÉtÉ@çXêV
+	// ÂÆöÊï∞„Éê„ÉÉ„Éï„Ç°Êõ¥Êñ∞
 	struct MetaCB { DirectX::XMFLOAT4X4 invVP; DirectX::XMFLOAT3 cam; float iso; UINT count; } cb;
 	cb.invVP = invViewProj;
 	cb.cam = camPos;
@@ -154,7 +180,7 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4
 	memcpy(p, &cb, sizeof(cb));
 	m_graphicsCB->Unmap(0, nullptr);
 
-	// ï`âÊ
+	// ÊèèÁîª
 	cmd->SetDescriptorHeaps(1, m_graphicsSrvHeap.GetAddressOf());
 	cmd->SetGraphicsRootSignature(m_graphicsRS.Get());
 	cmd->SetPipelineState(m_graphicsPS->Get());
