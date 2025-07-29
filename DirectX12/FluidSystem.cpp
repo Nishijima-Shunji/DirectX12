@@ -12,19 +12,26 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 
         // ---------------------------------------------------------------------
         // Compute root signature
-        // 0 : SRV (t0)
-        // 1 : UAV (u1)
-        // 2 : Constants (b0)
+        // 0 : CBV (b0)
+        // 1 : CBV (b1)
+        // 2 : SRV (t0)
+        // 3 : UAV (u0)
+        // 4 : UAV (u1)
         CD3DX12_DESCRIPTOR_RANGE srvRange;
-        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
 
-        CD3DX12_DESCRIPTOR_RANGE uavRange;
-        uavRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
+        CD3DX12_DESCRIPTOR_RANGE uavRange0;
+        uavRange0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0); // u0
 
-        CD3DX12_ROOT_PARAMETER params[3];
-        params[0].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
-        params[1].InitAsDescriptorTable(1, &uavRange, D3D12_SHADER_VISIBILITY_ALL);
-        params[2].InitAsConstants(1, 0);
+        CD3DX12_DESCRIPTOR_RANGE uavRange1;
+        uavRange1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1); // u1
+
+        CD3DX12_ROOT_PARAMETER params[5];
+        params[0].InitAsConstantBufferView(0);      // b0
+        params[1].InitAsConstantBufferView(1);      // b1
+        params[2].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
+        params[3].InitAsDescriptorTable(1, &uavRange0, D3D12_SHADER_VISIBILITY_ALL);
+        params[4].InitAsDescriptorTable(1, &uavRange1, D3D12_SHADER_VISIBILITY_ALL);
 
         CD3DX12_ROOT_SIGNATURE_DESC rsDesc(_countof(params), params, 0, nullptr,
                 D3D12_ROOT_SIGNATURE_FLAG_NONE);
@@ -157,10 +164,13 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
                 D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = srvHandle;
                 uavHandle.ptr += handleSize;
 
-                cmd->SetComputeRootDescriptorTable(0, srvHandle);
-                cmd->SetComputeRootDescriptorTable(1, uavHandle);
+                // Root parameter order: b0, b1, t0, u0, u1
+                cmd->SetComputeRootConstantBufferView(0, 0);
+                cmd->SetComputeRootConstantBufferView(1, 0);
+                cmd->SetComputeRootDescriptorTable(2, srvHandle);
+                cmd->SetComputeRootDescriptorTable(3, uavHandle);
+                cmd->SetComputeRootDescriptorTable(4, uavHandle); // same buffer for now
                 cmd->SetPipelineState(m_computePS.Get());
-                cmd->SetComputeRoot32BitConstants(2, 1, &dt, 0);
                 cmd->Dispatch(m_threadGroupCount, 1, 1);
         }
 	else {
