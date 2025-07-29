@@ -34,6 +34,7 @@ private:
     ComPtr<ID3D12Resource>        m_particleBuffer;
     ComPtr<ID3D12DescriptorHeap>  m_uavHeap;      // UAV を持つヒープ
     ComPtr<ID3D12DescriptorHeap>  m_graphicsSrvHeap; // SRV 用ヒープ
+    ComPtr<ID3D12Resource>        m_uploadHeap;
 
     // コンピュート用パイプライン
     ComPtr<ID3D12RootSignature>    m_computeRS;

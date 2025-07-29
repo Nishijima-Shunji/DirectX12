@@ -8,24 +8,42 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	m_threadGroupCount = threadGroupCount;
 	m_cpuParticles.resize(maxParticles);
 
+	CD3DX12_DESCRIPTOR_RANGE range;
+	range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+
+	CD3DX12_ROOT_PARAMETER rp;
+	rp.InitAsDescriptorTable(1, &range, D3D12_SHADER_VISIBILITY_ALL);
+
+	CD3DX12_ROOT_SIGNATURE_DESC rsDesc(1, &rp, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+
+	// シリアライズ
+	ComPtr<ID3DBlob> blob, errBlob;
+	HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &errBlob);
+	if (FAILED(hr)) {
+		if (errBlob) {
+			OutputDebugStringA((char*)errBlob->GetBufferPointer());
+		}
+		wprintf(L"RootSignature シリアライズ失敗: 0x%08X\n", hr);
+		return;
+	}
+
+	// ルートシグネチャ生成
+	hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(&m_computeRS));
+	if (FAILED(hr)) {
+		wprintf(L"[Error] RootSignature 生成失敗: 0x%08X\n", hr);
+		return;
+	}
+
 	// ComputePSOを初期化
+	m_computePS.SetDevice(device);
 	m_computePS.SetRootSignature(m_computeRS.Get());
 	m_computePS.SetCS(L"ParticleCS.cso");
 	m_computePS.Create();
 
 	// 粒子バッファとUAVヒープ
-	D3D12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Buffer(
-		sizeof(ParticleMeta) * maxParticles,
-		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	D3D12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Buffer(sizeof(ParticleMeta) * maxParticles, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 	CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
-	device->CreateCommittedResource(
-		&heapProps,                             // ← こっちを使う
-		D3D12_HEAP_FLAG_NONE,
-		&rd,
-		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-		nullptr,
-		IID_PPV_ARGS(&m_particleBuffer)
-		);
+	device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_particleBuffer));
 	D3D12_DESCRIPTOR_HEAP_DESC hd = {};
 	hd.NumDescriptors = 1;
 	hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -36,23 +54,19 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	uavd.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
 	uavd.Buffer.NumElements = maxParticles;
 	uavd.Buffer.StructureByteStride = sizeof(ParticleMeta);
-	device->CreateUnorderedAccessView(
-		m_particleBuffer.Get(), nullptr,
-		&uavd, m_uavHeap->GetCPUDescriptorHandleForHeapStart());
+	device->CreateUnorderedAccessView(m_particleBuffer.Get(), nullptr, &uavd, m_uavHeap->GetCPUDescriptorHandleForHeapStart());
 
 	// 描画用パイプライン生成
 	// ルートシグネチャ
-	CD3DX12_DESCRIPTOR_RANGE range;
+	CD3DX12_DESCRIPTOR_RANGE graRange;
 	range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-	CD3DX12_ROOT_PARAMETER rp[2];
-	rp[0].InitAsDescriptorTable(1, &range, D3D12_SHADER_VISIBILITY_PIXEL);
-	rp[1].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
-	CD3DX12_ROOT_SIGNATURE_DESC rsd(2, rp, 0, nullptr,
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-	ComPtr<ID3DBlob> blob, err;
-	D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &err);
-	device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(),
-		IID_PPV_ARGS(&m_graphicsRS));
+	CD3DX12_ROOT_PARAMETER graRootParam[2];
+	graRootParam[0].InitAsDescriptorTable(1, &range, D3D12_SHADER_VISIBILITY_PIXEL);
+	graRootParam[1].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
+	CD3DX12_ROOT_SIGNATURE_DESC rsd(2, graRootParam, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+	ComPtr<ID3DBlob> graBlob, graErr;
+	D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &graBlob, &graErr);
+	device->CreateRootSignature(0, graBlob->GetBufferPointer(), graBlob->GetBufferSize(), IID_PPV_ARGS(&m_graphicsRS));
 
 	// PipelineState
 	m_graphicsPS = new PipelineState();
@@ -85,6 +99,19 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &cbd,
 		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
 		IID_PPV_ARGS(&m_graphicsCB));
+
+	// アップロードヒープを作成
+	CD3DX12_HEAP_PROPERTIES uploadProps(D3D12_HEAP_TYPE_UPLOAD);
+	CD3DX12_RESOURCE_DESC   uploadDesc =
+		CD3DX12_RESOURCE_DESC::Buffer(sizeof(ParticleMeta) * m_maxParticles);
+	device->CreateCommittedResource(
+		&uploadProps,
+		D3D12_HEAP_FLAG_NONE,
+		&uploadDesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(&m_uploadHeap)
+	);
 }
 
 void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
@@ -111,8 +138,7 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 		srcData.pData = m_cpuParticles.data();
 		srcData.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
 		srcData.SlicePitch = srcData.RowPitch;
-		UpdateSubresources<1>(cmd, m_particleBuffer.Get(), /*uploadHeap*/ nullptr,
-			0, 0, 1, &srcData);
+		UpdateSubresources<1>(cmd, m_particleBuffer.Get(), m_uploadHeap.Get(), 0, 0, 1, &srcData);
 	}
 }
 

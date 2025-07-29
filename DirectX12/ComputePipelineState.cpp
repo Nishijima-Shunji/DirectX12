@@ -15,8 +15,10 @@ void ComputePipelineState::SetCS(const std::wstring& path) {
 
 // ê∂ê¨
 void ComputePipelineState::Create() {
-    HRESULT hr = g_Engine->Device()->CreateComputePipelineState(
-        &desc, IID_PPV_ARGS(&m_pso));
+    desc.CS = { m_csBlob->GetBufferPointer(), m_csBlob->GetBufferSize() };
+
+    HRESULT hr = m_device->CreateComputePipelineState(&desc, IID_PPV_ARGS(m_pso.ReleaseAndGetAddressOf()));
+
     if (FAILED(hr)) {
         wprintf(L"Compute PSOê∂ê¨é∏îs 0x%08X\n", hr);
     }

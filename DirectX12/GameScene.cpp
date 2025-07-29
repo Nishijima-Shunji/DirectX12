@@ -28,7 +28,7 @@ bool GameScene::Init() {
 	camera->Init();
 	g_Engine->RegisterObj<Camera>("Camera", camera);
 
-	particle = std::make_unique<Particle>(camera);
+	//particle = std::make_unique<Particle>(camera);
 	
 	// 流体システムの初期化
 	auto device = g_Engine->Device();
@@ -38,7 +38,7 @@ bool GameScene::Init() {
 	const UINT threadGroupCount = 16;
 	m_fluid.Init(device, rtvFormat, maxParticles, threadGroupCount);
 
-	m_fluid.UseGPU(false); // GPU でシミュレーションを行かどうか
+	m_fluid.UseGPU(true); // GPU でシミュレーションを行かどうか
 
 
 	return true;
@@ -46,7 +46,7 @@ bool GameScene::Init() {
 
 void GameScene::Update(float deltaTime) {
 	g_Engine->GetObj<Camera>("Camera")->Update(deltaTime);
-	particle->Update(deltaTime);
+	//particle->Update(deltaTime);
 	auto cmd = g_Engine->CommandList();
 	m_fluid.Simulate(cmd, deltaTime);
 
@@ -78,7 +78,7 @@ void GameScene::Draw() {
 	auto cameraPos   = g_Engine->GetObj<Camera>("Camera")->GetPosition();
 	m_fluid.Render(cmd, invViewProj, cameraPos, 1.0f);
 
-	particle->Draw();
+	//particle->Draw();
 
 	for (auto& actor : m_objects) {
 		if (actor->IsAlive)
