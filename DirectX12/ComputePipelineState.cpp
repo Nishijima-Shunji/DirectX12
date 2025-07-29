@@ -2,24 +2,31 @@
 #include <d3dcompiler.h>
 #include "Engine.h"
 
-// ƒVƒF[ƒ_[‚Ì“Ç‚İ‚İ
+// ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã®èª­ã¿è¾¼ã¿
 void ComputePipelineState::SetCS(const std::wstring& path) {
     HRESULT hr = D3DReadFileToBlob(path.c_str(),
         m_csBlob.GetAddressOf());
     if (FAILED(hr)) {
-        wprintf(L"CS“Ç‚İ‚İ¸”s: %ls\n", path.c_str());
+        wprintf(L"CSèª­ã¿è¾¼ã¿å¤±æ•—: %ls\n", path.c_str());
         return;
     }
     desc.CS = CD3DX12_SHADER_BYTECODE(m_csBlob.Get());
 }
 
-// ¶¬
+// ç”Ÿæˆ
 void ComputePipelineState::Create() {
-    desc.CS = { m_csBlob->GetBufferPointer(), m_csBlob->GetBufferSize() };
+    if (!m_csBlob) {
+        wprintf(L"[Error] Compute shader is not loaded.\n");
+        return;
+    }
 
-    HRESULT hr = m_device->CreateComputePipelineState(&desc, IID_PPV_ARGS(m_pso.ReleaseAndGetAddressOf()));
+    // desc.CS ã¯ SetCS() ã§è¨­å®šæ¸ˆã¿ã ãŒã€å®‰å…¨ã®ãŸã‚å†è¨­å®šã—ã¦ãŠã
+    desc.CS = CD3DX12_SHADER_BYTECODE(m_csBlob.Get());
+
+    HRESULT hr = m_device->CreateComputePipelineState(
+        &desc, IID_PPV_ARGS(m_pso.ReleaseAndGetAddressOf()));
 
     if (FAILED(hr)) {
-        wprintf(L"Compute PSO¶¬¸”s 0x%08X\n", hr);
+        wprintf(L"Compute PSOç”Ÿæˆå¤±æ•— 0x%08X\n", hr);
     }
 }
