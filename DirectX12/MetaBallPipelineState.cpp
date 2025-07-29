@@ -38,24 +38,34 @@ namespace graphics {
         DXGI_FORMAT rtvFormat,
         ComPtr<ID3D12PipelineState>& outPSO)
     {
-        // ÉVÉFÅ[É_Å[ÉRÉìÉpÉCÉã
+        // „Ç∑„Çß„Éº„ÉÄ„Éº„Ç≥„É≥„Éë„Ç§„É´
         ComPtr<ID3DBlob> vsBlob;
         HRESULT hr = D3DReadFileToBlob(L"MetaBallVS.cso", &vsBlob);
         if (FAILED(hr)) {
-           return;
-           
+            UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
+#ifdef _DEBUG
+            flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
+            ComPtr<ID3DBlob> err;
+            hr = D3DCompileFromFile(L"MetaBallVS.hlsl", nullptr, nullptr, "main", "vs_5_0", flags, 0, &vsBlob, &err);
+            if (FAILED(hr)) return;
         }
-        
+
         ComPtr<ID3DBlob> psBlob;
         hr = D3DReadFileToBlob(L"MetaBallPS.cso", &psBlob);
         if (FAILED(hr)) {
-            return;
-            
+            UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
+#ifdef _DEBUG
+            flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
+            ComPtr<ID3DBlob> err;
+            hr = D3DCompileFromFile(L"MetaBallPS.hlsl", nullptr, nullptr, "main", "ps_5_0", flags, 0, &psBlob, &err);
+            if (FAILED(hr)) return;
         }
         
 
 
-        // PSO ê›íË
+        // PSO Ë®≠ÂÆö
         D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};
         desc.pRootSignature = rootSig;
         desc.VS = CD3DX12_SHADER_BYTECODE(vsBlob.Get());

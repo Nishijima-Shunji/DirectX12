@@ -4,11 +4,24 @@
 
 // シェーダーの読み込み
 void ComputePipelineState::SetCS(const std::wstring& path) {
-    HRESULT hr = D3DReadFileToBlob(path.c_str(),
-        m_csBlob.GetAddressOf());
+    HRESULT hr = D3DReadFileToBlob(path.c_str(), m_csBlob.GetAddressOf());
     if (FAILED(hr)) {
-        wprintf(L"CS読み込み失敗: %ls\n", path.c_str());
-        return;
+        // Fallback: compile from .hlsl when .cso is missing
+        std::wstring hlsl = path;
+        size_t pos = hlsl.find_last_of(L'.');
+        if (pos != std::wstring::npos) hlsl.replace(pos, std::wstring::npos, L".hlsl");
+
+        UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
+#ifdef _DEBUG
+        flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
+        ComPtr<ID3DBlob> err;
+        hr = D3DCompileFromFile(hlsl.c_str(), nullptr, nullptr, "CSMain", "cs_5_0", flags, 0,
+                               m_csBlob.GetAddressOf(), err.GetAddressOf());
+        if (FAILED(hr)) {
+            if (err) wprintf(L"CS compile error: %hs\n", (char*)err->GetBufferPointer());
+            return;
+        }
     }
     desc.CS = CD3DX12_SHADER_BYTECODE(m_csBlob.Get());
 }
