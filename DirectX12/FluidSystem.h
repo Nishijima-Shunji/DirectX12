@@ -33,6 +33,7 @@ private:
 
     // GPU 用バッファ (SRV/UAV共用)
     ComPtr<ID3D12Resource>        m_particleBuffer;
+    ComPtr<ID3D12Resource>        m_metaBuffer;  // ParticleMeta 用バッファ
     ComPtr<ID3D12DescriptorHeap>  m_uavHeap;      // UAV を持つヒープ
     ComPtr<ID3D12DescriptorHeap>  m_graphicsSrvHeap; // SRV 用ヒープ
     ComPtr<ID3D12Resource>        m_uploadHeap;

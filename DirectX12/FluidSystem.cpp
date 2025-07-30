@@ -77,7 +77,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         m_computePS.Create();
 
         // ---------------------------------------------------------------------
-        // Particle buffer and descriptor heap (SRV + UAV)
+        // Particle buffer and descriptor heap (SRV + UAV + Meta UAV)
         D3D12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Buffer(
                 sizeof(ParticleMeta) * maxParticles,
                 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
@@ -90,8 +90,17 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
                 nullptr,
                 IID_PPV_ARGS(&m_particleBuffer));
 
+        // Meta buffer (UAV only)
+        device->CreateCommittedResource(
+                &heapProps,
+                D3D12_HEAP_FLAG_NONE,
+                &rd,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                nullptr,
+                IID_PPV_ARGS(&m_metaBuffer));
+
         D3D12_DESCRIPTOR_HEAP_DESC hd = {};
-        hd.NumDescriptors = 2; // SRV + UAV
+        hd.NumDescriptors = 3; // SRV + particle UAV + meta UAV
         hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_uavHeap));
@@ -113,6 +122,10 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         uavd.Buffer.NumElements = maxParticles;
         uavd.Buffer.StructureByteStride = sizeof(ParticleMeta);
         device->CreateUnorderedAccessView(m_particleBuffer.Get(), nullptr, &uavd, handle);
+
+        // meta buffer UAV descriptor
+        handle.ptr += handleSize;
+        device->CreateUnorderedAccessView(m_metaBuffer.Get(), nullptr, &uavd, handle);
 
 	// 描画用パイプライン生成
 	// ルートシグネチャ
@@ -147,8 +160,8 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	srvd.Buffer.StructureByteStride = sizeof(ParticleMeta);
 	srvd.Format = DXGI_FORMAT_UNKNOWN;
 	srvd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	device->CreateShaderResourceView(m_particleBuffer.Get(), &srvd,
-		m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
+        device->CreateShaderResourceView(m_metaBuffer.Get(), &srvd,
+                m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
 
         // 定数バッファ
         D3D12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
@@ -198,8 +211,10 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 
                 UINT handleSize = g_Engine->Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_uavHeap->GetGPUDescriptorHandleForHeapStart();
-                D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = srvHandle;
-                uavHandle.ptr += handleSize;
+                D3D12_GPU_DESCRIPTOR_HANDLE particleUavHandle = srvHandle;
+                particleUavHandle.ptr += handleSize;
+                D3D12_GPU_DESCRIPTOR_HANDLE metaUavHandle = particleUavHandle;
+                metaUavHandle.ptr += handleSize;
 
                 // Root parameter order: b0, b1, t0, u0, u1
                 // 定数バッファ更新
@@ -221,10 +236,13 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
                 cmd->SetComputeRootConstantBufferView(0, m_sphParamCB->GetAddress());
                 cmd->SetComputeRootConstantBufferView(1, m_viewProjCB->GetAddress());
                 cmd->SetComputeRootDescriptorTable(2, srvHandle);
-                cmd->SetComputeRootDescriptorTable(3, uavHandle);
-                cmd->SetComputeRootDescriptorTable(4, uavHandle); // same buffer for now
+                cmd->SetComputeRootDescriptorTable(3, particleUavHandle);
+                cmd->SetComputeRootDescriptorTable(4, metaUavHandle);
                 cmd->SetPipelineState(m_computePS.Get());
                 cmd->Dispatch(m_threadGroupCount, 1, 1);
+
+                auto metaBarrier = CD3DX12_RESOURCE_BARRIER::UAV(m_metaBuffer.Get());
+                cmd->ResourceBarrier(1, &metaBarrier);
         }
 	else {
 		// CPU シミュレーション
