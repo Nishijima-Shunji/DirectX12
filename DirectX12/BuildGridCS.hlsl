@@ -48,7 +48,8 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     int3 cell = int3(floor((pos - gridMin) / radius));
     cell = clamp(cell, int3(0,0,0), int3(gridDim) - 1);
     uint cellId = cell.x + gridDim.x * (cell.y + gridDim.y * cell.z);
-    uint writeIdx = atomicAdd(outGridCount[cellId], 1);
+    uint writeIdx;
+    InterlockedAdd(outGridCount[cellId], 1, writeIdx);
     if (writeIdx < MAX_PARTICLES_PER_CELL)
     {
         outGridTable[cellId * MAX_PARTICLES_PER_CELL + writeIdx] = index;
