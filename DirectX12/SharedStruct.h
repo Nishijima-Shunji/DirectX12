@@ -39,10 +39,15 @@ struct ParticleVertex {
 	static const D3D12_INPUT_LAYOUT_DESC InputLayout;
 	static constexpr UINT InputElementCount = _countof(InputElements);
 };
+struct Particle {
+        DirectX::XMFLOAT3 position;
+        DirectX::XMFLOAT3 velocity;
+};
 
-// ƒƒ^ƒ{[ƒ‹—p‚Ì—±qî•ñ
+
+// ãƒ¡ã‚¿ãƒœãƒ¼ãƒ«ç”¨ã®ç²’å­æƒ…å ±
 struct ParticleMeta
 {
-	DirectX::XMFLOAT3 pos;   // ƒ[ƒ‹ƒh‹óŠÔˆÊ’u
-	float               r;    // ”¼Œa
+	DirectX::XMFLOAT3 pos;   // ãƒ¯ãƒ¼ãƒ«ãƒ‰ç©ºé–“ä½ç½®
+	float               r;    // åŠå¾„
 };

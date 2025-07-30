@@ -7,6 +7,7 @@
 #include <DirectXMath.h>
 #include "SharedStruct.h"
 #include "ConstantBuffer.h"
+#include <vector>
 
 
 class FluidSystem {
@@ -29,13 +30,15 @@ public:
 
 private:
     // CPU 側パーティクル配列
-    std::vector<ParticleMeta>     m_cpuParticles;
+    std::vector<Particle>         m_cpuParticles;
 
     // GPU 用バッファ (SRV/UAV共用)
-    ComPtr<ID3D12Resource>        m_particleBuffer;
+    ComPtr<ID3D12Resource>        m_particleBuffer; // simulation particles
+    ComPtr<ID3D12Resource>        m_metaBuffer;     // metadata for rendering
     ComPtr<ID3D12DescriptorHeap>  m_uavHeap;      // UAV を持つヒープ
     ComPtr<ID3D12DescriptorHeap>  m_graphicsSrvHeap; // SRV 用ヒープ
-    ComPtr<ID3D12Resource>        m_uploadHeap;
+    ComPtr<ID3D12Resource>        m_particleUpload;
+    ComPtr<ID3D12Resource>        m_metaUpload;
 
     // Compute 用定数バッファ
     ConstantBuffer*               m_sphParamCB = nullptr;

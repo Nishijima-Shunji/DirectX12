@@ -2,6 +2,7 @@
 #include "d3dx12.h"
 #include <algorithm>
 #include <d3dcompiler.h>
+#include <vector>
 #include "Engine.h"
 #include "Camera.h"
 
@@ -77,21 +78,31 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         m_computePS.Create();
 
         // ---------------------------------------------------------------------
-        // Particle buffer and descriptor heap (SRV + UAV)
-        D3D12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Buffer(
+        // Particle and meta buffers
+        D3D12_RESOURCE_DESC rdPart = CD3DX12_RESOURCE_DESC::Buffer(
+                sizeof(Particle) * maxParticles,
+                D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        D3D12_RESOURCE_DESC rdMeta = CD3DX12_RESOURCE_DESC::Buffer(
                 sizeof(ParticleMeta) * maxParticles,
                 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
         CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
         device->CreateCommittedResource(
                 &heapProps,
                 D3D12_HEAP_FLAG_NONE,
-                &rd,
+                &rdPart,
                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                 nullptr,
                 IID_PPV_ARGS(&m_particleBuffer));
+        device->CreateCommittedResource(
+                &heapProps,
+                D3D12_HEAP_FLAG_NONE,
+                &rdMeta,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                nullptr,
+                IID_PPV_ARGS(&m_metaBuffer));
 
         D3D12_DESCRIPTOR_HEAP_DESC hd = {};
-        hd.NumDescriptors = 2; // SRV + UAV
+        hd.NumDescriptors = 3; // SRV + UAV + UAV
         hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
         hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
         device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_uavHeap));
@@ -102,7 +113,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
         srvDesc.Buffer.NumElements = maxParticles;
-        srvDesc.Buffer.StructureByteStride = sizeof(ParticleMeta);
+        srvDesc.Buffer.StructureByteStride = sizeof(Particle);
         srvDesc.Format = DXGI_FORMAT_UNKNOWN;
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         device->CreateShaderResourceView(m_particleBuffer.Get(), &srvDesc, handle);
@@ -111,8 +122,15 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         D3D12_UNORDERED_ACCESS_VIEW_DESC uavd = {};
         uavd.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
         uavd.Buffer.NumElements = maxParticles;
-        uavd.Buffer.StructureByteStride = sizeof(ParticleMeta);
+        uavd.Buffer.StructureByteStride = sizeof(Particle);
         device->CreateUnorderedAccessView(m_particleBuffer.Get(), nullptr, &uavd, handle);
+
+        handle.ptr += handleSize;
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uavMeta = {};
+        uavMeta.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+        uavMeta.Buffer.NumElements = maxParticles;
+        uavMeta.Buffer.StructureByteStride = sizeof(ParticleMeta);
+        device->CreateUnorderedAccessView(m_metaBuffer.Get(), nullptr, &uavMeta, handle);
 
 	// 描画用パイプライン生成
 	// ルートシグネチャ
@@ -140,15 +158,15 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	hd2.NumDescriptors = 1;
 	hd2.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	hd2.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	device->CreateDescriptorHeap(&hd2, IID_PPV_ARGS(&m_graphicsSrvHeap));
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvd = {};
-	srvd.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	srvd.Buffer.NumElements = maxParticles;
-	srvd.Buffer.StructureByteStride = sizeof(ParticleMeta);
-	srvd.Format = DXGI_FORMAT_UNKNOWN;
-	srvd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	device->CreateShaderResourceView(m_particleBuffer.Get(), &srvd,
-		m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
+        device->CreateDescriptorHeap(&hd2, IID_PPV_ARGS(&m_graphicsSrvHeap));
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvd = {};
+        srvd.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        srvd.Buffer.NumElements = maxParticles;
+        srvd.Buffer.StructureByteStride = sizeof(ParticleMeta);
+        srvd.Format = DXGI_FORMAT_UNKNOWN;
+        srvd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        device->CreateShaderResourceView(m_metaBuffer.Get(), &srvd,
+                m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
 
         // 定数バッファ
         D3D12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
@@ -160,10 +178,14 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 
         // アップロードヒープ (CPU→GPU 転送用)
         CD3DX12_HEAP_PROPERTIES upProps(D3D12_HEAP_TYPE_UPLOAD);
-        D3D12_RESOURCE_DESC uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(ParticleMeta) * maxParticles);
+        D3D12_RESOURCE_DESC uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(Particle) * maxParticles);
         device->CreateCommittedResource(&upProps, D3D12_HEAP_FLAG_NONE, &uploadDesc,
                 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                IID_PPV_ARGS(&m_uploadHeap));
+                IID_PPV_ARGS(&m_particleUpload));
+        uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(ParticleMeta) * maxParticles);
+        device->CreateCommittedResource(&upProps, D3D12_HEAP_FLAG_NONE, &uploadDesc,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                IID_PPV_ARGS(&m_metaUpload));
 
         // Compute用定数バッファ作成
         m_sphParamCB = new ConstantBuffer(sizeof(SPHParamsCB));
@@ -190,16 +212,21 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
         if (m_useGpu) {
                 // GPU シミュレーション
-                auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(m_particleBuffer.Get());
-                cmd->ResourceBarrier(1, &uavBarrier);
+                CD3DX12_RESOURCE_BARRIER barriers[] = {
+                    CD3DX12_RESOURCE_BARRIER::UAV(m_particleBuffer.Get()),
+                    CD3DX12_RESOURCE_BARRIER::UAV(m_metaBuffer.Get())
+                };
+                cmd->ResourceBarrier(2, barriers);
                 cmd->SetComputeRootSignature(m_computeRS.Get());
                 ID3D12DescriptorHeap* heaps[] = { m_uavHeap.Get() };
                 cmd->SetDescriptorHeaps(1, heaps);
 
                 UINT handleSize = g_Engine->Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
                 D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_uavHeap->GetGPUDescriptorHandleForHeapStart();
-                D3D12_GPU_DESCRIPTOR_HANDLE uavHandle = srvHandle;
-                uavHandle.ptr += handleSize;
+                D3D12_GPU_DESCRIPTOR_HANDLE uavParticle = srvHandle;
+                uavParticle.ptr += handleSize;
+                D3D12_GPU_DESCRIPTOR_HANDLE uavMeta = uavParticle;
+                uavMeta.ptr += handleSize;
 
                 // Root parameter order: b0, b1, t0, u0, u1
                 // 定数バッファ更新
@@ -221,23 +248,34 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
                 cmd->SetComputeRootConstantBufferView(0, m_sphParamCB->GetAddress());
                 cmd->SetComputeRootConstantBufferView(1, m_viewProjCB->GetAddress());
                 cmd->SetComputeRootDescriptorTable(2, srvHandle);
-                cmd->SetComputeRootDescriptorTable(3, uavHandle);
-                cmd->SetComputeRootDescriptorTable(4, uavHandle); // same buffer for now
+                cmd->SetComputeRootDescriptorTable(3, uavParticle);
+                cmd->SetComputeRootDescriptorTable(4, uavMeta);
                 cmd->SetPipelineState(m_computePS.Get());
                 cmd->Dispatch(m_threadGroupCount, 1, 1);
         }
 	else {
-		// CPU シミュレーション
-		for (UINT i = 0; i < m_maxParticles; ++i) {
-			// m_cpuParticles[i].pos を更新 (簡易例：Y+=dt)
-			m_cpuParticles[i].pos.y += dt;
-		}
-		// CPU→GPU 転送
-		D3D12_SUBRESOURCE_DATA srcData = {};
-		srcData.pData = m_cpuParticles.data();
-		srcData.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
-		srcData.SlicePitch = srcData.RowPitch;
-		UpdateSubresources<1>(cmd, m_particleBuffer.Get(), m_uploadHeap.Get(), 0, 0, 1, &srcData);
+                // CPU シミュレーション
+                for (UINT i = 0; i < m_maxParticles; ++i) {
+                        m_cpuParticles[i].position.y += dt;
+                }
+
+                // CPU→GPU 転送 (particles)
+                D3D12_SUBRESOURCE_DATA srcParticle = {};
+                srcParticle.pData = m_cpuParticles.data();
+                srcParticle.RowPitch = sizeof(Particle) * m_maxParticles;
+                srcParticle.SlicePitch = srcParticle.RowPitch;
+                UpdateSubresources<1>(cmd, m_particleBuffer.Get(), m_particleUpload.Get(), 0, 0, 1, &srcParticle);
+
+                std::vector<ParticleMeta> metas(m_maxParticles);
+                for (UINT i = 0; i < m_maxParticles; ++i) {
+                        metas[i].pos = m_cpuParticles[i].position;
+                        metas[i].r   = 0.1f;
+                }
+                D3D12_SUBRESOURCE_DATA srcMeta = {};
+                srcMeta.pData = metas.data();
+                srcMeta.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
+                srcMeta.SlicePitch = srcMeta.RowPitch;
+                UpdateSubresources<1>(cmd, m_metaBuffer.Get(), m_metaUpload.Get(), 0, 0, 1, &srcMeta);
 	}
 }
 
