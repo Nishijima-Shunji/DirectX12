@@ -9,6 +9,10 @@
 #include "ConstantBuffer.h"
 #include <vector>
 
+struct FluidParticle {
+    DirectX::XMFLOAT3 position;
+    DirectX::XMFLOAT3 velocity;
+};
 
 class FluidSystem {
 public:
@@ -30,7 +34,7 @@ public:
 
 private:
     // CPU 側パーティクル配列
-    std::vector<Particle>         m_cpuParticles;
+    std::vector<FluidParticle>    m_cpuParticles;
 
     // GPU 用バッファ (SRV/UAV共用)
     ComPtr<ID3D12Resource>        m_particleBuffer; // simulation particles

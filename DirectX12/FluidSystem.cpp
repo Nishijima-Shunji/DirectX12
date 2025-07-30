@@ -30,8 +30,8 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         m_cpuParticles.resize(maxParticles);
 
         for (auto& p : m_cpuParticles) {
-            p.pos = { RandFloat(-1.0f, 1.0f), RandFloat(-1.0f, 5.0f), RandFloat(-1.0f, 1.0f) };
-            p.r   = RandFloat(0.05f, 0.15f);
+            p.position = { RandFloat(-1.0f, 1.0f), RandFloat(-1.0f, 5.0f), RandFloat(-1.0f, 1.0f) };
+            p.velocity = { 0.0f, 0.0f, 0.0f };
         }
 
         // ---------------------------------------------------------------------
@@ -87,7 +87,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         // ---------------------------------------------------------------------
         // Particle and meta buffers
         D3D12_RESOURCE_DESC rdPart = CD3DX12_RESOURCE_DESC::Buffer(
-                sizeof(Particle) * maxParticles,
+                sizeof(FluidParticle) * maxParticles,
                 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
         D3D12_RESOURCE_DESC rdMeta = CD3DX12_RESOURCE_DESC::Buffer(
                 sizeof(ParticleMeta) * maxParticles,
@@ -120,7 +120,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
         srvDesc.Buffer.NumElements = maxParticles;
-        srvDesc.Buffer.StructureByteStride = sizeof(Particle);
+        srvDesc.Buffer.StructureByteStride = sizeof(FluidParticle);
         srvDesc.Format = DXGI_FORMAT_UNKNOWN;
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         device->CreateShaderResourceView(m_particleBuffer.Get(), &srvDesc, handle);
@@ -129,7 +129,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         D3D12_UNORDERED_ACCESS_VIEW_DESC uavd = {};
         uavd.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
         uavd.Buffer.NumElements = maxParticles;
-        uavd.Buffer.StructureByteStride = sizeof(Particle);
+        uavd.Buffer.StructureByteStride = sizeof(FluidParticle);
         device->CreateUnorderedAccessView(m_particleBuffer.Get(), nullptr, &uavd, handle);
 
         handle.ptr += handleSize;
@@ -185,7 +185,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 
         // アップロードヒープ (CPU→GPU 転送用)
         CD3DX12_HEAP_PROPERTIES upProps(D3D12_HEAP_TYPE_UPLOAD);
-        D3D12_RESOURCE_DESC uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(Particle) * maxParticles);
+        D3D12_RESOURCE_DESC uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(FluidParticle) * maxParticles);
         device->CreateCommittedResource(&upProps, D3D12_HEAP_FLAG_NONE, &uploadDesc,
                 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
                 IID_PPV_ARGS(&m_particleUpload));
@@ -203,9 +203,9 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
             cmd->ResourceBarrier(1, &barrier0);
             D3D12_SUBRESOURCE_DATA src = {};
             src.pData = m_cpuParticles.data();
-            src.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
+            src.RowPitch = sizeof(FluidParticle) * m_maxParticles;
             src.SlicePitch = src.RowPitch;
-            UpdateSubresources<1>(cmd, m_particleBuffer.Get(), m_uploadHeap.Get(), 0, 0, 1, &src);
+            UpdateSubresources<1>(cmd, m_particleBuffer.Get(), m_particleUpload.Get(), 0, 0, 1, &src);
             auto barrier1 = CD3DX12_RESOURCE_BARRIER::Transition(m_particleBuffer.Get(),
                     D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
             cmd->ResourceBarrier(1, &barrier1);
@@ -290,7 +290,7 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
                 // CPU→GPU 転送 (particles)
                 D3D12_SUBRESOURCE_DATA srcParticle = {};
                 srcParticle.pData = m_cpuParticles.data();
-                srcParticle.RowPitch = sizeof(Particle) * m_maxParticles;
+                srcParticle.RowPitch = sizeof(FluidParticle) * m_maxParticles;
                 srcParticle.SlicePitch = srcParticle.RowPitch;
                 UpdateSubresources<1>(cmd, m_particleBuffer.Get(), m_particleUpload.Get(), 0, 0, 1, &srcParticle);
 
