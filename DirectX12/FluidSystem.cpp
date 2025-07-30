@@ -6,6 +6,7 @@
 #include "Camera.h"
 #include "RandomUtil.h"
 
+
 struct SPHParamsCB {
     float restDensity;
     float particleMass;
@@ -26,6 +27,11 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         m_maxParticles = maxParticles;
         m_threadGroupCount = threadGroupCount;
         m_cpuParticles.resize(maxParticles);
+
+        for (auto& p : m_cpuParticles) {
+            p.pos = { RandFloat(-1.0f, 1.0f), RandFloat(-1.0f, 5.0f), RandFloat(-1.0f, 1.0f) };
+            p.r   = RandFloat(0.05f, 0.15f);
+        }
 
         // ---------------------------------------------------------------------
         // Compute root signature
@@ -165,6 +171,27 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         device->CreateCommittedResource(&upProps, D3D12_HEAP_FLAG_NONE, &uploadDesc,
                 D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
                 IID_PPV_ARGS(&m_uploadHeap));
+
+        {
+            auto cmd = g_Engine->CommandList();
+            auto allocator = g_Engine->CommandAllocator(g_Engine->CurrentBackBufferIndex());
+            cmd->Reset(allocator, nullptr);
+            auto barrier0 = CD3DX12_RESOURCE_BARRIER::Transition(m_particleBuffer.Get(),
+                    D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
+            cmd->ResourceBarrier(1, &barrier0);
+            D3D12_SUBRESOURCE_DATA src = {};
+            src.pData = m_cpuParticles.data();
+            src.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
+            src.SlicePitch = src.RowPitch;
+            UpdateSubresources<1>(cmd, m_particleBuffer.Get(), m_uploadHeap.Get(), 0, 0, 1, &src);
+            auto barrier1 = CD3DX12_RESOURCE_BARRIER::Transition(m_particleBuffer.Get(),
+                    D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            cmd->ResourceBarrier(1, &barrier1);
+            cmd->Close();
+            ID3D12CommandList* lists[] = { cmd };
+            g_Engine->CommandQueue()->ExecuteCommandLists(1, lists);
+            g_Engine->Flush();
+        }
 
         // Compute用定数バッファ作成
         m_sphParamCB = new ConstantBuffer(sizeof(SPHParamsCB));
