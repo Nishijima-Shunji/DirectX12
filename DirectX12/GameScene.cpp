@@ -37,7 +37,7 @@ bool GameScene::Init() {
 	auto device = g_Engine->Device();
 	const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-	const UINT maxParticles = 1024;
+	const UINT maxParticles = 500;
 	const UINT threadGroupCount = 16;
 	m_fluid.Init(device, rtvFormat, maxParticles, threadGroupCount);
 

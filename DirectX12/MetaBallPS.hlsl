@@ -19,7 +19,7 @@ struct VSOutput
     float2 uv : TEXCOORD;
 };
 
-
+static const int MAX_STEP = 32; // 描画用の制限
 StructuredBuffer<ParticleMeta> Particles : register(t0);
 
 // MetaBallのフィールド関数
@@ -45,7 +45,7 @@ float4 main(VSOutput IN) : SV_TARGET
     float3 p = ro;
     float d;
   [loop]
-    for (int i = 0; i < 64; ++i)
+    for (int i = 0; i < MAX_STEP; ++i)
     {
         d = Field(p);
         if (abs(d) < 0.001)

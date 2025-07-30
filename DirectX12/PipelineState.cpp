@@ -10,7 +10,7 @@ PipelineState::PipelineState()
     // パイプラインステートの初期設定
     desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-    desc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+    desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
     desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     desc.SampleMask = UINT_MAX;
