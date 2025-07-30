@@ -6,11 +6,11 @@
 #include <windows.h>
 
 TitleScene::TitleScene(Game* game) : BaseScene(game) {
-	printf("TitleSceneç”Ÿæˆ\n");
+	printf("TitleScene¶¬\n");
 }
 
 TitleScene::~TitleScene() {
-	printf("TitleSceneç ´æ£„\n");
+	printf("TitleScene”jŠü\n");
 }
 
 void TitleScene::Update(float deltaTime) {

@@ -5,8 +5,8 @@ struct VSOutput
     float2 uv : TEXCOORD;
 };
 
-SamplerState smp : register(s0); // 繧ｵ繝ｳ繝励Λ繝ｼ
-Texture2D _MainTex : register(t0); // 繝�繧ｯ繧ｹ繝√Ε
+SamplerState smp : register(s0); // サンプラー
+Texture2D _MainTex : register(t0); // テクスチャ
 
 float4 pixel(VSOutput input) : SV_TARGET
 {

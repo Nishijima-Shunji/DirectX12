@@ -12,31 +12,31 @@ Camera::Camera() {
 }
 
 bool Camera::Init() {
-	// è¡Œåˆ—å¤‰æ›
-	eyePos = DirectX::XMVectorSet(0.0f, 0.0f, 2.0f, 0.0f);		// è¦–ç‚¹ã®ä½ç½®
-	targetPos = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);	// è¦–ç‚¹ã‚’å‘ã‘ã‚‹åº§æ¨™
-	upward = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);		// ä¸Šæ–¹å‘ã‚’è¡¨ã™ãƒ™ã‚¯ãƒˆãƒ«
+	// s—ñ•ÏŠ·
+	eyePos = DirectX::XMVectorSet(0.0f, 0.0f, 2.0f, 0.0f);		// ‹“_‚ÌˆÊ’u
+	targetPos = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);	// ‹“_‚ğŒü‚¯‚éÀ•W
+	upward = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);		// ã•ûŒü‚ğ•\‚·ƒxƒNƒgƒ‹
 	fov = DirectX::XMConvertToRadians(75.0);
-	// è¦–é‡è§’
-	aspect = static_cast<float>(WINDOW_WIDTH) / static_cast<float>(WINDOW_HEIGHT);		// ã‚¢ã‚¹ãƒšã‚¯ãƒˆæ¯”
+	// ‹–ìŠp
+	aspect = static_cast<float>(WINDOW_WIDTH) / static_cast<float>(WINDOW_HEIGHT);		// ƒAƒXƒyƒNƒg”ä
 
 	return 0;
 }
 
 void Camera::Update(float deltaTime) {
-	// å›è»¢è§’ï¼ˆãƒ¨ãƒ¼ãƒ»ãƒ”ãƒƒãƒï¼‰
+	// ‰ñ“]Špiƒˆ[Eƒsƒbƒ`j
 	static float yaw = 0.0f;
 	static float pitch = 0.0f;
 	static bool isDragging = false;
 	static POINT lastMouse;
 
-	// ãƒã‚¦ã‚¹å³ãƒœã‚¿ãƒ³ã§å›è»¢
+	// ƒ}ƒEƒX‰Eƒ{ƒ^ƒ“‚Å‰ñ“]
 	if (GetAsyncKeyState(VK_RBUTTON) & 0x8000) {
 		POINT curMouse;
 		GetCursorPos(&curMouse);
 
 		if (!isDragging) {
-			// åˆå›ã ã‘ãƒã‚¦ã‚¹ä½ç½®ã‚’ã‚»ãƒƒãƒˆï¼ˆãƒ‰ãƒ©ãƒƒã‚°é–‹å§‹ï¼‰
+			// ‰‰ñ‚¾‚¯ƒ}ƒEƒXˆÊ’u‚ğƒZƒbƒgiƒhƒ‰ƒbƒOŠJnj
 			lastMouse = curMouse;
 			isDragging = true;
 		}
@@ -44,7 +44,7 @@ void Camera::Update(float deltaTime) {
 		float dx = static_cast<float>(curMouse.x - lastMouse.x) * 0.005f;
 		float dy = static_cast<float>(curMouse.y - lastMouse.y) * 0.005f;
 
-		// ãƒã‚¦ã‚¹ã®å‹•ãã«å¿œã˜ã¦ãƒ¨ãƒ¼ãƒ»ãƒ”ãƒƒãƒã‚’æ›´æ–°ï¼ˆ+ã§åè»¢çŠ¶æ…‹ï¼‰
+		// ƒ}ƒEƒX‚Ì“®‚«‚É‰‚¶‚Äƒˆ[Eƒsƒbƒ`‚ğXVi+‚Å”½“]ó‘Ôj
 		yaw -= dx;
 		pitch -= dy;
 
@@ -53,15 +53,15 @@ void Camera::Update(float deltaTime) {
 		lastMouse = curMouse;
 	}
 	else {
-		isDragging = false; // ãƒœã‚¿ãƒ³é›¢ã—ãŸã‚‰ãƒ‰ãƒ©ãƒƒã‚°çµ‚äº†
+		isDragging = false; // ƒ{ƒ^ƒ“—£‚µ‚½‚çƒhƒ‰ƒbƒOI—¹
 	}
 
-	// å›è»¢è¡Œåˆ—ï¼ˆãƒ¨ãƒ¼â†’ãƒ”ãƒƒãƒï¼‰
+	// ‰ñ“]s—ñiƒˆ[¨ƒsƒbƒ`j
 	XMMATRIX rotMat = XMMatrixRotationRollPitchYaw(pitch, yaw, 0);
 	XMVECTOR forward = XMVector3TransformNormal(XMVectorSet(0, 0, -1, 0), rotMat);
 	XMVECTOR right = XMVector3TransformNormal(XMVectorSet(1, 0, 0, 0), rotMat);
 
-	// ç§»å‹•
+	// ˆÚ“®
 	if (GetAsyncKeyState('W') & 0x8000) eyePos += forward * 0.05f;
 	if (GetAsyncKeyState('S') & 0x8000) eyePos -= forward * 0.05f;
 	if (GetAsyncKeyState('A') & 0x8000) eyePos -= right * 0.05f;
@@ -69,10 +69,10 @@ void Camera::Update(float deltaTime) {
 	if (GetAsyncKeyState('E') & 0x8000) eyePos += XMVectorSet(0, 1, 0, 0) * 0.05f;
 	if (GetAsyncKeyState('Q') & 0x8000) eyePos -= XMVectorSet(0, 1, 0, 0) * 0.05f;
 
-	// ã‚¿ãƒ¼ã‚²ãƒƒãƒˆ = å‰æ–¹
+	// ƒ^[ƒQƒbƒg = ‘O•û
 	targetPos = XMVectorAdd(eyePos, forward);
 
-	// ãƒ“ãƒ¥ãƒ¼ãƒ»ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ã‚·ãƒ§ãƒ³æ›´æ–°
+	// ƒrƒ…[EƒvƒƒWƒFƒNƒVƒ‡ƒ“XV
 	viewMatrix = XMMatrixLookAtRH(eyePos, targetPos, XMVectorSet(0, 1, 0, 0));
 	projMatrix = XMMatrixPerspectiveFovRH(fov, aspect, 0.1f, 1000.0f);
 
@@ -80,16 +80,16 @@ void Camera::Update(float deltaTime) {
 
 DirectX::XMFLOAT4X4 Camera::GetInvViewProj() const
 {
-	// ViewÃ—Proj è¡Œåˆ—ã‚’æ›ã‘ã‚‹
+	// View~Proj s—ñ‚ğŠ|‚¯‚é
 	XMMATRIX view = GetViewMatrix();
 	XMMATRIX proj = GetProjMatrix();
 	XMMATRIX viewProj = XMMatrixMultiply(view, proj);
 
-	// é€†è¡Œåˆ—ã‚’è¨ˆç®—
+	// ‹ts—ñ‚ğŒvZ
 	XMVECTOR det;
 	XMMATRIX invVP = XMMatrixInverse(&det, viewProj);
 
-	// æ ¼ç´ã—ã¦è¿”ã™
+	// Ši”[‚µ‚Ä•Ô‚·
 	DirectX::XMFLOAT4X4 out;
 	XMStoreFloat4x4(&out, invVP);
 	return out;

@@ -28,7 +28,7 @@ std::string ToUTF8(const std::wstring& value)
     return result;
 }
 
-// std::string(ãƒãƒ«ãƒãƒã‚¤ãƒˆæ–‡å­—åˆ—)ã‹ã‚‰std::wstring(ãƒ¯ã‚¤ãƒ‰æ–‡å­—åˆ—)ã‚’å¾—ã‚‹
+// std::string(ƒ}ƒ‹ƒ`ƒoƒCƒg•¶š—ñ)‚©‚çstd::wstring(ƒƒCƒh•¶š—ñ)‚ğ“¾‚é
 std::wstring ToWideString(const std::string& str)
 {
     auto num1 = MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED | MB_ERR_INVALID_CHARS, str.c_str(), -1, nullptr, 0);
@@ -69,13 +69,13 @@ bool AssimpLoader::Load(ImportSettings settings)
 
     if (scene == nullptr)
     {
-        // ã‚‚ã—èª­ã¿è¾¼ã¿ã‚¨ãƒ©ãƒ¼ãŒã§ãŸã‚‰è¡¨ç¤ºã™ã‚‹
+        // ‚à‚µ“Ç‚İ‚İƒGƒ‰[‚ª‚Å‚½‚ç•\¦‚·‚é
         printf(importer.GetErrorString());
         printf("\n");
         return false;
     }
 
-    // èª­ã¿è¾¼ã‚“ã ãƒ‡ãƒ¼ã‚¿ã‚’è‡ªåˆ†ã§å®šç¾©ã—ãŸMeshæ§‹é€ ä½“ã«å¤‰æ›ã™ã‚‹
+    // “Ç‚İ‚ñ‚¾ƒf[ƒ^‚ğ©•ª‚Å’è‹`‚µ‚½Mesh\‘¢‘Ì‚É•ÏŠ·‚·‚é
     meshes.clear();
     meshes.resize(scene->mNumMeshes);
     for (size_t i = 0; i < meshes.size(); ++i)
@@ -106,7 +106,7 @@ void AssimpLoader::LoadMesh(Mesh& dst, const aiMesh* src, bool inverseU, bool in
         auto tangent = (src->HasTangentsAndBitangents()) ? &(src->mTangents[i]) : &zero3D;
         auto color = (src->HasVertexColors(0)) ? &(src->mColors[0][i]) : &zeroColor;
 
-        // åè»¢ã‚ªãƒ—ã‚·ãƒ§ãƒ³ãŒã‚ã£ãŸã‚‰UVã‚’åè»¢ã•ã›ã‚‹
+        // ”½“]ƒIƒvƒVƒ‡ƒ“‚ª‚ ‚Á‚½‚çUV‚ğ”½“]‚³‚¹‚é
         if (inverseU)
         {
             uv->x = 1 - uv->x;
@@ -143,7 +143,7 @@ void AssimpLoader::LoadTexture(const wchar_t* filename, Mesh& dst, const aiMater
     aiString path;
     if (src->Get(AI_MATKEY_TEXTURE_DIFFUSE(0), path) == AI_SUCCESS)
     {
-        // ãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ‘ã‚¹ã¯ç›¸å¯¾ãƒ‘ã‚¹ã§å…¥ã£ã¦ã„ã‚‹ã®ã§ã€ãƒ•ã‚¡ã‚¤ãƒ«ã®å ´æ‰€ã¨ãã£ã¤ã‘ã‚‹
+        // ƒeƒNƒXƒ`ƒƒƒpƒX‚Í‘Š‘ÎƒpƒX‚Å“ü‚Á‚Ä‚¢‚é‚Ì‚ÅAƒtƒ@ƒCƒ‹‚ÌêŠ‚Æ‚­‚Á‚Â‚¯‚é
         auto dir = GetDirectoryPath(filename);
         auto file = std::string(path.C_Str());
         dst.DiffuseMap = dir + ToWideString(file);

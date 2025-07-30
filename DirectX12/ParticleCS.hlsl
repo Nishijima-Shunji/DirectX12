@@ -1,21 +1,21 @@
 #define PI 3.14159265358979323846f
 
-// SPHParams æ§‹é€ ä½“ï¼ˆb0ï¼‰
+// SPHParams \‘¢‘Ìib0j
 cbuffer SPHParams : register(b0) {
-    float restDensity;   // è‡ªç„¶çŠ¶æ…‹ã®å¯†åº¦
-    float particleMass;  // è³ªé‡
-    float viscosity;     // ç²˜æ€§ä¿‚æ•°
-    float stiffness;     // å‰›æ€§ä¿‚æ•°
-    float radius;        // å½±éŸ¿åŠå¾„
-    float timeStep;      // æ™‚é–“ã‚¹ãƒ†ãƒƒãƒ—
-    uint  particleCount; // ç²’å­æ•°
+    float restDensity;   // ©‘Ró‘Ô‚Ì–§“x
+    float particleMass;  // ¿—Ê
+    float viscosity;     // ”S«ŒW”
+    float stiffness;     // „«ŒW”
+    float radius;        // ‰e‹¿”¼Œa
+    float timeStep;      // ŠÔƒXƒeƒbƒv
+    uint  particleCount; // —±q”
 };
 
 cbuffer ViewProjCB : register(b1) {
-    float4x4 viewProj;   // ãƒ“ãƒ¥ãƒ¼æŠ•å½±è¡Œåˆ—
+    float4x4 viewProj;   // ƒrƒ…[“Š‰es—ñ
 };
 
-// GPU ä¸Šã®ç²’å­æ§‹é€ ä½“
+// GPU ã‚Ì—±q\‘¢‘Ì
 struct Particle {
     float3 position;
     float3 velocity;
@@ -26,21 +26,21 @@ struct ParticleMeta
     float x, y, r, pad;
 };
 
-// å‰ãƒ•ãƒ¬ãƒ¼ãƒ ã®ç²’å­èª­ã¿è¾¼ã¿ï¼ˆt0ï¼‰
+// ‘OƒtƒŒ[ƒ€‚Ì—±q“Ç‚İ‚İit0j
 StructuredBuffer<Particle>    inParticles   : register(t0);
-// è¨ˆç®—çµæœã®æ›¸ãè¾¼ã¿ï¼ˆu0ï¼‰
+// ŒvZŒ‹‰Ê‚Ì‘‚«‚İiu0j
 RWStructuredBuffer<Particle>  outParticles  : register(u0);
-// ãƒ¡ã‚¿ãƒœãƒ¼ãƒ«ã«å¿…è¦ãªæƒ…å ±ã«å¤‰æ›
+// ƒƒ^ƒ{[ƒ‹‚É•K—v‚Èî•ñ‚É•ÏŠ·
 RWStructuredBuffer<ParticleMeta> outMeta : register(u1);
 
 // ========================================
-//  ãƒ¡ã‚¤ãƒ³
+//  ƒƒCƒ“
 // ========================================
 
 [numthreads(256,1,1)]
 void CSMain(uint3 id : SV_DispatchThreadID)
 {
-    // powã‚’äº‹å‰è¨ˆç®—
+    // pow‚ğ–‘OŒvZ
     float radius2 = radius * radius;
     float radius6 = radius2 * radius2 * radius2;
     float radius9 = radius6 * radius2 * radius;
@@ -48,7 +48,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     uint i = id.x;
     if (i >= particleCount) return;
     // ========================================
-    //  å¯†åº¦è¨ˆç®— 
+    //  –§“xŒvZ 
     // ========================================
     float density = 0;
     for (uint j = 0; j < particleCount; ++j) {
@@ -62,7 +62,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     float pressure = stiffness * (density - restDensity);
 
     // ========================================
-    //  åŠ›è¨ˆç®—
+    //  —ÍŒvZ
     // ========================================
     float3 force = float3(0, -9.8f * density, 0);
     for (uint j = 0; j < particleCount; ++j) {
@@ -70,19 +70,19 @@ void CSMain(uint3 id : SV_DispatchThreadID)
         float3 rij = inParticles[i].position - inParticles[j].position;
         float  r   = length(rij);
         if (r > 0 && r < radius) {
-            // åœ§åŠ›åŠ›
+            // ˆ³—Í—Í
             float coeff = -45.0/(PI * radius6) * (radius - r)*(radius - r);
             float3 grad = coeff * (rij / r);
             float pTerm = (pressure + stiffness * ( (density - restDensity) )) / (2*density);
             force += -particleMass * pTerm * grad;
-            // ç²˜æ€§åŠ›
+            // ”S«—Í
             float lap = 45.0/(PI * radius6) * (radius - r);
             force += viscosity * particleMass * (inParticles[j].velocity - inParticles[i].velocity) * (lap / density);
         }
     }
 
     // ========================================
-    //  å‹•ãè¨ˆç®—
+    //  “®‚«ŒvZ
     // ========================================
     Particle p = inParticles[i];
     float3 accel = force / density;
@@ -90,27 +90,27 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     p.position += p.velocity * timeStep;
 
     // ========================================
-    //  å¢ƒç•Œå‡¦ç†
+    //  ‹«ŠEˆ—
     // ========================================
     if (p.position.x < -1 || p.position.x > 1) p.velocity.x *= -0.1f;
     if (p.position.y < -1 || p.position.y > 5) p.velocity.y *= -0.1f;
     if (p.position.z < -1 || p.position.z > 1) p.velocity.z *= -0.1f;
 
-   // ãƒ¯ãƒ¼ãƒ«ãƒ‰åº§æ¨™ï¼ˆfloat3ï¼‰
+   // ƒ[ƒ‹ƒhÀ•Wifloat3j
     float3 worldPos = p.position;
 
-    // ãƒ¯ãƒ¼ãƒ«ãƒ‰ â†’ ã‚¯ãƒªãƒƒãƒ—ç©ºé–“
+    // ƒ[ƒ‹ƒh ¨ ƒNƒŠƒbƒv‹óŠÔ
     float4 clipPos = mul(float4(worldPos, 1.0f), viewProj);
 
-    // NDC ã«æ­£è¦åŒ–
+    // NDC ‚É³‹K‰»
     clipPos /= clipPos.w;
 
-    // NDC â†’ UV
+    // NDC ¨ UV
     float2 uv;
     uv.x = clipPos.x * 0.5f + 0.5f;
-    uv.y = -clipPos.y * 0.5f + 0.5f; // Yåè»¢ï¼ˆå·¦ä¸ŠåŸç‚¹ã®ãƒ†ã‚¯ã‚¹ãƒãƒ£ã«åˆã‚ã›ã‚‹ï¼‰
+    uv.y = -clipPos.y * 0.5f + 0.5f; // Y”½“]i¶ãŒ´“_‚ÌƒeƒNƒXƒ`ƒƒ‚É‡‚í‚¹‚éj
 
-    // æ›¸ãè¾¼ã¿
+    // ‘‚«‚İ
     ParticleMeta m;
     m.x = uv.x;
     m.y = uv.y;
@@ -118,7 +118,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     m.pad = 0;
 
     // ========================================
-    //  å‡ºåŠ›
+    //  o—Í
     // ========================================
     outMeta[i] = m;
 }

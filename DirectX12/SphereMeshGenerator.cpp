@@ -4,10 +4,10 @@
 MeshData CreateLowPolySphere(float radius, int subdivisions) {
     MeshData mesh;
 
-    // ã“ã“ã«ä½ãƒãƒªçƒã®é ‚ç‚¹ãƒ»ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ç”Ÿæˆãƒ­ã‚¸ãƒƒã‚¯ã‚’å®Ÿè£…
-    // ä¾‹ï¼šå˜ç´”ãªæ­£å…«é¢ä½“çƒã‚„ICOçƒã‚’ç´°åˆ†å‰²(subdivision)ã—ã¦ä½œã‚‹æ–¹æ³•ãªã©
+    // ‚±‚±‚É’áƒ|ƒŠ‹…‚Ì’¸“_EƒCƒ“ƒfƒbƒNƒX¶¬ƒƒWƒbƒN‚ğÀ‘•
+    // —áF’Pƒ‚È³”ª–Ê‘Ì‹…‚âICO‹…‚ğ×•ªŠ„(subdivision)‚µ‚Äì‚é•û–@‚È‚Ç
 
-    // ã‚µãƒ³ãƒ—ãƒ«ã¨ã—ã¦ã€ç°¡å˜ãªæ­£å…«é¢ä½“ã®é ‚ç‚¹
+    // ƒTƒ“ƒvƒ‹‚Æ‚µ‚ÄAŠÈ’P‚È³”ª–Ê‘Ì‚Ì’¸“_
     mesh.vertices = {
         {{0, radius, 0}, {0,1,0}},
         {{-radius, 0, 0}, {-1,0,0}},
@@ -17,7 +17,7 @@ MeshData CreateLowPolySphere(float radius, int subdivisions) {
         {{0, -radius, 0}, {0,-1,0}},
     };
 
-    // ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ï¼ˆé¢ï¼‰
+    // ƒCƒ“ƒfƒbƒNƒXi–Êj
     mesh.indices = {
         0, 1, 2,
         0, 2, 3,
@@ -29,7 +29,7 @@ MeshData CreateLowPolySphere(float radius, int subdivisions) {
         5, 1, 4,
     };
 
-    // subdivisionsã§ç´°åˆ†å‰²ã‚‚å¯èƒ½ï¼ˆä»»æ„ï¼‰
+    // subdivisions‚Å×•ªŠ„‚à‰Â”\i”CˆÓj
 
     return mesh;
 }

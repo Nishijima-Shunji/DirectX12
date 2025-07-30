@@ -9,7 +9,7 @@ void SceneManager::RegisterScene(const std::string& name, SceneFactory factory)
 void SceneManager::ChangeScene(const std::string& name)
 {
 	auto it = m_Registry.find(name);
-	// ä¸­èº«ãŒã‚ã‚‹ãªã‚‰
+	// ’†g‚ª‚ ‚é‚È‚ç
 	if (it != m_Registry.end())
 	{
 		if (!m_SceneStack.empty()) {

@@ -5,10 +5,10 @@
 	VertexBuffer::VertexBuffer(size_t size, size_t stride, const void* pInitData)
 	{
 
-		auto prop = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD); 	// ãƒ’ãƒ¼ãƒ—ãƒ—ãƒ­ãƒ‘ãƒ†ã‚£
-		auto desc = CD3DX12_RESOURCE_DESC::Buffer(size); 				// ãƒªã‚½ãƒ¼ã‚¹ã®è¨­å®š
+		auto prop = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD); 	// ƒq[ƒvƒvƒƒpƒeƒB
+		auto desc = CD3DX12_RESOURCE_DESC::Buffer(size); 				// ƒŠƒ\[ƒX‚ÌÝ’è
 
-		// ãƒªã‚½ãƒ¼ã‚¹ã‚’ç”Ÿæˆ
+		// ƒŠƒ\[ƒX‚ð¶¬
 		auto hr = g_Engine->Device()->CreateCommittedResource(
 			&prop,
 			D3D12_HEAP_FLAG_NONE,
@@ -19,30 +19,30 @@
 
 		if (FAILED(hr))
 		{
-			printf("é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ãƒªã‚½ãƒ¼ã‚¹ã®ç”Ÿæˆã«å¤±æ•—");
+			printf("’¸“_ƒoƒbƒtƒ@ƒŠƒ\[ƒX‚Ì¶¬‚ÉŽ¸”s");
 			return;
 		}
 
-		// é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ãƒ“ãƒ¥ãƒ¼ã®è¨­å®š
+		// ’¸“_ƒoƒbƒtƒ@ƒrƒ…[‚ÌÝ’è
 		m_View.BufferLocation = m_pBuffer->GetGPUVirtualAddress();
 		m_View.SizeInBytes = static_cast<UINT>(size);
 		m_View.StrideInBytes = static_cast<UINT>(stride);
 
-		// ãƒžãƒƒãƒ”ãƒ³ã‚°ã™ã‚‹
+		// ƒ}ƒbƒsƒ“ƒO‚·‚é
 		if (pInitData != nullptr)
 		{
 			void* ptr = nullptr;
 			hr = m_pBuffer->Map(0, nullptr, &ptr);
 			if (FAILED(hr))
 			{
-				printf("é ‚ç‚¹ãƒãƒƒãƒ•ã‚¡ãƒžãƒƒãƒ”ãƒ³ã‚°ã«å¤±æ•—");
+				printf("’¸“_ƒoƒbƒtƒ@ƒ}ƒbƒsƒ“ƒO‚ÉŽ¸”s");
 				return;
 			}
 
-			// é ‚ç‚¹ãƒ‡ãƒ¼ã‚¿ã‚’ãƒžãƒƒãƒ”ãƒ³ã‚°å…ˆã«è¨­å®š
+			// ’¸“_ƒf[ƒ^‚ðƒ}ƒbƒsƒ“ƒOæ‚ÉÝ’è
 			memcpy(ptr, pInitData, size);
 
-			// ãƒžãƒƒãƒ”ãƒ³ã‚°è§£é™¤
+			// ƒ}ƒbƒsƒ“ƒO‰ðœ
 			m_pBuffer->Unmap(0, nullptr);
 		}
 

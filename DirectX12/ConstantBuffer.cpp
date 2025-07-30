@@ -4,12 +4,12 @@
 ConstantBuffer::ConstantBuffer(size_t size)
 {
     size_t align = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
-    UINT64 sizeAligned = (size + (align - 1)) & ~(align - 1); // alignã«åˆ‡ã‚Šä¸Šã’ã‚‹.
+    UINT64 sizeAligned = (size + (align - 1)) & ~(align - 1); // align‚ÉØ‚èã‚°‚é.
 
-    auto prop = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD); // ãƒ’ãƒ¼ãƒ—ãƒ—ãƒ­ãƒ‘ãƒ†ã‚£
-    auto desc = CD3DX12_RESOURCE_DESC::Buffer(sizeAligned); // ãƒªã‚½ãƒ¼ã‚¹ã®è¨­å®š
+    auto prop = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD); // ƒq[ƒvƒvƒƒpƒeƒB
+    auto desc = CD3DX12_RESOURCE_DESC::Buffer(sizeAligned); // ƒŠƒ\[ƒX‚Ìİ’è
 
-    // ãƒªã‚½ãƒ¼ã‚¹ã‚’ç”Ÿæˆ
+    // ƒŠƒ\[ƒX‚ğ¶¬
     auto hr = g_Engine->Device()->CreateCommittedResource(
         &prop,
         D3D12_HEAP_FLAG_NONE,
@@ -19,18 +19,18 @@ ConstantBuffer::ConstantBuffer(size_t size)
         IID_PPV_ARGS(m_pBuffer.GetAddressOf()));
     if (FAILED(hr))
     {
-        printf("å®šæ•°ãƒãƒƒãƒ•ã‚¡ãƒªã‚½ãƒ¼ã‚¹ã®ç”Ÿæˆã«å¤±æ•—\n");
+        printf("’è”ƒoƒbƒtƒ@ƒŠƒ\[ƒX‚Ì¶¬‚É¸”s\n");
         return;
     }
     else
     {
-        printf("å®šæ•°ãƒãƒƒãƒ•ã‚¡ãƒªã‚½ãƒ¼ã‚¹ã®ç”Ÿæˆ æˆåŠŸ\n");
+        printf("’è”ƒoƒbƒtƒ@ƒŠƒ\[ƒX‚Ì¶¬ ¬Œ÷\n");
     }
 
 
     hr = m_pBuffer->Map(0, nullptr, &m_pMappedPtr);
     if (!m_pBuffer) {
-        printf("m_pBufferãŒç©ºã§ã™\n");
+        printf("m_pBuffer‚ª‹ó‚Å‚·\n");
         return;
     }
 

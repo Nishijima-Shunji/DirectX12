@@ -3,33 +3,33 @@
 
 RootSignature::RootSignature()
 {
-	auto flag = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;	// ã‚¢ãƒ—ãƒªã‚±ãƒ¼ã‚·ãƒ§ãƒ³ã®å…¥åŠ›ã‚¢ã‚»ãƒ³ãƒ–ãƒ©ã‚’ä½¿ç”¨ã™ã‚‹
-	flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS;			// ãƒ‰ãƒ¡ã‚¤ãƒ³ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã€€ã€€ã®ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ã¸ã®ã‚¢ã‚¯ã‚»ã‚¹ã‚’æ‹’å¦ã™ã‚‹
-	flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS;				// ãƒãƒ«ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã€€ã€€ã€€ã€€ã®ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ã¸ã®ã‚¢ã‚¯ã‚»ã‚¹ã‚’æ‹’å¦ã™ã‚‹
-	flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;			// ã‚¸ã‚ªãƒ¡ãƒˆãƒªã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã€€ã®ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ã¸ã®ã‚¢ã‚¯ã‚»ã‚¹ã‚’æ‹’å¦ã™ã‚‹
+	auto flag = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;	// ƒAƒvƒŠƒP[ƒVƒ‡ƒ“‚Ì“ü—ÍƒAƒZƒ“ƒuƒ‰‚ðŽg—p‚·‚é
+	flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS;			// ƒhƒƒCƒ“ƒVƒF[ƒ_[@@‚Ìƒ‹[ƒgƒVƒOƒlƒ`ƒƒ‚Ö‚ÌƒAƒNƒZƒX‚ð‹‘”Û‚·‚é
+	flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS;				// ƒnƒ‹ƒVƒF[ƒ_[@@@@‚Ìƒ‹[ƒgƒVƒOƒlƒ`ƒƒ‚Ö‚ÌƒAƒNƒZƒX‚ð‹‘”Û‚·‚é
+	flag |= D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;			// ƒWƒIƒƒgƒŠƒVƒF[ƒ_[@‚Ìƒ‹[ƒgƒVƒOƒlƒ`ƒƒ‚Ö‚ÌƒAƒNƒZƒX‚ð‹‘”Û‚·‚é
 
-	CD3DX12_ROOT_PARAMETER rootParam[2] = {}; // å®šæ•°ãƒãƒƒãƒ•ã‚¡ã¨ãƒ†ã‚¯ã‚¹ãƒãƒ£ã®2
-	rootParam[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_ALL);	// b0ã®å®šæ•°ãƒãƒƒãƒ•ã‚¡ã‚’è¨­å®šã€å…¨ã¦ã®ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã‹ã‚‰è¦‹ãˆã‚‹ã‚ˆã†ã«ã™ã‚‹
+	CD3DX12_ROOT_PARAMETER rootParam[2] = {}; // ’è”ƒoƒbƒtƒ@‚ÆƒeƒNƒXƒ`ƒƒ‚Ì2
+	rootParam[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_ALL);	// b0‚Ì’è”ƒoƒbƒtƒ@‚ðÝ’èA‘S‚Ä‚ÌƒVƒF[ƒ_[‚©‚çŒ©‚¦‚é‚æ‚¤‚É‚·‚é
 
-	CD3DX12_DESCRIPTOR_RANGE tableRange[1] = {}; // ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ†ãƒ¼ãƒ–ãƒ«
-	tableRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ãƒªã‚½ãƒ¼ã‚¹ãƒ“ãƒ¥ãƒ¼
+	CD3DX12_DESCRIPTOR_RANGE tableRange[1] = {}; // ƒfƒBƒXƒNƒŠƒvƒ^ƒe[ƒuƒ‹
+	tableRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // ƒVƒF[ƒ_[ƒŠƒ\[ƒXƒrƒ…[
 	rootParam[1].InitAsDescriptorTable(std::size(tableRange), tableRange, D3D12_SHADER_VISIBILITY_ALL);
 
-	// ã‚¹ã‚¿ãƒ†ã‚£ãƒƒã‚¯ã‚µãƒ³ãƒ—ãƒ©ãƒ¼ã®è¨­å®š
+	// ƒXƒ^ƒeƒBƒbƒNƒTƒ“ƒvƒ‰[‚ÌÝ’è
 	auto sampler = CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
 
-	// ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒ‹ãƒãƒ£ã®è¨­å®šï¼ˆè¨­å®šã—ãŸã„ãƒ«ãƒ¼ãƒˆãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ãƒ¼ã¨ã‚¹ã‚¿ãƒ†ã‚£ãƒƒã‚¯ã‚µãƒ³ãƒ—ãƒ©ãƒ¼ã‚’å…¥ã‚Œã‚‹ï¼‰
+	// ƒ‹[ƒgƒVƒOƒjƒ`ƒƒ‚ÌÝ’èiÝ’è‚µ‚½‚¢ƒ‹[ƒgƒpƒ‰ƒ[ƒ^[‚ÆƒXƒ^ƒeƒBƒbƒNƒTƒ“ƒvƒ‰[‚ð“ü‚ê‚éj
 	D3D12_ROOT_SIGNATURE_DESC desc = {};
-	desc.NumParameters = std::size(rootParam);	// ãƒ«ãƒ¼ãƒˆãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ãƒ¼ã®å€‹æ•°ã‚’ã„ã‚Œã‚‹
-	desc.NumStaticSamplers = 1;					// ã‚µãƒ³ãƒ—ãƒ©ãƒ¼ã®å€‹æ•°ã‚’ã„ã‚Œã‚‹
-	desc.pParameters = rootParam;				// ãƒ«ãƒ¼ãƒˆãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿ãƒ¼ã®ãƒã‚¤ãƒ³ã‚¿ã‚’ã„ã‚Œã‚‹
-	desc.pStaticSamplers = &sampler;			// ã‚µãƒ³ãƒ—ãƒ©ãƒ¼ã®ãƒã‚¤ãƒ³ã‚¿ã‚’å…¥ã‚Œã‚‹
-	desc.Flags = flag;							// ãƒ•ãƒ©ã‚°ã‚’è¨­å®š
+	desc.NumParameters = std::size(rootParam);	// ƒ‹[ƒgƒpƒ‰ƒ[ƒ^[‚ÌŒÂ”‚ð‚¢‚ê‚é
+	desc.NumStaticSamplers = 1;					// ƒTƒ“ƒvƒ‰[‚ÌŒÂ”‚ð‚¢‚ê‚é
+	desc.pParameters = rootParam;				// ƒ‹[ƒgƒpƒ‰ƒ[ƒ^[‚Ìƒ|ƒCƒ“ƒ^‚ð‚¢‚ê‚é
+	desc.pStaticSamplers = &sampler;			// ƒTƒ“ƒvƒ‰[‚Ìƒ|ƒCƒ“ƒ^‚ð“ü‚ê‚é
+	desc.Flags = flag;							// ƒtƒ‰ƒO‚ðÝ’è
 
 	ComPtr<ID3DBlob> pBlob;
 	ComPtr<ID3DBlob> pErrorBlob;
 
-	// ã‚·ãƒªã‚¢ãƒ©ã‚¤ã‚º
+	// ƒVƒŠƒAƒ‰ƒCƒY
 	auto hr = D3D12SerializeRootSignature(
 		&desc,
 		D3D_ROOT_SIGNATURE_VERSION_1_0,
@@ -37,19 +37,19 @@ RootSignature::RootSignature()
 		pErrorBlob.GetAddressOf());
 	if (FAILED(hr))
 	{
-		printf("ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ã‚·ãƒªã‚¢ãƒ©ã‚¤ã‚ºã«å¤±æ•—");
+		printf("ƒ‹[ƒgƒVƒOƒlƒ`ƒƒƒVƒŠƒAƒ‰ƒCƒY‚ÉŽ¸”s");
 		return;
 	}
 
-	// ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ç”Ÿæˆ
+	// ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ¶¬
 	hr = g_Engine->Device()->CreateRootSignature(
-		0,												// GPUãŒè¤‡æ•°ã‚ã‚‹å ´åˆã®ãƒŽãƒ¼ãƒ‰ãƒžã‚¹ã‚¯ï¼ˆä»Šå›žã¯1å€‹ã—ã‹ç„¡ã„æƒ³å®šãªã®ã§0ï¼‰
-		pBlob->GetBufferPointer(),						// ã‚·ãƒªã‚¢ãƒ©ã‚¤ã‚ºã—ãŸãƒ‡ãƒ¼ã‚¿ã®ãƒã‚¤ãƒ³ã‚¿
-		pBlob->GetBufferSize(),							// ã‚·ãƒªã‚¢ãƒ©ã‚¤ã‚ºã—ãŸãƒ‡ãƒ¼ã‚¿ã®ã‚µã‚¤ã‚º
-		IID_PPV_ARGS(m_pRootSignature.GetAddressOf())); // ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒ‹ãƒãƒ£æ ¼ç´å…ˆã®ãƒã‚¤ãƒ³ã‚¿
+		0,												// GPU‚ª•¡”‚ ‚éê‡‚Ìƒm[ƒhƒ}ƒXƒNi¡‰ñ‚Í1ŒÂ‚µ‚©–³‚¢‘z’è‚È‚Ì‚Å0j
+		pBlob->GetBufferPointer(),						// ƒVƒŠƒAƒ‰ƒCƒY‚µ‚½ƒf[ƒ^‚Ìƒ|ƒCƒ“ƒ^
+		pBlob->GetBufferSize(),							// ƒVƒŠƒAƒ‰ƒCƒY‚µ‚½ƒf[ƒ^‚ÌƒTƒCƒY
+		IID_PPV_ARGS(m_pRootSignature.GetAddressOf())); // ƒ‹[ƒgƒVƒOƒjƒ`ƒƒŠi”[æ‚Ìƒ|ƒCƒ“ƒ^
 	if (FAILED(hr))
 	{
-		printf("ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ã®ç”Ÿæˆã«å¤±æ•—");
+		printf("ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ‚Ì¶¬‚ÉŽ¸”s");
 		return;
 	}
 
@@ -61,7 +61,7 @@ bool RootSignature::Init(const D3D12_ROOT_SIGNATURE_DESC& desc)
 	ComPtr<ID3DBlob> pBlob;
 	ComPtr<ID3DBlob> pErrorBlob;
 
-	// ã‚·ãƒªã‚¢ãƒ©ã‚¤ã‚º
+	// ƒVƒŠƒAƒ‰ƒCƒY
 	HRESULT hr = D3D12SerializeRootSignature(
 		&desc,
 		D3D_ROOT_SIGNATURE_VERSION_1_0,
@@ -70,12 +70,12 @@ bool RootSignature::Init(const D3D12_ROOT_SIGNATURE_DESC& desc)
 	if (FAILED(hr))
 	{
 		if (pErrorBlob) {
-			printf("ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ã‚·ãƒªã‚¢ãƒ©ã‚¤ã‚ºå¤±æ•—: %s\n", (char*)pErrorBlob->GetBufferPointer());
+			printf("ƒ‹[ƒgƒVƒOƒlƒ`ƒƒƒVƒŠƒAƒ‰ƒCƒYŽ¸”s: %s\n", (char*)pErrorBlob->GetBufferPointer());
 		}
 		return false;
 	}
 
-	// ç”Ÿæˆ
+	// ¶¬
 	hr = g_Engine->Device()->CreateRootSignature(
 		0,
 		pBlob->GetBufferPointer(),
@@ -83,7 +83,7 @@ bool RootSignature::Init(const D3D12_ROOT_SIGNATURE_DESC& desc)
 		IID_PPV_ARGS(m_pRootSignature.GetAddressOf()));
 	if (FAILED(hr))
 	{
-		printf("ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ç”Ÿæˆå¤±æ•—\n");
+		printf("ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ¶¬Ž¸”s\n");
 		return false;
 	}
 

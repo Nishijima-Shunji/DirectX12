@@ -11,18 +11,18 @@ struct Vertex;
 struct aiMesh;
 struct aiMaterial;
 
-struct ImportSettings // ã‚¤ãƒ³ãƒãƒ¼ãƒˆã™ã‚‹ã¨ãã®ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿
+struct ImportSettings // ƒCƒ“ƒ|[ƒg‚·‚é‚Æ‚«‚Ìƒpƒ‰ƒ[ƒ^
 {
-    const wchar_t* filename = nullptr; // ãƒ•ã‚¡ã‚¤ãƒ«ãƒ‘ã‚¹
-    std::vector<Mesh>& meshes; // å‡ºåŠ›å…ˆã®ãƒ¡ãƒƒã‚·ãƒ¥é…åˆ—
-    bool inverseU = false; // Uåº§æ¨™ã‚’åè»¢ã•ã›ã‚‹ã‹
-    bool inverseV = false; // Våº§æ¨™ã‚’åè»¢ã•ã›ã‚‹ã‹
+    const wchar_t* filename = nullptr; // ƒtƒ@ƒCƒ‹ƒpƒX
+    std::vector<Mesh>& meshes; // o—Íæ‚ÌƒƒbƒVƒ…”z—ñ
+    bool inverseU = false; // UÀ•W‚ğ”½“]‚³‚¹‚é‚©
+    bool inverseV = false; // VÀ•W‚ğ”½“]‚³‚¹‚é‚©
 };
 
 class AssimpLoader
 {
 public:
-    bool Load(ImportSettings setting); // ãƒ¢ãƒ‡ãƒ«ã‚’ãƒ­ãƒ¼ãƒ‰ã™ã‚‹
+    bool Load(ImportSettings setting); // ƒ‚ƒfƒ‹‚ğƒ[ƒh‚·‚é
 
 private:
     void LoadMesh(Mesh& dst, const aiMesh* src, bool inverseU, bool inverseV);

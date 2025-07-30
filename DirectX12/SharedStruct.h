@@ -44,9 +44,9 @@ struct Particle {
         DirectX::XMFLOAT3 velocity;
 };
 
-// ãƒ¡ã‚¿ãƒœãƒ¼ãƒ«ç”¨ã®ç²’å­æƒ…å ±
+// ƒƒ^ƒ{[ƒ‹—p‚Ì—±qî•ñ
 struct ParticleMeta
 {
-	DirectX::XMFLOAT3 pos;   // ãƒ¯ãƒ¼ãƒ«ãƒ‰ç©ºé–“ä½ç½®
-	float               r;    // åŠå¾„
+	DirectX::XMFLOAT3 pos;   // ƒ[ƒ‹ƒh‹óŠÔˆÊ’u
+	float               r;    // ”¼Œa
 };

@@ -16,8 +16,8 @@ private:
 	DirectX::XMVECTOR upward;
 	float fov;
 	float aspect;
-	float yaw = 0.0f;   // å·¦å³å›è»¢ï¼ˆYè»¸ï¼‰
-	float pitch = 0.0f; // ä¸Šä¸‹å›è»¢ï¼ˆXè»¸ï¼‰
+	float yaw = 0.0f;   // ¶‰E‰ñ“]iY²j
+	float pitch = 0.0f; // ã‰º‰ñ“]iX²j
 
 	DirectX::XMMATRIX viewMatrix;
 	DirectX::XMMATRIX projMatrix;

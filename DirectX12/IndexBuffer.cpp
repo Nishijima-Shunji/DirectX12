@@ -4,10 +4,10 @@
 
 IndexBuffer::IndexBuffer(size_t size, const uint32_t* pInitData)
 {
-	auto prop = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);	// ãƒ’ãƒ¼ãƒ—ãƒ—ãƒ­ãƒ‘ãƒ†ã‚£
-	D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(size);	// ãƒªã‚½ãƒ¼ã‚¹ã®è¨­å®š
+	auto prop = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);	// ƒq[ƒvƒvƒƒpƒeƒB
+	D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(size);	// ƒŠƒ\[ƒX‚ÌÝ’è
 
-	// ãƒªã‚½ãƒ¼ã‚¹ã‚’ç”Ÿæˆ
+	// ƒŠƒ\[ƒX‚ð¶¬
 	auto hr = g_Engine->Device()->CreateCommittedResource(
 		&prop,
 		D3D12_HEAP_FLAG_NONE,
@@ -17,31 +17,31 @@ IndexBuffer::IndexBuffer(size_t size, const uint32_t* pInitData)
 		IID_PPV_ARGS(m_pBuffer.GetAddressOf()));
 	if (FAILED(hr))
 	{
-		printf("[OnInit] ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒãƒƒãƒ•ã‚¡ãƒªã‚½ãƒ¼ã‚¹ã®ç”Ÿæˆã«å¤±æ•—");
+		printf("[OnInit] ƒCƒ“ƒfƒbƒNƒXƒoƒbƒtƒ@ƒŠƒ\[ƒX‚Ì¶¬‚ÉŽ¸”s");
 		return;
 	}
 
-	// ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒãƒƒãƒ•ã‚¡ãƒ“ãƒ¥ãƒ¼ã®è¨­å®š
+	// ƒCƒ“ƒfƒbƒNƒXƒoƒbƒtƒ@ƒrƒ…[‚ÌÝ’è
 	m_View = {};
 	m_View.BufferLocation = m_pBuffer->GetGPUVirtualAddress();
 	m_View.Format = DXGI_FORMAT_R32_UINT;
 	m_View.SizeInBytes = static_cast<UINT>(size);
 
-	// ãƒžãƒƒãƒ”ãƒ³ã‚°ã™ã‚‹
+	// ƒ}ƒbƒsƒ“ƒO‚·‚é
 	if (pInitData != nullptr)
 	{
 		void* ptr = nullptr;
 		hr = m_pBuffer->Map(0, nullptr, &ptr);
 		if (FAILED(hr))
 		{
-			printf("[OnInit] ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒãƒƒãƒ•ã‚¡ãƒžãƒƒãƒ”ãƒ³ã‚°ã«å¤±æ•—");
+			printf("[OnInit] ƒCƒ“ƒfƒbƒNƒXƒoƒbƒtƒ@ƒ}ƒbƒsƒ“ƒO‚ÉŽ¸”s");
 			return;
 		}
 
-		// ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒ‡ãƒ¼ã‚¿ã‚’ãƒžãƒƒãƒ”ãƒ³ã‚°å…ˆã«è¨­å®š
+		// ƒCƒ“ƒfƒbƒNƒXƒf[ƒ^‚ðƒ}ƒbƒsƒ“ƒOæ‚ÉÝ’è
 		memcpy(ptr, pInitData, size);
 
-		// ãƒžãƒƒãƒ”ãƒ³ã‚°è§£é™¤
+		// ƒ}ƒbƒsƒ“ƒO‰ðœ
 		m_pBuffer->Unmap(0, nullptr);
 	}
 	m_IsValid = true;
