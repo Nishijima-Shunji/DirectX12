@@ -31,7 +31,9 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	UINT maxParticles, UINT threadGroupCount) {
         m_maxParticles = maxParticles;
         m_threadGroupCount = (maxParticles + 255) / 256;
-	m_cpuParticles.resize(maxParticles);
+    m_cpuParticles.resize(maxParticles);
+    m_density.resize(maxParticles);
+    m_neighborBuffer.reserve(MAX_PARTICLES_PER_CELL * 27);
 
 	for (auto& p : m_cpuParticles) {
 		p.position = { RandFloat(-1.0f, 1.0f), RandFloat(-1.0f, 5.0f), RandFloat(-1.0f, 1.0f) };
@@ -379,8 +381,8 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
                         m_grid.Insert(i, m_cpuParticles[i].position);
                 }
 
-                std::vector<float> density(m_maxParticles, 0.0f);
-                std::vector<size_t> neigh;
+                std::fill(m_density.begin(), m_density.end(), 0.0f);
+                auto& neigh = m_neighborBuffer;
                 for (UINT i = 0; i < m_maxParticles; ++i) {
                         m_grid.Query(m_cpuParticles[i].position, radius, neigh);
                         float d = 0.f;
@@ -395,13 +397,13 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
                                         d += m_params.particleMass * (315.0f / (64.0f * PI * radius9)) * x * x * x;
                                 }
                         }
-                        density[i] = d;
+                        m_density[i] = d;
                 }
 
                 for (UINT i = 0; i < m_maxParticles; ++i) {
                         m_grid.Query(m_cpuParticles[i].position, radius, neigh);
-                        float pressure = m_params.stiffness * (density[i] - m_params.restDensity);
-                        DirectX::XMFLOAT3 force{ 0.0f, -9.8f * density[i], 0.0f };
+                        float pressure = m_params.stiffness * (m_density[i] - m_params.restDensity);
+                        DirectX::XMFLOAT3 force{ 0.0f, -9.8f * m_density[i], 0.0f };
                         for (size_t j : neigh) {
                                 if (j == i) continue;
                                 DirectX::XMFLOAT3 rij{
@@ -412,18 +414,18 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
                                 if (r > 0 && r < radius) {
                                         float coeff = -45.0f / (PI * radius6) * (radius - r) * (radius - r);
                                         DirectX::XMFLOAT3 grad{ coeff * rij.x / r, coeff * rij.y / r, coeff * rij.z / r };
-                                        float pTerm = (pressure + m_params.stiffness * (density[j] - m_params.restDensity)) / (2 * density[j]);
+                                        float pTerm = (pressure + m_params.stiffness * (m_density[j] - m_params.restDensity)) / (2 * m_density[j]);
                                         force.x += -m_params.particleMass * pTerm * grad.x;
                                         force.y += -m_params.particleMass * pTerm * grad.y;
                                         force.z += -m_params.particleMass * pTerm * grad.z;
                                         float lap = 45.0f / (PI * radius6) * (radius - r);
-                                        force.x += m_params.viscosity * m_params.particleMass * (m_cpuParticles[j].velocity.x - m_cpuParticles[i].velocity.x) * (lap / density[j]);
-                                        force.y += m_params.viscosity * m_params.particleMass * (m_cpuParticles[j].velocity.y - m_cpuParticles[i].velocity.y) * (lap / density[j]);
-                                        force.z += m_params.viscosity * m_params.particleMass * (m_cpuParticles[j].velocity.z - m_cpuParticles[i].velocity.z) * (lap / density[j]);
+                                        force.x += m_params.viscosity * m_params.particleMass * (m_cpuParticles[j].velocity.x - m_cpuParticles[i].velocity.x) * (lap / m_density[j]);
+                                        force.y += m_params.viscosity * m_params.particleMass * (m_cpuParticles[j].velocity.y - m_cpuParticles[i].velocity.y) * (lap / m_density[j]);
+                                        force.z += m_params.viscosity * m_params.particleMass * (m_cpuParticles[j].velocity.z - m_cpuParticles[i].velocity.z) * (lap / m_density[j]);
                                 }
                         }
 
-                        float invD = 1.0f / density[i];
+                        float invD = 1.0f / m_density[i];
                         m_cpuParticles[i].velocity.x += force.x * invD * m_params.timeStep;
                         m_cpuParticles[i].velocity.y += force.y * invD * m_params.timeStep;
                         m_cpuParticles[i].velocity.z += force.z * invD * m_params.timeStep;

@@ -88,4 +88,8 @@ private:
     } m_params;
 
     SpatialGrid m_grid{ 0.1f };
+
+    // CPU シミュレーション用一時バッファ
+    std::vector<float> m_density;
+    std::vector<size_t> m_neighborBuffer;
 };
