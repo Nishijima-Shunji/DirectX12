@@ -1,4 +1,5 @@
 #define PI 3.14159265358979323846f
+#define MAX_PARTICLES_PER_CELL 64
 
 // SPHParams 構造体（b0）
 cbuffer SPHParams : register(b0) {
@@ -9,6 +10,11 @@ cbuffer SPHParams : register(b0) {
     float radius;        // 影響半径
     float timeStep;      // 時間ステップ
     uint  particleCount; // 粒子数
+    uint  pad0;
+    float3 gridMin;
+    float  pad1;
+    uint3  gridDim;
+    uint   pad2;
 };
 
 cbuffer ViewProjCB : register(b1) {
@@ -33,6 +39,8 @@ StructuredBuffer<Particle>    inParticles   : register(t0);
 RWStructuredBuffer<Particle>  outParticles  : register(u0);
 // メタボールに必要な情報に変換
 RWStructuredBuffer<ParticleMeta> outMeta : register(u1);
+RWStructuredBuffer<uint>  gridCount : register(u2);
+RWStructuredBuffer<uint>  gridTable : register(u3);
 
 // ========================================
 //  メイン
@@ -52,12 +60,25 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     //  密度計算 
     // ========================================
     float density = 0;
-    for (uint j = 0; j < particleCount; ++j) {
-        float3 rij = inParticles[i].position - inParticles[j].position;
-        float  r   = length(rij);
-        if (r < radius) {
-            float x = radius * radius - r * r;
-            density += particleMass * (315.0/(64.0 * PI * radius9)) * x * x * x;
+    int3 baseCell = int3(floor((inParticles[i].position - gridMin) / radius));
+    for (int cx = baseCell.x - 1; cx <= baseCell.x + 1; ++cx) {
+        if (cx < 0 || cx >= (int)gridDim.x) continue;
+        for (int cy = baseCell.y - 1; cy <= baseCell.y + 1; ++cy) {
+            if (cy < 0 || cy >= (int)gridDim.y) continue;
+            for (int cz = baseCell.z - 1; cz <= baseCell.z + 1; ++cz) {
+                if (cz < 0 || cz >= (int)gridDim.z) continue;
+                uint cId = cx + gridDim.x * (cy + gridDim.y * cz);
+                uint cnt = gridCount[cId];
+                for (uint n = 0; n < cnt; ++n) {
+                    uint j = gridTable[cId * MAX_PARTICLES_PER_CELL + n];
+                    float3 rij = inParticles[i].position - inParticles[j].position;
+                    float r2 = dot(rij, rij);
+                    if (r2 < radius2) {
+                        float x = radius2 - r2;
+                        density += particleMass * (315.0/(64.0 * PI * radius9)) * x * x * x;
+                    }
+                }
+            }
         }
     }
     float pressure = stiffness * (density - restDensity);
@@ -66,19 +87,30 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     //  力計算
     // ========================================
     float3 force = float3(0, -9.8f * density, 0);
-    for (uint j = 0; j < particleCount; ++j) {
-        if (i == j) continue;
-        float3 rij = inParticles[i].position - inParticles[j].position;
-        float  r   = length(rij);
-        if (r > 0 && r < radius) {
-            // 圧力力
-            float coeff = -45.0/(PI * radius6) * (radius - r)*(radius - r);
-            float3 grad = coeff * (rij / r);
-            float pTerm = (pressure + stiffness * ( (density - restDensity) )) / (2*density);
-            force += -particleMass * pTerm * grad;
-            // 粘性力
-            float lap = 45.0/(PI * radius6) * (radius - r);
-            force += viscosity * particleMass * (inParticles[j].velocity - inParticles[i].velocity) * (lap / density);
+    for (int cx = baseCell.x - 1; cx <= baseCell.x + 1; ++cx) {
+        if (cx < 0 || cx >= (int)gridDim.x) continue;
+        for (int cy = baseCell.y - 1; cy <= baseCell.y + 1; ++cy) {
+            if (cy < 0 || cy >= (int)gridDim.y) continue;
+            for (int cz = baseCell.z - 1; cz <= baseCell.z + 1; ++cz) {
+                if (cz < 0 || cz >= (int)gridDim.z) continue;
+                uint cId = cx + gridDim.x * (cy + gridDim.y * cz);
+                uint cnt = gridCount[cId];
+                for (uint n = 0; n < cnt; ++n) {
+                    uint j = gridTable[cId * MAX_PARTICLES_PER_CELL + n];
+                    if (j == i) continue;
+                    float3 rij = inParticles[i].position - inParticles[j].position;
+                    float r2 = dot(rij, rij);
+                    if (r2 > 0 && r2 < radius2) {
+                        float r = sqrt(r2);
+                        float coeff = -45.0/(PI * radius6) * (radius - r)*(radius - r);
+                        float3 grad = coeff * (rij / r);
+                        float pTerm = (pressure + stiffness * ( (density - restDensity) )) / (2*density);
+                        force += -particleMass * pTerm * grad;
+                        float lap = 45.0/(PI * radius6) * (radius - r);
+                        force += viscosity * particleMass * (inParticles[j].velocity - inParticles[i].velocity) * (lap / density);
+                    }
+                }
+            }
         }
     }
 

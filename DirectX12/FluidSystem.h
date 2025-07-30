@@ -45,6 +45,9 @@ private:
     ComPtr<ID3D12Resource>        m_metaBuffer;     // metadata for rendering
     ComPtr<ID3D12DescriptorHeap>  m_uavHeap;      // UAV を持つヒープ
     ComPtr<ID3D12DescriptorHeap>  m_graphicsSrvHeap; // SRV 用ヒープ
+    // グリッド情報
+    ComPtr<ID3D12Resource>        m_gridCount;
+    ComPtr<ID3D12Resource>        m_gridTable;
     ComPtr<ID3D12Resource>        m_particleUpload;
     ComPtr<ID3D12Resource>        m_metaUpload;
 
@@ -54,7 +57,8 @@ private:
 
     // コンピュート用パイプライン
     ComPtr<ID3D12RootSignature>    m_computeRS;
-    ComputePipelineState           m_computePS;
+    ComputePipelineState           m_computePS;      // SPH 計算
+    ComputePipelineState           m_buildGridPS;    // グリッド生成
 
     // 描画用パイプライン
     ComPtr<ID3D12RootSignature>    m_graphicsRS;
@@ -64,6 +68,14 @@ private:
     UINT m_maxParticles;
     UINT m_threadGroupCount;
     bool m_useGpu = false;
+
+    // グリッド設定
+    static const UINT MAX_PARTICLES_PER_CELL = 64;
+    UINT m_gridDimX = 1;
+    UINT m_gridDimY = 1;
+    UINT m_gridDimZ = 1;
+    UINT m_cellCount = 1;
+    DirectX::XMFLOAT3 m_gridMin{-1.0f, -1.0f, -1.0f};
 
     // CPU 用パラメータ
     struct SPHParams {

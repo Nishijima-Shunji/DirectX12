@@ -37,9 +37,8 @@ bool GameScene::Init() {
 	auto device = g_Engine->Device();
 	const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-	const UINT maxParticles = 50;
-	const UINT threadGroupCount = 8;
-        m_fluid.Init(device, rtvFormat, maxParticles, threadGroupCount);
+        const UINT maxParticles = 50;
+        m_fluid.Init(device, rtvFormat, maxParticles, 0);
         m_fluid.SetSpatialCellSize(0.1f); // 計算範囲
 
         m_fluid.UseGPU(true); // GPU でシミュレーションを行かどうか

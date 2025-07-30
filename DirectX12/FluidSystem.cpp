@@ -9,14 +9,18 @@
 
 
 struct SPHParamsCB {
-	float restDensity;
-	float particleMass;
-	float viscosity;
-	float stiffness;
-	float radius;
-	float timeStep;
-	uint32_t particleCount;
-	float pad; // padding to 16 bytes multiple
+        float restDensity;
+        float particleMass;
+        float viscosity;
+        float stiffness;
+        float radius;
+        float timeStep;
+        uint32_t particleCount;
+        uint32_t pad0;
+        DirectX::XMFLOAT3 gridMin;
+        uint32_t pad1;
+        DirectX::XMUINT3  gridDim;
+        uint32_t pad2;
 };
 
 struct ViewProjCB {
@@ -25,8 +29,8 @@ struct ViewProjCB {
 
 void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	UINT maxParticles, UINT threadGroupCount) {
-	m_maxParticles = maxParticles;
-	m_threadGroupCount = threadGroupCount;
+        m_maxParticles = maxParticles;
+        m_threadGroupCount = (maxParticles + 255) / 256;
 	m_cpuParticles.resize(maxParticles);
 
 	for (auto& p : m_cpuParticles) {
@@ -47,15 +51,21 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	CD3DX12_DESCRIPTOR_RANGE uavRange0;
 	uavRange0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0); // u0
 
-	CD3DX12_DESCRIPTOR_RANGE uavRange1;
-	uavRange1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1); // u1
+        CD3DX12_DESCRIPTOR_RANGE uavRange1;
+        uavRange1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1); // u1
+        CD3DX12_DESCRIPTOR_RANGE uavRange2;
+        uavRange2.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2); // u2
+        CD3DX12_DESCRIPTOR_RANGE uavRange3;
+        uavRange3.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 3); // u3
 
-	CD3DX12_ROOT_PARAMETER params[5];
-	params[0].InitAsConstantBufferView(0);      // b0
-	params[1].InitAsConstantBufferView(1);      // b1
-	params[2].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
-	params[3].InitAsDescriptorTable(1, &uavRange0, D3D12_SHADER_VISIBILITY_ALL);
-	params[4].InitAsDescriptorTable(1, &uavRange1, D3D12_SHADER_VISIBILITY_ALL);
+        CD3DX12_ROOT_PARAMETER params[7];
+        params[0].InitAsConstantBufferView(0);      // b0
+        params[1].InitAsConstantBufferView(1);      // b1
+        params[2].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_ALL);
+        params[3].InitAsDescriptorTable(1, &uavRange0, D3D12_SHADER_VISIBILITY_ALL);
+        params[4].InitAsDescriptorTable(1, &uavRange1, D3D12_SHADER_VISIBILITY_ALL);
+        params[5].InitAsDescriptorTable(1, &uavRange2, D3D12_SHADER_VISIBILITY_ALL);
+        params[6].InitAsDescriptorTable(1, &uavRange3, D3D12_SHADER_VISIBILITY_ALL);
 
 	CD3DX12_ROOT_SIGNATURE_DESC rsDesc(_countof(params), params, 0, nullptr,
 		D3D12_ROOT_SIGNATURE_FLAG_NONE);
@@ -79,10 +89,15 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 
 	// ---------------------------------------------------------------------
 	// Compute PSO
-	m_computePS.SetDevice(device);
-	m_computePS.SetRootSignature(m_computeRS.Get());
-	m_computePS.SetCS(L"ParticleCS.cso");
-	m_computePS.Create();
+        m_computePS.SetDevice(device);
+        m_computePS.SetRootSignature(m_computeRS.Get());
+        m_computePS.SetCS(L"ParticleCS.cso");
+        m_computePS.Create();
+
+        m_buildGridPS.SetDevice(device);
+        m_buildGridPS.SetRootSignature(m_computeRS.Get());
+        m_buildGridPS.SetCS(L"BuildGridCS.cso");
+        m_buildGridPS.Create();
 
 	// ---------------------------------------------------------------------
 	// Particle and meta buffers
@@ -108,8 +123,8 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 		nullptr,
 		IID_PPV_ARGS(&m_metaBuffer));
 
-	D3D12_DESCRIPTOR_HEAP_DESC hd = {};
-	hd.NumDescriptors = 3; // SRV + UAV + UAV
+        D3D12_DESCRIPTOR_HEAP_DESC hd = {};
+        hd.NumDescriptors = 5; // SRV + UAV + UAV + UAV + UAV
 	hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_uavHeap));
@@ -137,7 +152,21 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	uavMeta.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
 	uavMeta.Buffer.NumElements = maxParticles;
 	uavMeta.Buffer.StructureByteStride = sizeof(ParticleMeta);
-	device->CreateUnorderedAccessView(m_metaBuffer.Get(), nullptr, &uavMeta, handle);
+        device->CreateUnorderedAccessView(m_metaBuffer.Get(), nullptr, &uavMeta, handle);
+
+        handle.ptr += handleSize;
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uavCount = {};
+        uavCount.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+        uavCount.Buffer.NumElements = m_cellCount;
+        uavCount.Buffer.StructureByteStride = sizeof(UINT);
+        device->CreateUnorderedAccessView(m_gridCount.Get(), nullptr, &uavCount, handle);
+
+        handle.ptr += handleSize;
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uavTable = {};
+        uavTable.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+        uavTable.Buffer.NumElements = m_cellCount * MAX_PARTICLES_PER_CELL;
+        uavTable.Buffer.StructureByteStride = sizeof(UINT);
+        device->CreateUnorderedAccessView(m_gridTable.Get(), nullptr, &uavTable, handle);
 
 	// 描画用パイプライン生成
 	// ルートシグネチャ
@@ -228,6 +257,8 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
                 cb->radius = 0.1f;
                 cb->timeStep = 0.016f;
                 cb->particleCount = m_maxParticles;
+                cb->pad0 = 0;
+                cb->gridMin = m_gridMin;
 
                 m_params.restDensity = cb->restDensity;
                 m_params.particleMass = cb->particleMass;
@@ -236,6 +267,26 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
                 m_params.radius = cb->radius;
                 m_params.timeStep = cb->timeStep;
                 m_grid.SetCellSize(cb->radius);
+
+                m_gridDimX = static_cast<UINT>(ceil((2.0f) / cb->radius)) + 1;
+                m_gridDimY = static_cast<UINT>(ceil((6.0f) / cb->radius)) + 1;
+                m_gridDimZ = static_cast<UINT>(ceil((2.0f) / cb->radius)) + 1;
+                cb->gridDim = DirectX::XMUINT3(m_gridDimX, m_gridDimY, m_gridDimZ);
+                cb->pad1 = cb->pad2 = 0;
+                m_cellCount = m_gridDimX * m_gridDimY * m_gridDimZ;
+
+                D3D12_RESOURCE_DESC rdCount = CD3DX12_RESOURCE_DESC::Buffer(
+                        sizeof(UINT) * m_cellCount,
+                        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+                D3D12_RESOURCE_DESC rdTable = CD3DX12_RESOURCE_DESC::Buffer(
+                        sizeof(UINT) * m_cellCount * MAX_PARTICLES_PER_CELL,
+                        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+                device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rdCount,
+                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                        IID_PPV_ARGS(&m_gridCount));
+                device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rdTable,
+                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                        IID_PPV_ARGS(&m_gridTable));
         }
 
 	if (m_viewProjCB && m_viewProjCB->IsValid()) {
@@ -247,21 +298,45 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 	if (m_useGpu) {
 		// GPU シミュレーション
-		CD3DX12_RESOURCE_BARRIER barriers[] = {
-			CD3DX12_RESOURCE_BARRIER::UAV(m_particleBuffer.Get()),
-			CD3DX12_RESOURCE_BARRIER::UAV(m_metaBuffer.Get())
-		};
-		cmd->ResourceBarrier(2, barriers);
-		cmd->SetComputeRootSignature(m_computeRS.Get());
-		ID3D12DescriptorHeap* heaps[] = { m_uavHeap.Get() };
-		cmd->SetDescriptorHeaps(1, heaps);
+                CD3DX12_RESOURCE_BARRIER barriers[] = {
+                        CD3DX12_RESOURCE_BARRIER::UAV(m_particleBuffer.Get()),
+                        CD3DX12_RESOURCE_BARRIER::UAV(m_metaBuffer.Get()),
+                        CD3DX12_RESOURCE_BARRIER::UAV(m_gridCount.Get()),
+                        CD3DX12_RESOURCE_BARRIER::UAV(m_gridTable.Get())
+                };
+                cmd->ResourceBarrier(_countof(barriers), barriers);
+                cmd->SetComputeRootSignature(m_computeRS.Get());
+                ID3D12DescriptorHeap* heaps[] = { m_uavHeap.Get() };
+                cmd->SetDescriptorHeaps(1, heaps);
 
-		UINT handleSize = g_Engine->Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_uavHeap->GetGPUDescriptorHandleForHeapStart();
-		D3D12_GPU_DESCRIPTOR_HANDLE uavParticle = srvHandle;
-		uavParticle.ptr += handleSize;
-		D3D12_GPU_DESCRIPTOR_HANDLE uavMeta = uavParticle;
-		uavMeta.ptr += handleSize;
+                UINT handleSize = g_Engine->Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+                D3D12_GPU_DESCRIPTOR_HANDLE srvHandle = m_uavHeap->GetGPUDescriptorHandleForHeapStart();
+                D3D12_GPU_DESCRIPTOR_HANDLE uavParticle = srvHandle;
+                uavParticle.ptr += handleSize;
+                D3D12_GPU_DESCRIPTOR_HANDLE uavMeta = uavParticle;
+                uavMeta.ptr += handleSize;
+                D3D12_GPU_DESCRIPTOR_HANDLE uavCount = uavMeta;
+                uavCount.ptr += handleSize;
+                D3D12_GPU_DESCRIPTOR_HANDLE uavTable = uavCount;
+                uavTable.ptr += handleSize;
+
+                UINT maxThreads = (m_cellCount > m_maxParticles) ? m_cellCount : m_maxParticles;
+                UINT buildGroups = (maxThreads + 255) / 256;
+                cmd->SetPipelineState(m_buildGridPS.Get());
+                cmd->SetComputeRootConstantBufferView(0, m_sphParamCB->GetAddress());
+                cmd->SetComputeRootConstantBufferView(1, m_viewProjCB->GetAddress());
+                cmd->SetComputeRootDescriptorTable(2, srvHandle);
+                cmd->SetComputeRootDescriptorTable(3, uavParticle);
+                cmd->SetComputeRootDescriptorTable(4, uavMeta);
+                cmd->SetComputeRootDescriptorTable(5, uavCount);
+                cmd->SetComputeRootDescriptorTable(6, uavTable);
+                cmd->Dispatch(buildGroups, 1, 1);
+
+                CD3DX12_RESOURCE_BARRIER gridBarriers[] = {
+                        CD3DX12_RESOURCE_BARRIER::UAV(m_gridCount.Get()),
+                        CD3DX12_RESOURCE_BARRIER::UAV(m_gridTable.Get())
+                };
+                cmd->ResourceBarrier(2, gridBarriers);
 
 		// Root parameter order: b0, b1, t0, u0, u1
 		// 定数バッファ更新
@@ -282,12 +357,15 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 
 		cmd->SetComputeRootConstantBufferView(0, m_sphParamCB->GetAddress());
 		cmd->SetComputeRootConstantBufferView(1, m_viewProjCB->GetAddress());
-		cmd->SetComputeRootDescriptorTable(2, srvHandle);
-		cmd->SetComputeRootDescriptorTable(3, uavParticle);
-		cmd->SetComputeRootDescriptorTable(4, uavMeta);
-		cmd->SetPipelineState(m_computePS.Get());
-		cmd->Dispatch(m_threadGroupCount, 1, 1);
-	}
+                cmd->SetComputeRootDescriptorTable(2, srvHandle);
+                cmd->SetComputeRootDescriptorTable(3, uavParticle);
+                cmd->SetComputeRootDescriptorTable(4, uavMeta);
+                cmd->SetComputeRootDescriptorTable(5, uavCount);
+                cmd->SetComputeRootDescriptorTable(6, uavTable);
+                cmd->SetPipelineState(m_computePS.Get());
+                UINT groups = (m_maxParticles + 255) / 256;
+                cmd->Dispatch(groups, 1, 1);
+        }
         else {
                 // CPU シミュレーション
                 const float PI = 3.14159265358979323846f;

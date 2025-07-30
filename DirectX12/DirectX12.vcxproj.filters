@@ -255,5 +255,6 @@
       <Filter>リソース ファイル</Filter>
     </FxCompile>
     <FxCompile Include="ParticleCS.hlsl" />
+    <FxCompile Include="BuildGridCS.hlsl" />
   </ItemGroup>
 </Project>
