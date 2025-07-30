@@ -12,8 +12,8 @@ public:
 
 private:
 	bool m_IsValid = false;
-	ComPtr<ID3D12Resource> m_pBuffer; // ƒCƒ“ƒfƒbƒNƒXƒoƒbƒtƒ@
-	D3D12_INDEX_BUFFER_VIEW m_View; // ƒCƒ“ƒfƒbƒNƒXƒoƒbƒtƒ@ƒrƒ…[
+	ComPtr<ID3D12Resource> m_pBuffer; // ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒãƒƒãƒ•ã‚¡
+	D3D12_INDEX_BUFFER_VIEW m_View; // ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒãƒƒãƒ•ã‚¡ãƒ“ãƒ¥ãƒ¼
 
 	IndexBuffer(const IndexBuffer&) = delete;
 	void operator = (const IndexBuffer&) = delete;

@@ -34,7 +34,7 @@ void InitWindow(const TCHAR* appName)
 		return;
 	}
 
-	// ƒEƒBƒ“ƒhƒE‚Ìİ’è
+	// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®è¨­å®š
 	WNDCLASSEX wc = {};
 	wc.cbSize = sizeof(WNDCLASSEX);
 	wc.style = CS_HREDRAW | CS_VREDRAW;
@@ -46,19 +46,19 @@ void InitWindow(const TCHAR* appName)
 	wc.lpszClassName = appName;
 	wc.hIconSm = LoadIcon(g_hInst, IDI_APPLICATION);
 
-	// ƒEƒBƒ“ƒhƒEƒNƒ‰ƒX‚Ì“o˜^B
+	// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚¯ãƒ©ã‚¹ã®ç™»éŒ²ã€‚
 	RegisterClassEx(&wc);
 
-	// ƒEƒBƒ“ƒhƒEƒTƒCƒY‚Ìİ’è
+	// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚µã‚¤ã‚ºã®è¨­å®š
 	RECT rect = {};
 	rect.right = static_cast<LONG>(WINDOW_WIDTH);
 	rect.bottom = static_cast<LONG>(WINDOW_HEIGHT);
 
-	// ƒEƒBƒ“ƒhƒEƒTƒCƒY‚ğ’²®
+	// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚µã‚¤ã‚ºã‚’èª¿æ•´
 	auto style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
 	AdjustWindowRect(&rect, style, FALSE);
 
-	// ƒEƒBƒ“ƒhƒE‚Ì¶¬
+	// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã®ç”Ÿæˆ
 	g_hWnd = CreateWindowEx(
 		0,
 		appName,
@@ -74,10 +74,10 @@ void InitWindow(const TCHAR* appName)
 		nullptr
 	);
 
-	// ƒEƒBƒ“ƒhƒE‚ğ•\¦
+	// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚’è¡¨ç¤º
 	ShowWindow(g_hWnd, SW_SHOWNORMAL);
 
-	// ƒEƒBƒ“ƒhƒE‚ÉƒtƒH[ƒJƒX‚·‚é
+	// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã«ãƒ•ã‚©ãƒ¼ã‚«ã‚¹ã™ã‚‹
 	SetFocus(g_hWnd);
 }
 
@@ -100,28 +100,28 @@ void MainLoop()
 		}
 		else
 		{
-			// ƒfƒ‹ƒ^ƒ^ƒCƒ€ŒvZ
+			// ãƒ‡ãƒ«ã‚¿ã‚¿ã‚¤ãƒ è¨ˆç®—
 			auto now = clock::now();
 			float dt = std::chrono::duration<float>(now - prevTime).count();
 			prevTime = now;
 
-			// ƒQ[ƒ€XVE•`‰æ
+			// ã‚²ãƒ¼ãƒ æ›´æ–°ãƒ»æç”»
 			g_Engine->BeginRender();
 			game.Update(dt);
 			game.Render();
 			g_Engine->EndRender();
 
 
-			//// ƒtƒŒ[ƒ€‚ğ’ñ¦
+			//// ãƒ•ãƒ¬ãƒ¼ãƒ ã‚’æç¤º
 			//g_Engine->EndRender();
 			//g_Engine->m_pSwapChain->Present(1, 0);
 
-			// „Ÿ„Ÿ„Ÿ FPS Œv‘ªE•\¦ „Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ„Ÿ
+			// â”€â”€â”€ FPS è¨ˆæ¸¬ãƒ»è¡¨ç¤º â”€â”€â”€â”€â”€â”€â”€â”€â”€
 			frameCount++;
 			elapsed += dt;
 			if (elapsed >= 1.0f)
 			{
-				// ƒEƒBƒ“ƒhƒEƒ^ƒCƒgƒ‹‚É FPS ‚ğ•\¦
+				// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ã‚¿ã‚¤ãƒˆãƒ«ã« FPS ã‚’è¡¨ç¤º
 				wchar_t buf[64];
 				swprintf(buf, 64, L"FPS: %d", frameCount);
 				SetWindowText(g_hWnd, buf);
@@ -134,7 +134,7 @@ void MainLoop()
 
 void StartApp(const TCHAR* appName)
 {
-	// ƒEƒBƒ“ƒhƒE¶¬
+	// ã‚¦ã‚£ãƒ³ãƒ‰ã‚¦ç”Ÿæˆ
 	InitWindow(appName);
 
 	g_Engine = new Engine();
@@ -142,7 +142,7 @@ void StartApp(const TCHAR* appName)
 	{
 		return;
 	}
-	// ƒƒCƒ“ˆ—ƒ‹[ƒv
+	// ãƒ¡ã‚¤ãƒ³å‡¦ç†ãƒ«ãƒ¼ãƒ—
 	MainLoop();
 	IDXGIDebug1* pDebug = nullptr;
 	if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug)))) {

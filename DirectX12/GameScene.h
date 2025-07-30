@@ -3,7 +3,7 @@
 #include <DirectXMath.h>
 #include <vector>
 #include <d3dx12.h>
-#include "IActor.h"      // IActor ‚Ì’è‹`
+#include "IActor.h"      // IActor ã®å®šç¾©
 
 #include "Camera.h"
 #include "Particle.h"
@@ -15,13 +15,13 @@ private:
 	ConstantBuffer* constantBuffer[Engine::FRAME_BUFFER_COUNT];
     ID3D12GraphicsCommandList* commandList = nullptr;
 
-    // ===== ƒIƒuƒWƒFƒNƒg =====
+    // ===== ã‚ªãƒ–ã‚¸ã‚§ã‚¯ãƒˆ =====
     FluidSystem  m_fluid;
     std::unique_ptr<Particle> particle;
     std::vector<std::unique_ptr<IActor>> m_objects;
     //Generator                          m_generator;
 
-    // Œ»İ‚ÌƒV[ƒ“‚ğw‚·ƒOƒ[ƒoƒ‹ƒ|ƒCƒ“ƒ^
+    // ç¾åœ¨ã®ã‚·ãƒ¼ãƒ³ã‚’æŒ‡ã™ã‚°ãƒ­ãƒ¼ãƒãƒ«ãƒã‚¤ãƒ³ã‚¿
     static GameScene* g_pCurrentScene;
 public:
 	GameScene(Game* game);
@@ -30,7 +30,7 @@ public:
 	void Update(float deltaTime) override;
 	void Draw() override;
 
-	// ƒV[ƒ““à‚É¶¬‚·‚é‚½‚ß‚ÌÃ“Iƒƒ\ƒbƒh
+	// ã‚·ãƒ¼ãƒ³å†…ã«ç”Ÿæˆã™ã‚‹ãŸã‚ã®é™çš„ãƒ¡ã‚½ãƒƒãƒ‰
     template<typename T, typename... Args>
     static void Spawn(Args&&... args) {
         if (g_pCurrentScene) {
@@ -44,7 +44,7 @@ public:
     }
 
 private:
-	// ƒV[ƒ““à‚Å‚Ì¶¬‚Æ”jŠü‚ğÀ‘•‚·‚éƒƒ\ƒbƒh
+	// ã‚·ãƒ¼ãƒ³å†…ã§ã®ç”Ÿæˆã¨ç ´æ£„ã‚’å®Ÿè£…ã™ã‚‹ãƒ¡ã‚½ãƒƒãƒ‰
     template<typename T, typename... Args>
     void SpawnImpl(Args&&... args) {
         m_objects.push_back(

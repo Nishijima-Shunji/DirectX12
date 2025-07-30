@@ -15,7 +15,7 @@ public:
     
     Camera* GetCamera() { return &m_camera; }
 
-    void RegisterScenes(); // ŠeƒV[ƒ““o˜^
+    void RegisterScenes(); // å„ã‚·ãƒ¼ãƒ³ç™»éŒ²
     void ChangeScene(const std::string& name);
 
 };

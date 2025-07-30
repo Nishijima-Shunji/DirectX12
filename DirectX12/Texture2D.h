@@ -9,20 +9,20 @@ class DescriptorHandle;
 class Texture2D
 {
 public:
-	static Texture2D* Get(std::string path); // string‚Åó‚¯æ‚Á‚½ƒpƒX‚©‚çƒeƒNƒXƒ`ƒƒ‚ğ“Ç‚İ‚Ş
-	static Texture2D* Get(std::wstring path); // wstring‚Åó‚¯æ‚Á‚½ƒpƒX‚©‚çƒeƒNƒXƒ`ƒƒ‚ğ“Ç‚İ‚Ş
-	static Texture2D* GetWhite(); // ”’‚Ì’PFƒeƒNƒXƒ`ƒƒ‚ğ¶¬‚·‚é
-	bool IsValid(); // ³í‚É“Ç‚İ‚Ü‚ê‚Ä‚¢‚é‚©‚Ç‚¤‚©‚ğ•Ô‚·
+	static Texture2D* Get(std::string path); // stringã§å—ã‘å–ã£ãŸãƒ‘ã‚¹ã‹ã‚‰ãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’èª­ã¿è¾¼ã‚€
+	static Texture2D* Get(std::wstring path); // wstringã§å—ã‘å–ã£ãŸãƒ‘ã‚¹ã‹ã‚‰ãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’èª­ã¿è¾¼ã‚€
+	static Texture2D* GetWhite(); // ç™½ã®å˜è‰²ãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’ç”Ÿæˆã™ã‚‹
+	bool IsValid(); // æ­£å¸¸ã«èª­ã¿è¾¼ã¾ã‚Œã¦ã„ã‚‹ã‹ã©ã†ã‹ã‚’è¿”ã™
 
-	ID3D12Resource* Resource(); // ƒŠƒ\[ƒX‚ğ•Ô‚·
-	D3D12_SHADER_RESOURCE_VIEW_DESC ViewDesc(); // ƒVƒF[ƒ_[ƒŠƒ\[ƒXƒrƒ…[‚Ìİ’è‚ğ•Ô‚·
+	ID3D12Resource* Resource(); // ãƒªã‚½ãƒ¼ã‚¹ã‚’è¿”ã™
+	D3D12_SHADER_RESOURCE_VIEW_DESC ViewDesc(); // ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ãƒªã‚½ãƒ¼ã‚¹ãƒ“ãƒ¥ãƒ¼ã®è¨­å®šã‚’è¿”ã™
 
 private:
-	bool m_IsValid; // ³í‚É“Ç‚İ‚Ü‚ê‚Ä‚¢‚é‚©
+	bool m_IsValid; // æ­£å¸¸ã«èª­ã¿è¾¼ã¾ã‚Œã¦ã„ã‚‹ã‹
 	Texture2D(std::string path);
 	Texture2D(std::wstring path);
 	Texture2D(ID3D12Resource* buffer);
-	ComPtr<ID3D12Resource> m_pResource; // ƒŠƒ\[ƒX
+	ComPtr<ID3D12Resource> m_pResource; // ãƒªã‚½ãƒ¼ã‚¹
 	bool Load(std::string& path);
 	bool Load(std::wstring& path);
 

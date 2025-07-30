@@ -11,9 +11,9 @@ private:
 
 public:
 	Scene(Game* game);
-	bool Init();	// ‰Šú‰»
-	void Update(float deltaTime);	// XVˆ—
-	void Draw();	// •`‰æˆ—
+	bool Init();	// åˆæœŸåŒ–
+	void Update(float deltaTime);	// æ›´æ–°å‡¦ç†
+	void Draw();	// æç”»å‡¦ç†
 };
 
 extern Scene* g_Scene;

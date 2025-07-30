@@ -6,7 +6,7 @@ public:
     bool InitForSPH()
     {
     // b0: SPHParams
-    // b1: ViewProj çsóÒ
+    // b1: ViewProj Ë°åÂàó
     // t0: inParticles
     // u0: outParticles
     // u1: outMeta

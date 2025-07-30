@@ -7,14 +7,14 @@ struct ID3D12RootSignature;
 class RootSignature
 {
 public:
-	RootSignature();			// ƒRƒ“ƒXƒgƒ‰ƒNƒ^‚Åƒ‹[ƒgƒVƒOƒlƒ`ƒƒ‚ğ¶¬
-	bool IsValid();				// ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ‚Ì¶¬‚É¬Œ÷‚µ‚½‚©‚Ç‚¤‚©‚ğ•Ô‚·
-	ID3D12RootSignature* Get(); // ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ‚ğ•Ô‚·
+	RootSignature();			// ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿ã§ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ã‚’ç”Ÿæˆ
+	bool IsValid();				// ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ã®ç”Ÿæˆã«æˆåŠŸã—ãŸã‹ã©ã†ã‹ã‚’è¿”ã™
+	ID3D12RootSignature* Get(); // ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ã‚’è¿”ã™
 	bool Init(const D3D12_ROOT_SIGNATURE_DESC& desc);
 
 private:
-	bool m_IsValid = false;									// ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ‚Ì¶¬‚É¬Œ÷‚µ‚½‚©‚Ç‚¤‚©
-	ComPtr<ID3D12RootSignature> m_pRootSignature = nullptr; // ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ
+	bool m_IsValid = false;									// ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ã®ç”Ÿæˆã«æˆåŠŸã—ãŸã‹ã©ã†ã‹
+	ComPtr<ID3D12RootSignature> m_pRootSignature = nullptr; // ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£
 };
 
 

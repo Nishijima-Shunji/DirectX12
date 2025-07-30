@@ -16,9 +16,9 @@ public:
 class DescriptorHeap
 {
 public:
-	DescriptorHeap(); // ƒRƒ“ƒXƒgƒ‰ƒNƒ^‚Å¶¬‚·‚é
-	ID3D12DescriptorHeap* GetHeap(); // ƒfƒBƒXƒNƒŠƒvƒ^ƒq[ƒv‚ğ•Ô‚·
-	DescriptorHandle* Register(Texture2D* texture); // ƒeƒNƒXƒ`ƒƒ[‚ğƒfƒBƒXƒNƒŠƒvƒ^ƒq[ƒv‚É“o˜^‚µAƒnƒ“ƒhƒ‹‚ğ•Ô‚·
+	DescriptorHeap(); // ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿ã§ç”Ÿæˆã™ã‚‹
+	ID3D12DescriptorHeap* GetHeap(); // ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ’ãƒ¼ãƒ—ã‚’è¿”ã™
+	DescriptorHandle* Register(Texture2D* texture); // ãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ¼ã‚’ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ’ãƒ¼ãƒ—ã«ç™»éŒ²ã—ã€ãƒãƒ³ãƒ‰ãƒ«ã‚’è¿”ã™
 	DescriptorHandle* RegisterBuffer(
 		ID3D12Resource* resource,
 		UINT            numElements,
@@ -26,9 +26,9 @@ public:
 	);
 
 private:
-	bool m_IsValid = false; // ¶¬‚É¬Œ÷‚µ‚½‚©‚Ç‚¤‚©
+	bool m_IsValid = false; // ç”Ÿæˆã«æˆåŠŸã—ãŸã‹ã©ã†ã‹
 	UINT m_IncrementSize = 0;
-	ComPtr<ID3D12DescriptorHeap> m_pHeap = nullptr; // ƒfƒBƒXƒNƒŠƒvƒ^ƒq[ƒv–{‘Ì
-	std::vector<DescriptorHandle*> m_pHandles; // “o˜^‚³‚ê‚Ä‚¢‚éƒnƒ“ƒhƒ‹
+	ComPtr<ID3D12DescriptorHeap> m_pHeap = nullptr; // ãƒ‡ã‚£ã‚¹ã‚¯ãƒªãƒ—ã‚¿ãƒ’ãƒ¼ãƒ—æœ¬ä½“
+	std::vector<DescriptorHandle*> m_pHandles; // ç™»éŒ²ã•ã‚Œã¦ã„ã‚‹ãƒãƒ³ãƒ‰ãƒ«
 
 };

@@ -9,8 +9,8 @@ cbuffer MetaCB : register(b0)
 
 struct ParticleMeta
 {
-    float3 pos; // ƒ[ƒ‹ƒh‹óŠÔˆÊ’u
-    float r; // ”¼Œa
+    float3 pos; // ãƒ¯ãƒ¼ãƒ«ãƒ‰ç©ºé–“ä½ç½®
+    float r; // åŠå¾„
 };
 
 struct VSOutput
@@ -22,7 +22,7 @@ struct VSOutput
 
 StructuredBuffer<ParticleMeta> Particles : register(t0);
 
-// MetaBall‚ÌƒtƒB[ƒ‹ƒhŠÖ”
+// MetaBallã®ãƒ•ã‚£ãƒ¼ãƒ«ãƒ‰é–¢æ•°
 float Field(float3 p)
 {
     float sum = 0;

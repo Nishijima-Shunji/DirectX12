@@ -6,7 +6,7 @@
 
 using namespace DirectX;
 
-// std::string(ƒ}ƒ‹ƒ`ƒoƒCƒg•¶š—ñ)‚©‚çstd::wstring(ƒƒCƒh•¶š—ñ)‚ğ“¾‚é
+// std::string(ãƒãƒ«ãƒãƒã‚¤ãƒˆæ–‡å­—åˆ—)ã‹ã‚‰std::wstring(ãƒ¯ã‚¤ãƒ‰æ–‡å­—åˆ—)ã‚’å¾—ã‚‹
 std::wstring GetWideString(const std::string& str)
 {
 	auto num1 = MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED | MB_ERR_INVALID_CHARS, str.c_str(), -1, nullptr, 0);
@@ -20,7 +20,7 @@ std::wstring GetWideString(const std::string& str)
 	return wstr;
 }
 
-// Šg’£q‚ğ•Ô‚·
+// æ‹¡å¼µå­ã‚’è¿”ã™
 std::wstring FileExtension(const std::wstring& path)
 {
 	auto idx = path.rfind(L'.');
@@ -51,17 +51,17 @@ bool Texture2D::Load(std::string& path)
 
 bool Texture2D::Load(std::wstring& path)
 {
-	//WICƒeƒNƒXƒ`ƒƒ‚Ìƒ[ƒh
+	//WICãƒ†ã‚¯ã‚¹ãƒãƒ£ã®ãƒ­ãƒ¼ãƒ‰
 	TexMetadata meta = {};
 	ScratchImage scratch = {};
 	auto ext = FileExtension(path);
 
 	HRESULT hr = S_FALSE;
-	if (ext == L"png") // png‚Ì‚ÍWICFile‚ğg‚¤
+	if (ext == L"png") // pngã®æ™‚ã¯WICFileã‚’ä½¿ã†
 	{
 		LoadFromWICFile(path.c_str(), WIC_FLAGS_NONE, &meta, scratch);
 	}
-	else if (ext == L"tga") // tga‚Ì‚ÍTGAFile‚ğg‚¤
+	else if (ext == L"tga") // tgaã®æ™‚ã¯TGAFileã‚’ä½¿ã†
 	{
 		hr = LoadFromTGAFile(path.c_str(), &meta, scratch);
 	}
@@ -83,7 +83,7 @@ bool Texture2D::Load(std::wstring& path)
 		static_cast<UINT16>(meta.arraySize),
 		static_cast<UINT16>(meta.mipLevels));
 
-	// ƒŠƒ\[ƒX‚ğ¶¬
+	// ãƒªã‚½ãƒ¼ã‚¹ã‚’ç”Ÿæˆ
 	hr = g_Engine->Device()->CreateCommittedResource(
 		&prop,
 		D3D12_HEAP_FLAG_NONE,
@@ -99,10 +99,10 @@ bool Texture2D::Load(std::wstring& path)
 	}
 
 	hr = m_pResource->WriteToSubresource(0,
-		nullptr, //‘S—Ìˆæ‚ÖƒRƒs[
-		img->pixels, //Œ³ƒf[ƒ^ƒAƒhƒŒƒX
-		static_cast<UINT>(img->rowPitch), //1ƒ‰ƒCƒ“ƒTƒCƒY
-		static_cast<UINT>(img->slicePitch) //‘SƒTƒCƒY
+		nullptr, //å…¨é ˜åŸŸã¸ã‚³ãƒ”ãƒ¼
+		img->pixels, //å…ƒãƒ‡ãƒ¼ã‚¿ã‚¢ãƒ‰ãƒ¬ã‚¹
+		static_cast<UINT>(img->rowPitch), //1ãƒ©ã‚¤ãƒ³ã‚µã‚¤ã‚º
+		static_cast<UINT>(img->slicePitch) //å…¨ã‚µã‚¤ã‚º
 	);
 	if (FAILED(hr))
 	{
@@ -123,7 +123,7 @@ Texture2D* Texture2D::Get(std::wstring path)
 	auto tex = new Texture2D(path);
 	if (!tex->IsValid())
 	{
-		return GetWhite(); // “Ç‚İ‚İ‚É¸”s‚µ‚½‚Í”’’PFƒeƒNƒXƒ`ƒƒ‚ğ•Ô‚·
+		return GetWhite(); // èª­ã¿è¾¼ã¿ã«å¤±æ•—ã—ãŸæ™‚ã¯ç™½å˜è‰²ãƒ†ã‚¯ã‚¹ãƒãƒ£ã‚’è¿”ã™
 	}
 	return tex;
 }
@@ -151,7 +151,7 @@ ID3D12Resource* Texture2D::GetDefaultResource(size_t width, size_t height)
 	ID3D12Resource* buff = nullptr;
 	auto result = g_Engine->Device()->CreateCommittedResource(
 		&texHeapProp,
-		D3D12_HEAP_FLAG_NONE, //“Á‚Éw’è‚È‚µ
+		D3D12_HEAP_FLAG_NONE, //ç‰¹ã«æŒ‡å®šãªã—
 		&resDesc,
 		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
 		nullptr,
@@ -180,7 +180,7 @@ D3D12_SHADER_RESOURCE_VIEW_DESC Texture2D::ViewDesc()
 	D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
 	desc.Format = m_pResource->GetDesc().Format;
 	desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; //2DƒeƒNƒXƒ`ƒƒ
-	desc.Texture2D.MipLevels = 1; //ƒ~ƒbƒvƒ}ƒbƒv‚Íg—p‚µ‚È‚¢‚Ì‚Å1
+	desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D; //2Dãƒ†ã‚¯ã‚¹ãƒãƒ£
+	desc.Texture2D.MipLevels = 1; //ãƒŸãƒƒãƒ—ãƒãƒƒãƒ—ã¯ä½¿ç”¨ã—ãªã„ã®ã§1
 	return desc;
 }

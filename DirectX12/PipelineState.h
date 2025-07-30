@@ -6,22 +6,22 @@
 class PipelineState
 {
 public:
-	PipelineState();	// ƒRƒ“ƒXƒgƒ‰ƒNƒ^‚Å‚ ‚é’ö“x‚Ìİ’è‚ğ‚·‚é
-	bool IsValid();		// ¶¬‚É¬Œ÷‚µ‚½‚©‚Ç‚¤‚©‚ğ•Ô‚·
+	PipelineState();	// ã‚³ãƒ³ã‚¹ãƒˆãƒ©ã‚¯ã‚¿ã§ã‚ã‚‹ç¨‹åº¦ã®è¨­å®šã‚’ã™ã‚‹
+	bool IsValid();		// ç”Ÿæˆã«æˆåŠŸã—ãŸã‹ã©ã†ã‹ã‚’è¿”ã™
 
-	void SetInputLayout(D3D12_INPUT_LAYOUT_DESC layout);		// “ü—ÍƒŒƒCƒAƒEƒg‚ğİ’è
-	void SetRootSignature(ID3D12RootSignature* rootSignature);	// ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ‚ğİ’è
-	void SetVS(std::wstring filePath);							// ’¸“_ƒVƒF[ƒ_[‚ğİ’è
-	void SetPS(std::wstring filePath);							// ƒsƒNƒZƒ‹ƒVƒF[ƒ_[‚ğİ’è
-	void Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);												// ƒpƒCƒvƒ‰ƒCƒ“ƒXƒe[ƒg‚ğ¶¬
+	void SetInputLayout(D3D12_INPUT_LAYOUT_DESC layout);		// å…¥åŠ›ãƒ¬ã‚¤ã‚¢ã‚¦ãƒˆã‚’è¨­å®š
+	void SetRootSignature(ID3D12RootSignature* rootSignature);	// ãƒ«ãƒ¼ãƒˆã‚·ã‚°ãƒãƒãƒ£ã‚’è¨­å®š
+	void SetVS(std::wstring filePath);							// é ‚ç‚¹ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã‚’è¨­å®š
+	void SetPS(std::wstring filePath);							// ãƒ”ã‚¯ã‚»ãƒ«ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã‚’è¨­å®š
+	void Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);												// ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ã‚¹ãƒ†ãƒ¼ãƒˆã‚’ç”Ÿæˆ
 
 	ID3D12PipelineState* Get();
 
 private:
-	bool m_IsValid = false;										// ¶¬‚É¬Œ÷‚µ‚½‚©‚Ç‚¤‚©
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};				// ƒpƒCƒvƒ‰ƒCƒ“ƒXƒe[ƒg‚Ìİ’è
-	ComPtr<ID3D12PipelineState> m_pPipelineState = nullptr;		// ƒpƒCƒvƒ‰ƒCƒ“ƒXƒe[ƒg
-	ComPtr<ID3DBlob> m_pVsBlob;									// ’¸“_ƒVƒF[ƒ_[
-	ComPtr<ID3DBlob> m_pPSBlob;									// ƒsƒNƒZƒ‹ƒVƒF[ƒ_[
+	bool m_IsValid = false;										// ç”Ÿæˆã«æˆåŠŸã—ãŸã‹ã©ã†ã‹
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};				// ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ã‚¹ãƒ†ãƒ¼ãƒˆã®è¨­å®š
+	ComPtr<ID3D12PipelineState> m_pPipelineState = nullptr;		// ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ã‚¹ãƒ†ãƒ¼ãƒˆ
+	ComPtr<ID3DBlob> m_pVsBlob;									// é ‚ç‚¹ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼
+	ComPtr<ID3DBlob> m_pPSBlob;									// ãƒ”ã‚¯ã‚»ãƒ«ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼
 };
 
