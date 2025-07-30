@@ -81,31 +81,31 @@ bool Engine::Init(HWND hwnd, UINT windowWidth, UINT windowHeight)
 	// =====デバイスの初期化処理=====
 	if (!CreateDevice())
 	{
-		printf("デバイスの生成に失敗");
+		printf("デバイスの生成に失敗\n");
 		return false;
 	}
 
 	if (!CreateCommandQueue())
 	{
-		printf("コマンドキューの生成に失敗");
+		printf("コマンドキューの生成に失敗\n");
 		return false;
 	}
 
 	if (!CreateSwapChain())
 	{
-		printf("スワップチェインの生成に失敗");
+		printf("スワップチェインの生成に失敗\n");
 		return false;
 	}
 
 	if (!CreateCommandList())
 	{
-		printf("コマンドリストの生成に失敗");
+		printf("コマンドリストの生成に失敗\n");
 		return false;
 	}
 
 	if (!CreateFence())
 	{
-		printf("フェンスの生成に失敗");
+		printf("フェンスの生成に失敗\n");
 		return false;
 	}
 
@@ -115,7 +115,7 @@ bool Engine::Init(HWND hwnd, UINT windowWidth, UINT windowHeight)
 
 	if (!CreateRenderTarget())
 	{
-		printf("レンダーターゲットの生成に失敗");
+		printf("レンダーターゲットの生成に失敗\n");
 		return false;
 	}
 
@@ -126,11 +126,11 @@ bool Engine::Init(HWND hwnd, UINT windowWidth, UINT windowHeight)
 	}
 
 	// --- CBV/SRV/UAV ディスクリプタヒープ生成 ---
-	 m_pCbvSrvUavHeap = new DescriptorHeap();
+	m_pCbvSrvUavHeap = new DescriptorHeap();
 	if (!m_pCbvSrvUavHeap/* || !m_pCbvSrvUavHeap->IsValid()*/) {
 		printf("CBV/SRV/UAV DescriptorHeap の生成に失敗\n");
 		return false;
-		
+
 	}
 
 	printf("描画エンジンの初期化に成功\n");
