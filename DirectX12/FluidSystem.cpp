@@ -4,6 +4,7 @@
 #include <d3dcompiler.h>
 #include "Engine.h"
 #include "Camera.h"
+#include "RandomUtil.h"
 
 struct SPHParamsCB {
     float restDensity;

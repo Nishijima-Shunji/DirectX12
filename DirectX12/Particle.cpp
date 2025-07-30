@@ -1,15 +1,7 @@
 ﻿#include "Particle.h"
 #include "SharedStruct.h"
+#include "RandomUtil.h"
 
-#include <random>
-// 
-float RandFloat(float min, float max)
-{
-	static std::random_device rd;
-	static std::mt19937 gen(rd()); 
-	std::uniform_real_distribution<float> dist(min, max);
-	return dist(gen);
-}
 
 Particle::Particle(Camera* cam) : camera(cam) {
 	Init();
