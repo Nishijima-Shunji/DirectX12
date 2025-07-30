@@ -149,6 +149,7 @@
     <ClCompile Include="DescriptorHeap.cpp" />
     <ClCompile Include="Engine.cpp" />
     <ClCompile Include="FluidSystem.cpp" />
+    <ClCompile Include="SpatialGrid.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="GameScene.cpp" />
     <ClCompile Include="IndexBuffer.cpp" />
@@ -193,6 +194,7 @@
     <ClInclude Include="SceneManager.h" />
     <ClInclude Include="SharedStruct.h" />
     <ClInclude Include="SphereMeshGenerator.h" />
+    <ClInclude Include="SpatialGrid.h" />
     <ClInclude Include="Texture2D.h" />
     <ClInclude Include="TitleScene.h" />
     <ClInclude Include="VertexBuffer.h" />

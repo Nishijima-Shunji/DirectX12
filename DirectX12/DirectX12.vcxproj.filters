@@ -144,8 +144,9 @@
     <ClCompile Include="FluidSystem.cpp">
       <Filter>ソース ファイル\Game</Filter>
     </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
+    <ClCompile Include="SpatialGrid.cpp">
+      <Filter>ソース ファイル\Game</Filter>
+    </ClCompile>
     <ClInclude Include="App.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
@@ -225,6 +226,9 @@
       <Filter>ヘッダー ファイル\Game</Filter>
     </ClInclude>
     <ClInclude Include="FluidSystem.h">
+      <Filter>ヘッダー ファイル\Game</Filter>
+    </ClInclude>
+    <ClInclude Include="SpatialGrid.h">
       <Filter>ヘッダー ファイル\Game</Filter>
     </ClInclude>
     <ClInclude Include="Camera.h">

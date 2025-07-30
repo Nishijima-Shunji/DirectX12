@@ -7,6 +7,7 @@
 #include <DirectXMath.h>
 #include "SharedStruct.h"
 #include "ConstantBuffer.h"
+#include "SpatialGrid.h"
 #include <vector>
 
 struct FluidParticle {
@@ -31,6 +32,9 @@ public:
         const DirectX::XMFLOAT4X4& invViewProj,
         const DirectX::XMFLOAT3& camPos,
         float isoLevel);
+
+    // 格子サイズ変更（CPU シミュレーション用）
+    void SetSpatialCellSize(float s) { m_grid.SetCellSize(s); }
 
 private:
     // CPU 側パーティクル配列
@@ -60,4 +64,16 @@ private:
     UINT m_maxParticles;
     UINT m_threadGroupCount;
     bool m_useGpu = false;
+
+    // CPU 用パラメータ
+    struct SPHParams {
+        float restDensity = 1000.0f;
+        float particleMass = 1.0f;
+        float viscosity = 1.0f;
+        float stiffness = 200.0f;
+        float radius = 0.1f;
+        float timeStep = 0.016f;
+    } m_params;
+
+    SpatialGrid m_grid{ 0.1f };
 };

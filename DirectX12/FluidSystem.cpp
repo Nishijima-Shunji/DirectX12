@@ -219,16 +219,24 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	m_viewProjCB = new ConstantBuffer(sizeof(ViewProjCB));
 
 	// 初期値設定
-	if (m_sphParamCB && m_sphParamCB->IsValid()) {
-		auto* cb = m_sphParamCB->GetPtr<SPHParamsCB>();
-		cb->restDensity = 1000.0f;
-		cb->particleMass = 1.0f;
-		cb->viscosity = 1.0f;
-		cb->stiffness = 200.0f;
-		cb->radius = 0.1f;
-		cb->timeStep = 0.016f;
-		cb->particleCount = m_maxParticles;
-	}
+        if (m_sphParamCB && m_sphParamCB->IsValid()) {
+                auto* cb = m_sphParamCB->GetPtr<SPHParamsCB>();
+                cb->restDensity = 1000.0f;
+                cb->particleMass = 1.0f;
+                cb->viscosity = 1.0f;
+                cb->stiffness = 200.0f;
+                cb->radius = 0.1f;
+                cb->timeStep = 0.016f;
+                cb->particleCount = m_maxParticles;
+
+                m_params.restDensity = cb->restDensity;
+                m_params.particleMass = cb->particleMass;
+                m_params.viscosity = cb->viscosity;
+                m_params.stiffness = cb->stiffness;
+                m_params.radius = cb->radius;
+                m_params.timeStep = cb->timeStep;
+                m_grid.SetCellSize(cb->radius);
+        }
 
 	if (m_viewProjCB && m_viewProjCB->IsValid()) {
 		auto* cb = m_viewProjCB->GetPtr<ViewProjCB>();
@@ -280,30 +288,95 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 		cmd->SetPipelineState(m_computePS.Get());
 		cmd->Dispatch(m_threadGroupCount, 1, 1);
 	}
-	else {
-		// CPU シミュレーション
-		for (UINT i = 0; i < m_maxParticles; ++i) {
-			m_cpuParticles[i].position.y += dt;
-		}
+        else {
+                // CPU シミュレーション
+                const float PI = 3.14159265358979323846f;
+                float radius = m_params.radius;
+                float radius2 = radius * radius;
+                float radius6 = radius2 * radius2 * radius2;
+                float radius9 = radius6 * radius2 * radius;
 
-		// CPU→GPU 転送 (particles)
-		D3D12_SUBRESOURCE_DATA srcParticle = {};
-		srcParticle.pData = m_cpuParticles.data();
-		srcParticle.RowPitch = sizeof(FluidParticle) * m_maxParticles;
-		srcParticle.SlicePitch = srcParticle.RowPitch;
-		UpdateSubresources<1>(cmd, m_particleBuffer.Get(), m_particleUpload.Get(), 0, 0, 1, &srcParticle);
+                m_grid.Clear();
+                for (UINT i = 0; i < m_maxParticles; ++i) {
+                        m_grid.Insert(i, m_cpuParticles[i].position);
+                }
 
-		std::vector<ParticleMeta> metas(m_maxParticles);
-		for (UINT i = 0; i < m_maxParticles; ++i) {
-			metas[i].pos = m_cpuParticles[i].position;
-			metas[i].r = 0.1f;
-		}
-		D3D12_SUBRESOURCE_DATA srcMeta = {};
-		srcMeta.pData = metas.data();
-		srcMeta.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
-		srcMeta.SlicePitch = srcMeta.RowPitch;
-		UpdateSubresources<1>(cmd, m_metaBuffer.Get(), m_metaUpload.Get(), 0, 0, 1, &srcMeta);
-	}
+                std::vector<float> density(m_maxParticles, 0.0f);
+                std::vector<size_t> neigh;
+                for (UINT i = 0; i < m_maxParticles; ++i) {
+                        m_grid.Query(m_cpuParticles[i].position, radius, neigh);
+                        float d = 0.f;
+                        for (size_t j : neigh) {
+                                DirectX::XMFLOAT3 rij{
+                                        m_cpuParticles[i].position.x - m_cpuParticles[j].position.x,
+                                        m_cpuParticles[i].position.y - m_cpuParticles[j].position.y,
+                                        m_cpuParticles[i].position.z - m_cpuParticles[j].position.z };
+                                float r2 = rij.x * rij.x + rij.y * rij.y + rij.z * rij.z;
+                                if (r2 < radius2) {
+                                        float x = radius2 - r2;
+                                        d += m_params.particleMass * (315.0f / (64.0f * PI * radius9)) * x * x * x;
+                                }
+                        }
+                        density[i] = d;
+                }
+
+                for (UINT i = 0; i < m_maxParticles; ++i) {
+                        m_grid.Query(m_cpuParticles[i].position, radius, neigh);
+                        float pressure = m_params.stiffness * (density[i] - m_params.restDensity);
+                        DirectX::XMFLOAT3 force{ 0.0f, -9.8f * density[i], 0.0f };
+                        for (size_t j : neigh) {
+                                if (j == i) continue;
+                                DirectX::XMFLOAT3 rij{
+                                        m_cpuParticles[i].position.x - m_cpuParticles[j].position.x,
+                                        m_cpuParticles[i].position.y - m_cpuParticles[j].position.y,
+                                        m_cpuParticles[i].position.z - m_cpuParticles[j].position.z };
+                                float r = std::sqrt(rij.x * rij.x + rij.y * rij.y + rij.z * rij.z);
+                                if (r > 0 && r < radius) {
+                                        float coeff = -45.0f / (PI * radius6) * (radius - r) * (radius - r);
+                                        DirectX::XMFLOAT3 grad{ coeff * rij.x / r, coeff * rij.y / r, coeff * rij.z / r };
+                                        float pTerm = (pressure + m_params.stiffness * (density[j] - m_params.restDensity)) / (2 * density[j]);
+                                        force.x += -m_params.particleMass * pTerm * grad.x;
+                                        force.y += -m_params.particleMass * pTerm * grad.y;
+                                        force.z += -m_params.particleMass * pTerm * grad.z;
+                                        float lap = 45.0f / (PI * radius6) * (radius - r);
+                                        force.x += m_params.viscosity * m_params.particleMass * (m_cpuParticles[j].velocity.x - m_cpuParticles[i].velocity.x) * (lap / density[j]);
+                                        force.y += m_params.viscosity * m_params.particleMass * (m_cpuParticles[j].velocity.y - m_cpuParticles[i].velocity.y) * (lap / density[j]);
+                                        force.z += m_params.viscosity * m_params.particleMass * (m_cpuParticles[j].velocity.z - m_cpuParticles[i].velocity.z) * (lap / density[j]);
+                                }
+                        }
+
+                        float invD = 1.0f / density[i];
+                        m_cpuParticles[i].velocity.x += force.x * invD * m_params.timeStep;
+                        m_cpuParticles[i].velocity.y += force.y * invD * m_params.timeStep;
+                        m_cpuParticles[i].velocity.z += force.z * invD * m_params.timeStep;
+
+                        m_cpuParticles[i].position.x += m_cpuParticles[i].velocity.x * m_params.timeStep;
+                        m_cpuParticles[i].position.y += m_cpuParticles[i].velocity.y * m_params.timeStep;
+                        m_cpuParticles[i].position.z += m_cpuParticles[i].velocity.z * m_params.timeStep;
+
+                        if (m_cpuParticles[i].position.x < -1 || m_cpuParticles[i].position.x > 1) m_cpuParticles[i].velocity.x *= -0.1f;
+                        if (m_cpuParticles[i].position.y < -1 || m_cpuParticles[i].position.y > 5) m_cpuParticles[i].velocity.y *= -0.1f;
+                        if (m_cpuParticles[i].position.z < -1 || m_cpuParticles[i].position.z > 1) m_cpuParticles[i].velocity.z *= -0.1f;
+                }
+
+                // CPU→GPU 転送 (particles)
+                D3D12_SUBRESOURCE_DATA srcParticle = {};
+                srcParticle.pData = m_cpuParticles.data();
+                srcParticle.RowPitch = sizeof(FluidParticle) * m_maxParticles;
+                srcParticle.SlicePitch = srcParticle.RowPitch;
+                UpdateSubresources<1>(cmd, m_particleBuffer.Get(), m_particleUpload.Get(), 0, 0, 1, &srcParticle);
+
+                std::vector<ParticleMeta> metas(m_maxParticles);
+                for (UINT i = 0; i < m_maxParticles; ++i) {
+                        metas[i].pos = m_cpuParticles[i].position;
+                        metas[i].r = radius;
+                }
+                D3D12_SUBRESOURCE_DATA srcMeta = {};
+                srcMeta.pData = metas.data();
+                srcMeta.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
+                srcMeta.SlicePitch = srcMeta.RowPitch;
+                UpdateSubresources<1>(cmd, m_metaBuffer.Get(), m_metaUpload.Get(), 0, 0, 1, &srcMeta);
+        }
 }
 
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4X4& invViewProj, const DirectX::XMFLOAT3& camPos, float isoLevel) {
