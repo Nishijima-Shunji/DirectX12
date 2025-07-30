@@ -1,7 +1,6 @@
 #define PI 3.14159265358979323846f
 
-    float3 pos;
-    float r;
+// SPHParams 構造体（b0）
 cbuffer SPHParams : register(b0) {
     float restDensity;   // 自然状態の密度
     float particleMass;  // 質量
@@ -24,7 +23,8 @@ struct Particle {
 
 struct ParticleMeta
 {
-    float x, y, r, pad;
+    float3 pos; // ワールド空間位置
+    float   r;  // 半径
 };
 
 // 前フレームの粒子読み込み（t0）
@@ -76,31 +76,35 @@ void CSMain(uint3 id : SV_DispatchThreadID)
             float3 grad = coeff * (rij / r);
             float pTerm = (pressure + stiffness * ( (density - restDensity) )) / (2*density);
             force += -particleMass * pTerm * grad;
-    m.pos = worldPos;
-    m.r   = radius;
-   // ワールド座標（float3）
-    float3 worldPos = p.position;
+            // 粘性力
+            float lap = 45.0/(PI * radius6) * (radius - r);
+            force += viscosity * particleMass * (inParticles[j].velocity - inParticles[i].velocity) * (lap / density);
+        }
+    }
 
-    // ワールド → クリップ空間
-    float4 clipPos = mul(float4(worldPos, 1.0f), viewProj);
+    // ========================================
+    //  動き計算
+    // ========================================
+    Particle p = inParticles[i];
+    float3 accel = force / density;
+    p.velocity += accel * timeStep;
+    p.position += p.velocity * timeStep;
 
-    // NDC に正規化
-    clipPos /= clipPos.w;
-
-    // NDC → UV
-    float2 uv;
-    uv.x = clipPos.x * 0.5f + 0.5f;
-    uv.y = -clipPos.y * 0.5f + 0.5f; // Y反転（左上原点のテクスチャに合わせる）
+    // ========================================
+    //  境界処理
+    // ========================================
+    if (p.position.x < -1 || p.position.x > 1) p.velocity.x *= -0.1f;
+    if (p.position.y < -1 || p.position.y > 5) p.velocity.y *= -0.1f;
+    if (p.position.z < -1 || p.position.z > 1) p.velocity.z *= -0.1f;
 
     // 書き込み
     ParticleMeta m;
-    m.x = uv.x;
-    m.y = uv.y;
-    m.r = radius;
-    m.pad = 0;
+    m.pos = p.position;
+    m.r   = radius;
 
     // ========================================
     //  出力
     // ========================================
-    outMeta[i] = m;
+    outParticles[i] = p;
+    outMeta[i]      = m;
 }
