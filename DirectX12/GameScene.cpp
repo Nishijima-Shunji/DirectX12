@@ -32,13 +32,13 @@ bool GameScene::Init() {
 	g_Engine->RegisterObj<Camera>("Camera", camera);
 
 	//particle = std::make_unique<Particle>(camera);
-	
+
 	// 流体システムの初期化
 	auto device = g_Engine->Device();
 	const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-	const UINT maxParticles = 500;
-	const UINT threadGroupCount = 16;
+	const UINT maxParticles = 50;
+	const UINT threadGroupCount = 8;
 	m_fluid.Init(device, rtvFormat, maxParticles, threadGroupCount);
 
 	m_fluid.UseGPU(true); // GPU でシミュレーションを行かどうか
@@ -78,7 +78,7 @@ void GameScene::Draw() {
 	commandList = g_Engine->CommandList(); // コマンドリストを取得
 	auto cmd = g_Engine->CommandList();
 	auto invViewProj = g_Engine->GetObj<Camera>("Camera")->GetInvViewProj();
-	auto cameraPos   = g_Engine->GetObj<Camera>("Camera")->GetPosition();
+	auto cameraPos = g_Engine->GetObj<Camera>("Camera")->GetPosition();
 	m_fluid.Render(cmd, invViewProj, cameraPos, 1.0f);
 
 	//particle->Draw();

@@ -10,7 +10,7 @@ cbuffer MetaCB : register(b0)
 struct ParticleMeta
 {
     float3 pos; // ƒ[ƒ‹ƒh‹óŠÔˆÊ’u
-    float r; // ”¼Œa
+    float r;    // ”¼Œa
 };
 
 struct VSOutput
@@ -53,7 +53,7 @@ float4 main(VSOutput IN) : SV_TARGET
         p += rd * d * 0.5;
     }
     if (abs(d) >= 0.001)
-        return float4(0, 0, 0, 1);
+        return float4(0, 0, 0, 0);
     float3 n = normalize(float3(
     Field(p + float3(0.001, 0, 0)) - Field(p - float3(0.001, 0, 0)),
     Field(p + float3(0, 0.001, 0)) - Field(p - float3(0, 0.001, 0)),

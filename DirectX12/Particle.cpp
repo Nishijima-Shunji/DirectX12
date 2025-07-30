@@ -9,7 +9,7 @@ Particle::Particle(Camera* cam) : camera(cam) {
 
 bool Particle::Init() {
 	// 
-	for (int i = 0; i < 50000; ++i) {
+	for (int i = 0; i < 500; ++i) {
 		Point p;
 		p.position = { RandFloat(-0.5f, 0.5f), RandFloat(-0.5f, 0.5f), RandFloat(-0.5f, 0.5f) };
 		p.velocity = { 0, 0, 0 };
