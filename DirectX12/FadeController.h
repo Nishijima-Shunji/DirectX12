@@ -6,6 +6,7 @@
 #include <string>
 #include <memory>
 #include <DirectXMath.h>
+#include "Engine.h"
 
 class FadeController
 {
