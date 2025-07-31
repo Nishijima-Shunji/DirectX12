@@ -36,7 +36,7 @@ bool FadeController::Init()
     m_rootSignature = std::make_unique<RootSignature>();
     if (!m_rootSignature->Init(rsDesc)) return false;
 
-    m_pipelineState = std::make_unique<PipelineState>();
+    m_pipelineState = std::make_unique<ParticlePipelineState>();
     D3D12_INPUT_ELEMENT_DESC layout[] = {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
     };

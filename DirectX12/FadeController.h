@@ -1,7 +1,7 @@
 #pragma once
 #include "VertexBuffer.h"
 #include "RootSignature.h"
-#include "PipelineState.h"
+#include "ParticlePipelineState.h"
 #include "ConstantBuffer.h"
 #include <string>
 #include <memory>
@@ -25,7 +25,7 @@ private:
 
     std::unique_ptr<VertexBuffer> m_vertexBuffer;
     std::unique_ptr<RootSignature> m_rootSignature;
-    std::unique_ptr<PipelineState> m_pipelineState;
+    std::unique_ptr<ParticlePipelineState> m_pipelineState;
     std::unique_ptr<ConstantBuffer> m_constantBuffers[Engine::FRAME_BUFFER_COUNT];
 
     float m_alpha = 0.0f;
