@@ -315,6 +315,15 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
                         cmd->ResourceBarrier(1, &toUav);
                         m_metaInSrvState = false;
                 }
+                if (m_particleInSrvState) {
+                        auto toUav = CD3DX12_RESOURCE_BARRIER::Transition(
+                                m_particleBuffer.Get(),
+                                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+                                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                                D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                        cmd->ResourceBarrier(1, &toUav);
+                        m_particleInSrvState = false;
+                }
 
                 CD3DX12_RESOURCE_BARRIER barriers[] = {
                         CD3DX12_RESOURCE_BARRIER::UAV(m_particleBuffer.Get()),
@@ -464,6 +473,23 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
                 }
 
                 // CPU→GPU 転送 (particles)
+                auto toCopyParticle = CD3DX12_RESOURCE_BARRIER::Transition(
+                        m_particleBuffer.Get(),
+                        m_particleInSrvState ?
+                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+                                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE :
+                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                        D3D12_RESOURCE_STATE_COPY_DEST);
+                auto toCopyMeta = CD3DX12_RESOURCE_BARRIER::Transition(
+                        m_metaBuffer.Get(),
+                        m_metaInSrvState ?
+                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+                                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE :
+                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                        D3D12_RESOURCE_STATE_COPY_DEST);
+                CD3DX12_RESOURCE_BARRIER preCopy[] = { toCopyParticle, toCopyMeta };
+                cmd->ResourceBarrier(2, preCopy);
+
                 D3D12_SUBRESOURCE_DATA srcParticle = {};
                 srcParticle.pData = m_cpuParticles.data();
                 srcParticle.RowPitch = sizeof(FluidParticle) * m_maxParticles;
@@ -480,6 +506,21 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
                 srcMeta.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
                 srcMeta.SlicePitch = srcMeta.RowPitch;
                 UpdateSubresources<1>(cmd, m_metaBuffer.Get(), m_metaUpload.Get(), 0, 0, 1, &srcMeta);
+
+                auto toSrvParticle = CD3DX12_RESOURCE_BARRIER::Transition(
+                        m_particleBuffer.Get(),
+                        D3D12_RESOURCE_STATE_COPY_DEST,
+                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+                auto toSrvMeta = CD3DX12_RESOURCE_BARRIER::Transition(
+                        m_metaBuffer.Get(),
+                        D3D12_RESOURCE_STATE_COPY_DEST,
+                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+                CD3DX12_RESOURCE_BARRIER postCopy[] = { toSrvParticle, toSrvMeta };
+                cmd->ResourceBarrier(2, postCopy);
+                m_particleInSrvState = true;
+                m_metaInSrvState = true;
         }
 }
 

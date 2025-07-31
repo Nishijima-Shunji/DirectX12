@@ -95,4 +95,6 @@ private:
 
     // Tracks whether meta buffer is currently in shader resource state
     bool m_metaInSrvState = false;
+    // Tracks whether particle buffer is currently in shader resource state
+    bool m_particleInSrvState = false;
 };
