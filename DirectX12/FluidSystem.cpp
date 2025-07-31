@@ -157,18 +157,8 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         device->CreateUnorderedAccessView(m_metaBuffer.Get(), nullptr, &uavMeta, handle);
 
         handle.ptr += handleSize;
-        D3D12_UNORDERED_ACCESS_VIEW_DESC uavCount = {};
-        uavCount.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-        uavCount.Buffer.NumElements = m_cellCount;
-        uavCount.Buffer.StructureByteStride = sizeof(UINT);
-        device->CreateUnorderedAccessView(m_gridCount.Get(), nullptr, &uavCount, handle);
-
-        handle.ptr += handleSize;
-        D3D12_UNORDERED_ACCESS_VIEW_DESC uavTable = {};
-        uavTable.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-        uavTable.Buffer.NumElements = m_cellCount * MAX_PARTICLES_PER_CELL;
-        uavTable.Buffer.StructureByteStride = sizeof(UINT);
-        device->CreateUnorderedAccessView(m_gridTable.Get(), nullptr, &uavTable, handle);
+        // Grid related UAV descriptors will be created after the grid resources
+        // are initialized because m_cellCount is not known yet at this point.
 
 	// 描画用パイプライン生成
 	// ルートシグネチャ
@@ -289,6 +279,22 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
                 device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rdTable,
                         D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
                         IID_PPV_ARGS(&m_gridTable));
+
+                // Create UAV descriptors for grid resources now that they are valid
+                D3D12_CPU_DESCRIPTOR_HANDLE gridHandle = m_uavHeap->GetCPUDescriptorHandleForHeapStart();
+                gridHandle.ptr += handleSize * 3; // skip particle SRV/UAV and meta UAV
+                D3D12_UNORDERED_ACCESS_VIEW_DESC uavCount = {};
+                uavCount.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+                uavCount.Buffer.NumElements = m_cellCount;
+                uavCount.Buffer.StructureByteStride = sizeof(UINT);
+                device->CreateUnorderedAccessView(m_gridCount.Get(), nullptr, &uavCount, gridHandle);
+
+                gridHandle.ptr += handleSize;
+                D3D12_UNORDERED_ACCESS_VIEW_DESC uavTable = {};
+                uavTable.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+                uavTable.Buffer.NumElements = m_cellCount * MAX_PARTICLES_PER_CELL;
+                uavTable.Buffer.StructureByteStride = sizeof(UINT);
+                device->CreateUnorderedAccessView(m_gridTable.Get(), nullptr, &uavTable, gridHandle);
         }
 
 	if (m_viewProjCB && m_viewProjCB->IsValid()) {
