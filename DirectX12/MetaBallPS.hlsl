@@ -4,7 +4,7 @@ cbuffer MetaCB : register(b0)
     float3 camPos;
     float isoLevel;
     uint particleCount;
-    float pad;
+    float pad[3];
 };
 
 struct ParticleMeta

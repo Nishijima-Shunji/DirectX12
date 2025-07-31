@@ -203,8 +203,12 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 
 	// 定数バッファ
 	D3D12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-	D3D12_RESOURCE_DESC   cbd = CD3DX12_RESOURCE_DESC::Buffer(sizeof(DirectX::XMFLOAT4X4) +
-		sizeof(DirectX::XMFLOAT3) + sizeof(UINT) + 4);
+        D3D12_RESOURCE_DESC   cbd = CD3DX12_RESOURCE_DESC::Buffer(
+                sizeof(DirectX::XMFLOAT4X4) +
+                sizeof(DirectX::XMFLOAT3) +
+                sizeof(float) +
+                sizeof(UINT) +
+                sizeof(DirectX::XMFLOAT3));
 	device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &cbd,
 		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
 		IID_PPV_ARGS(&m_graphicsCB));
@@ -560,11 +564,18 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4X4& invViewProj, const DirectX::XMFLOAT3& camPos, float isoLevel) {
 	// 定数バッファ更新
-	struct MetaCB { DirectX::XMFLOAT4X4 invVP; DirectX::XMFLOAT3 cam; float iso; UINT count; } cb;
+    struct MetaCB {
+        DirectX::XMFLOAT4X4 invVP;
+        DirectX::XMFLOAT3 cam;
+        float iso;
+        UINT count;
+        DirectX::XMFLOAT3 pad;
+    } cb;
 	cb.invVP = invViewProj;
 	cb.cam = camPos;
 	cb.iso = isoLevel;
-	cb.count = m_maxParticles;
+        cb.count = m_maxParticles;
+        cb.pad = DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f);
 	void* p;
 	m_graphicsCB->Map(0, nullptr, &p);
 	memcpy(p, &cb, sizeof(cb));
