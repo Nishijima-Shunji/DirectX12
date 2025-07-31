@@ -260,6 +260,12 @@
     <FxCompile Include="MetaBallPS.hlsl">
       <Filter>リソース ファイル</Filter>
     </FxCompile>
+    <FxCompile Include="FadeVS.hlsl">
+      <Filter>リソース ファイル</Filter>
+    </FxCompile>
+    <FxCompile Include="FadePS.hlsl">
+      <Filter>リソース ファイル</Filter>
+    </FxCompile>
     <FxCompile Include="ParticleCS.hlsl" />
     <FxCompile Include="BuildGridCS.hlsl" />
   </ItemGroup>
