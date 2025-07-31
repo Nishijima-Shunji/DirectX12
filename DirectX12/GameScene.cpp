@@ -78,8 +78,12 @@ void GameScene::Draw() {
 	commandList = g_Engine->CommandList(); // コマンドリストを取得
 	auto cmd = g_Engine->CommandList();
 	auto invViewProj = g_Engine->GetObj<Camera>("Camera")->GetInvViewProj();
+        DirectX::XMMATRIX m = DirectX::XMLoadFloat4x4(&invViewProj);
+        m = DirectX::XMMatrixTranspose(m);
+        DirectX::XMFLOAT4X4 invViewProjT;
+        DirectX::XMStoreFloat4x4(&invViewProjT, m);
 	auto cameraPos = g_Engine->GetObj<Camera>("Camera")->GetPosition();
-	m_fluid.Render(cmd, invViewProj, cameraPos, 1.0f);
+	m_fluid.Render(cmd, invViewProjT, cameraPos, 1.0f);
 
 	//particle->Draw();
 

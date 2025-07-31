@@ -337,7 +337,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 
 	if (m_viewProjCB && m_viewProjCB->IsValid()) {
 		auto* cb = m_viewProjCB->GetPtr<ViewProjCB>();
-		DirectX::XMStoreFloat4x4(&cb->viewProj, DirectX::XMMatrixIdentity());
+                DirectX::XMStoreFloat4x4(&cb->viewProj, DirectX::XMMatrixTranspose(DirectX::XMMatrixIdentity()));
 	}
 }
 
@@ -416,7 +416,7 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 			if (cam) {
 				auto mat = cam->GetViewMatrix() * cam->GetProjMatrix();
 				auto* cb = m_viewProjCB->GetPtr<ViewProjCB>();
-				DirectX::XMStoreFloat4x4(&cb->viewProj, mat);
+				DirectX::XMStoreFloat4x4(&cb->viewProj, DirectX::XMMatrixTranspose(mat));
 			}
 		}
 
@@ -571,7 +571,8 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4
         UINT count;
         DirectX::XMFLOAT3 pad;
     } cb;
-	cb.invVP = invViewProj;
+	
+        { DirectX::XMMATRIX m = DirectX::XMLoadFloat4x4(&invViewProj); DirectX::XMStoreFloat4x4(&cb.invVP, DirectX::XMMatrixTranspose(m)); }
 	cb.cam = camPos;
 	cb.iso = isoLevel;
         cb.count = m_maxParticles;
