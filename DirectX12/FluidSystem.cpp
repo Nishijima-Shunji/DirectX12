@@ -637,10 +637,15 @@ void FluidSystem::Drag(int mouseX, int mouseY, Camera* cam)
     XMVECTOR nearP = XMVector3TransformCoord(XMVectorSet(x, y, 0.0f, 1.0f), inv);
     XMVECTOR farP  = XMVector3TransformCoord(XMVectorSet(x, y, 1.0f, 1.0f), inv);
     XMVECTOR dir   = XMVector3Normalize(farP - nearP);
-    XMVECTOR eye   = cam->GetEyePos();
-    XMVECTOR pos   = eye + dir * m_dragDepth;
-    XMStoreFloat3(&m_cpuParticles[m_dragIndex].position, pos);
-    m_cpuParticles[m_dragIndex].velocity = {0.0f, 0.0f, 0.0f};
+    XMVECTOR eye     = cam->GetEyePos();
+    XMVECTOR newPos  = eye + dir * m_dragDepth;
+    XMVECTOR curPos  = XMLoadFloat3(&m_cpuParticles[m_dragIndex].position);
+    XMVECTOR delta   = newPos - curPos;
+    XMVECTOR vel     = XMLoadFloat3(&m_cpuParticles[m_dragIndex].velocity);
+
+    // Add velocity towards the mouse ray rather than teleporting the particle.
+    vel += delta * 0.1f; // Scale factor can be tweaked for stronger pull
+    XMStoreFloat3(&m_cpuParticles[m_dragIndex].velocity, vel);
 }
 
 void FluidSystem::EndDrag()
