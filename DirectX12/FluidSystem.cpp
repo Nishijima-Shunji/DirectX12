@@ -215,21 +215,50 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
 		IID_PPV_ARGS(&m_metaUpload));
 
-	auto cmd = g_Engine->CommandList();
-	auto allocator = g_Engine->CommandAllocator(g_Engine->CurrentBackBufferIndex());
-	cmd->Reset(allocator, nullptr);
-	auto barrier0 = CD3DX12_RESOURCE_BARRIER::Transition(m_particleBuffer.Get(),
-		D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
-	cmd->ResourceBarrier(1, &barrier0);
-	D3D12_SUBRESOURCE_DATA src = {};
-	src.pData = m_cpuParticles.data();
-	src.RowPitch = sizeof(FluidParticle) * m_maxParticles;
-	src.SlicePitch = src.RowPitch;
-	UpdateSubresources<1>(cmd, m_particleBuffer.Get(), m_particleUpload.Get(), 0, 0, 1, &src);
-	auto barrier1 = CD3DX12_RESOURCE_BARRIER::Transition(m_particleBuffer.Get(),
-		D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-	cmd->ResourceBarrier(1, &barrier1);
-	cmd->Close();
+        auto cmd = g_Engine->CommandList();
+        auto allocator = g_Engine->CommandAllocator(g_Engine->CurrentBackBufferIndex());
+        cmd->Reset(allocator, nullptr);
+
+        auto barrier0 = CD3DX12_RESOURCE_BARRIER::Transition(
+                m_particleBuffer.Get(),
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                D3D12_RESOURCE_STATE_COPY_DEST);
+        auto metaToCopy = CD3DX12_RESOURCE_BARRIER::Transition(
+                m_metaBuffer.Get(),
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                D3D12_RESOURCE_STATE_COPY_DEST);
+        CD3DX12_RESOURCE_BARRIER toCopy[] = { barrier0, metaToCopy };
+        cmd->ResourceBarrier(_countof(toCopy), toCopy);
+
+        D3D12_SUBRESOURCE_DATA src = {};
+        src.pData = m_cpuParticles.data();
+        src.RowPitch = sizeof(FluidParticle) * m_maxParticles;
+        src.SlicePitch = src.RowPitch;
+        UpdateSubresources<1>(cmd, m_particleBuffer.Get(), m_particleUpload.Get(), 0, 0, 1, &src);
+
+        std::vector<ParticleMeta> initMeta(m_maxParticles);
+        for (UINT i = 0; i < m_maxParticles; ++i) {
+                initMeta[i].pos = m_cpuParticles[i].position;
+                initMeta[i].r = m_params.radius;
+        }
+        D3D12_SUBRESOURCE_DATA metaSrc = {};
+        metaSrc.pData = initMeta.data();
+        metaSrc.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
+        metaSrc.SlicePitch = metaSrc.RowPitch;
+        UpdateSubresources<1>(cmd, m_metaBuffer.Get(), m_metaUpload.Get(), 0, 0, 1, &metaSrc);
+
+        auto barrier1 = CD3DX12_RESOURCE_BARRIER::Transition(
+                m_particleBuffer.Get(),
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        auto metaBack = CD3DX12_RESOURCE_BARRIER::Transition(
+                m_metaBuffer.Get(),
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        CD3DX12_RESOURCE_BARRIER toUa[] = { barrier1, metaBack };
+        cmd->ResourceBarrier(_countof(toUa), toUa);
+
+        cmd->Close();
 	ID3D12CommandList* lists[] = { cmd };
 	g_Engine->CommandQueue()->ExecuteCommandLists(1, lists);
 	g_Engine->Flush();
