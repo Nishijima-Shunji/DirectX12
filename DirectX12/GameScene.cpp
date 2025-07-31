@@ -48,10 +48,30 @@ bool GameScene::Init() {
 }
 
 void GameScene::Update(float deltaTime) {
-	g_Engine->GetObj<Camera>("Camera")->Update(deltaTime);
-	//particle->Update(deltaTime);
-	auto cmd = g_Engine->CommandList();
-	m_fluid.Simulate(cmd, deltaTime);
+        g_Engine->GetObj<Camera>("Camera")->Update(deltaTime);
+        //particle->Update(deltaTime);
+        auto cmd = g_Engine->CommandList();
+        m_fluid.Simulate(cmd, deltaTime);
+
+        // マウスによる粒子ドラッグ
+        static bool dragging = false;
+        POINT pt; GetCursorPos(&pt); ScreenToClient(g_hWnd, &pt);
+        auto cam = g_Engine->GetObj<Camera>("Camera");
+        if (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
+                if (!dragging) {
+                        m_fluid.StartDrag(pt.x, pt.y, cam);
+                        dragging = true;
+                }
+                else {
+                        m_fluid.Drag(pt.x, pt.y, cam);
+                }
+        }
+        else {
+                if (dragging) {
+                        m_fluid.EndDrag();
+                        dragging = false;
+                }
+        }
 
 	// 全体のupdate
 	for (auto& obj : m_objects) {

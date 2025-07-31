@@ -588,5 +588,62 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4
 	cmd->SetGraphicsRootDescriptorTable(0, m_graphicsSrvHeap->GetGPUDescriptorHandleForHeapStart());
 	cmd->SetGraphicsRootConstantBufferView(1, m_graphicsCB->GetGPUVirtualAddress());
 	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	cmd->DrawInstanced(3, 1, 0, 0);
+        cmd->DrawInstanced(3, 1, 0, 0);
+}
+
+void FluidSystem::StartDrag(int mouseX, int mouseY, Camera* cam)
+{
+    if (m_useGpu) return; // GPU シミュレーション時は未対応
+
+    UINT width = g_Engine->FrameBufferWidth();
+    UINT height = g_Engine->FrameBufferHeight();
+    auto view = cam->GetViewMatrix();
+    auto proj = cam->GetProjMatrix();
+    auto viewProj = view * proj;
+
+    float best = 15.0f * 15.0f; // 距離閾値(px^2)
+    m_dragIndex = -1;
+    using namespace DirectX;
+    for (UINT i = 0; i < m_maxParticles; ++i) {
+        XMVECTOR p = XMLoadFloat3(&m_cpuParticles[i].position);
+        XMVECTOR clip = XMVector3TransformCoord(p, viewProj);
+        float sx = (XMVectorGetX(clip) * 0.5f + 0.5f) * static_cast<float>(width);
+        float sy = (-XMVectorGetY(clip) * 0.5f + 0.5f) * static_cast<float>(height);
+        float dx = sx - static_cast<float>(mouseX);
+        float dy = sy - static_cast<float>(mouseY);
+        float dist = dx * dx + dy * dy;
+        if (dist < best) {
+            best = dist;
+            m_dragIndex = static_cast<int>(i);
+            XMVECTOR eye = cam->GetEyePos();
+            m_dragDepth = XMVectorGetX(XMVector3Length(p - eye));
+        }
+    }
+}
+
+void FluidSystem::Drag(int mouseX, int mouseY, Camera* cam)
+{
+    if (m_useGpu) return;
+    if (m_dragIndex < 0) return;
+
+    UINT width = g_Engine->FrameBufferWidth();
+    UINT height = g_Engine->FrameBufferHeight();
+    auto invVP = cam->GetInvViewProj();
+    using namespace DirectX;
+    XMMATRIX inv = XMLoadFloat4x4(&invVP);
+
+    float x = (2.0f * mouseX / static_cast<float>(width)) - 1.0f;
+    float y = 1.0f - (2.0f * mouseY / static_cast<float>(height));
+    XMVECTOR nearP = XMVector3TransformCoord(XMVectorSet(x, y, 0.0f, 1.0f), inv);
+    XMVECTOR farP  = XMVector3TransformCoord(XMVectorSet(x, y, 1.0f, 1.0f), inv);
+    XMVECTOR dir   = XMVector3Normalize(farP - nearP);
+    XMVECTOR eye   = cam->GetEyePos();
+    XMVECTOR pos   = eye + dir * m_dragDepth;
+    XMStoreFloat3(&m_cpuParticles[m_dragIndex].position, pos);
+    m_cpuParticles[m_dragIndex].velocity = {0.0f, 0.0f, 0.0f};
+}
+
+void FluidSystem::EndDrag()
+{
+    m_dragIndex = -1;
 }

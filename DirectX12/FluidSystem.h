@@ -33,6 +33,11 @@ public:
         const DirectX::XMFLOAT3& camPos,
         float isoLevel);
 
+    // 画面座標から粒子を選択/ドラッグするためのヘルパー
+    void StartDrag(int mouseX, int mouseY, class Camera* cam);
+    void Drag(int mouseX, int mouseY, class Camera* cam);
+    void EndDrag();
+
     // 格子サイズ変更（CPU シミュレーション用）
     void SetSpatialCellSize(float s) { m_grid.SetCellSize(s); }
 
@@ -97,4 +102,8 @@ private:
     bool m_metaInSrvState = false;
     // Tracks whether particle buffer is currently in shader resource state
     bool m_particleInSrvState = false;
+
+    // ドラッグ中の粒子インデックスとその距離
+    int   m_dragIndex = -1;
+    float m_dragDepth = 0.0f;
 };
