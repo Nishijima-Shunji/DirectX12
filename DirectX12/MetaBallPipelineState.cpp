@@ -74,7 +74,6 @@ namespace graphics {
         desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         desc.NumRenderTargets = 1;
         desc.RTVFormats[0] = rtvFormat;
-        desc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
         desc.SampleMask = UINT_MAX;
         desc.SampleDesc.Count = 1;
         desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
