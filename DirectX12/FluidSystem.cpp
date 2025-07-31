@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <d3dcompiler.h>
 #include <vector>
+#include <cmath>
 #include "Engine.h"
 #include "Camera.h"
 #include "RandomUtil.h"
@@ -646,6 +647,23 @@ void FluidSystem::Drag(int mouseX, int mouseY, Camera* cam)
     // Add velocity towards the mouse ray rather than teleporting the particle.
     vel += delta * 0.1f; // Scale factor can be tweaked for stronger pull
     XMStoreFloat3(&m_cpuParticles[m_dragIndex].velocity, vel);
+
+    // Apply a similar pull to nearby particles for a water-like effect
+    float dragRadius = 0.2f; // radius around the dragged particle
+    float radius2 = dragRadius * dragRadius;
+    for (UINT i = 0; i < m_maxParticles; ++i) {
+        if (i == static_cast<UINT>(m_dragIndex)) continue;
+        XMVECTOR pos = XMLoadFloat3(&m_cpuParticles[i].position);
+        XMVECTOR diff = pos - curPos;
+        float dist2 = XMVectorGetX(XMVector3LengthSq(diff));
+        if (dist2 < radius2) {
+            float dist = std::sqrt(dist2);
+            float w = 1.0f - (dist / dragRadius);
+            XMVECTOR v = XMLoadFloat3(&m_cpuParticles[i].velocity);
+            v += delta * (0.1f * w);
+            XMStoreFloat3(&m_cpuParticles[i].velocity, v);
+        }
+    }
 }
 
 void FluidSystem::EndDrag()
