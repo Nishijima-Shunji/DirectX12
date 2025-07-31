@@ -5,6 +5,7 @@
 #include <stack>
 #include <functional>
 #include "BaseScene.h"
+#include "FadeController.h"
 
 class SceneManager
 {
@@ -13,6 +14,10 @@ private:
 
     std::map<std::string, SceneFactory> m_Registry;
     std::stack<std::unique_ptr<BaseScene>> m_SceneStack;
+
+    FadeController m_fade;
+    std::string m_pendingScene;
+
 public:
     void RegisterScene(const std::string& name, SceneFactory factory);
     void ChangeScene(const std::string& name);
@@ -22,5 +27,4 @@ public:
     void Update(float deltaTime);
     void Render();
 };
-
 
