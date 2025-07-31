@@ -92,4 +92,7 @@ private:
     // CPU シミュレーション用一時バッファ
     std::vector<float> m_density;
     std::vector<size_t> m_neighborBuffer;
+
+    // Tracks whether meta buffer is currently in shader resource state
+    bool m_metaInSrvState = false;
 };

@@ -304,8 +304,18 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 }
 
 void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
-	if (m_useGpu) {
-		// GPU シミュレーション
+        if (m_useGpu) {
+                // GPU シミュレーション
+                if (m_metaInSrvState) {
+                        auto toUav = CD3DX12_RESOURCE_BARRIER::Transition(
+                                m_metaBuffer.Get(),
+                                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+                                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                                D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+                        cmd->ResourceBarrier(1, &toUav);
+                        m_metaInSrvState = false;
+                }
+
                 CD3DX12_RESOURCE_BARRIER barriers[] = {
                         CD3DX12_RESOURCE_BARRIER::UAV(m_particleBuffer.Get()),
                         CD3DX12_RESOURCE_BARRIER::UAV(m_metaBuffer.Get()),
@@ -373,6 +383,14 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
                 cmd->SetPipelineState(m_computePS.Get());
                 UINT groups = (m_maxParticles + 255) / 256;
                 cmd->Dispatch(groups, 1, 1);
+
+                auto toSrv = CD3DX12_RESOURCE_BARRIER::Transition(
+                        m_metaBuffer.Get(),
+                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+                cmd->ResourceBarrier(1, &toSrv);
+                m_metaInSrvState = true;
         }
         else {
                 // CPU シミュレーション
