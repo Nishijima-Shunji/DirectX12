@@ -206,6 +206,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 	D3D12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
         D3D12_RESOURCE_DESC   cbd = CD3DX12_RESOURCE_DESC::Buffer(
                 sizeof(DirectX::XMFLOAT4X4) +
+                sizeof(DirectX::XMFLOAT4X4) +
                 sizeof(DirectX::XMFLOAT3) +
                 sizeof(float) +
                 sizeof(UINT) +
@@ -567,14 +568,22 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4
 	// 定数バッファ更新
     struct MetaCB {
         DirectX::XMFLOAT4X4 invVP;
+        DirectX::XMFLOAT4X4 VP;
         DirectX::XMFLOAT3 cam;
         float iso;
         UINT count;
         DirectX::XMFLOAT3 pad;
     } cb;
-	cb.invVP = invViewProj;
-	cb.cam = camPos;
-	cb.iso = isoLevel;
+        cb.invVP = invViewProj;
+        {
+            using namespace DirectX;
+            XMMATRIX invMat = XMLoadFloat4x4(&invViewProj);
+            XMVECTOR det;
+            XMMATRIX vp = XMMatrixInverse(&det, invMat);
+            XMStoreFloat4x4(&cb.VP, vp);
+        }
+        cb.cam = camPos;
+        cb.iso = isoLevel;
         cb.count = m_maxParticles;
         cb.pad = DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f);
 	void* p;

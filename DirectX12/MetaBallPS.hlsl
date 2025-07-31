@@ -1,6 +1,7 @@
 cbuffer MetaCB : register(b0)
 {
     float4x4 invViewProj;
+    float4x4 viewProj;
     float3 camPos;
     float isoLevel;
     uint particleCount;
@@ -36,7 +37,7 @@ float Field(float3 p)
 }
 
 
-float4 main(VSOutput IN) : SV_TARGET
+float4 main(VSOutput IN, out float oDepth : SV_Depth) : SV_TARGET
 {
     float4 clip = float4(IN.uv * 2 - 1, 0, 1);
     float4 wp = mul(invViewProj, clip);
@@ -53,13 +54,18 @@ float4 main(VSOutput IN) : SV_TARGET
         p += rd * d * 0.5;
     }
     if (abs(d) >= 0.001)
+    {
+        oDepth = 1.0f;
         return float4(0, 0, 0, 0);
+    }
     float3 n = normalize(float3(
     Field(p + float3(0.001, 0, 0)) - Field(p - float3(0.001, 0, 0)),
     Field(p + float3(0, 0.001, 0)) - Field(p - float3(0, 0.001, 0)),
     Field(p + float3(0, 0, 0.001)) - Field(p - float3(0, 0, 0.001))
   ));
     float diff = saturate(dot(n, normalize(float3(1, 1, 1))));
+    float4 clipOut = mul(viewProj, float4(p, 1.0f));
+    oDepth = clipOut.z / clipOut.w;
             // Water-like bluish tint
     return float4(diff * 0.2, diff * 0.4, diff, 1);
 }
