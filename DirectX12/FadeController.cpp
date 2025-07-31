@@ -45,7 +45,7 @@ bool FadeController::Init()
     m_pipelineState->SetRootSignature(m_rootSignature->Get());
     m_pipelineState->SetVS(L"FadeVS.cso");
     m_pipelineState->SetPS(L"FadePS.cso");
-    m_pipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLESTRIP);
+    m_pipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
     return m_pipelineState->IsValid();
 }
 
@@ -86,6 +86,9 @@ void FadeController::Update(float dt)
 void FadeController::Render()
 {
     if (m_alpha <= 0.0f) return;
+    if (!m_pipelineState || !m_pipelineState->IsValid()) return;
+    if (!m_rootSignature || !m_rootSignature->IsValid()) return;
+
     auto cmd = g_Engine->CommandList();
     UINT idx = g_Engine->CurrentBackBufferIndex();
     auto colorPtr = m_constantBuffers[idx]->GetPtr<XMFLOAT4>();

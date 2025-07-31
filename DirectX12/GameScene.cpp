@@ -22,6 +22,9 @@ GameScene::GameScene(Game* game) : BaseScene(game) {
 GameScene::~GameScene() {
 	printf("GameScene破棄\n");
 	m_objects.clear();
+	if (g_pCurrentScene == this) {
+		g_pCurrentScene = nullptr;
+	}
 }
 
 bool GameScene::Init() {
