@@ -25,8 +25,10 @@ The `DirectX12.vcxproj` assumes the include directories and library paths for th
 
 The `assets` folder contains sample resources (e.g. `korosuke.fbx` and `default.png`) used by the project.
 
-If precompiled shader objects (`*.cso`) are missing, the engine will now
+If precompiled shader objects (`*.cso`) are missing, the engine will try to
 compile the corresponding HLSL files at runtime using `D3DCompileFromFile`.
+Ensure that the `.cso` files exist or that the DirectX shader compiler DLLs are
+available so compilation can succeed at runtime.
 
 ## License
 

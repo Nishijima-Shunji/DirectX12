@@ -15,7 +15,7 @@ public:
     void SetRootSignature(ID3D12RootSignature* rs) { desc.pRootSignature = rs; }
     void SetDevice(ID3D12Device* device) { m_device = device; }
     void SetCS(const std::wstring& path);
-    void Create();
+    bool Create();
     ID3D12PipelineState* Get() const { return m_pso.Get(); }
 
 };

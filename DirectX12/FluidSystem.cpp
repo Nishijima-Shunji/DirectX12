@@ -94,12 +94,17 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
         m_computePS.SetDevice(device);
         m_computePS.SetRootSignature(m_computeRS.Get());
         m_computePS.SetCS(L"ParticleCS.cso");
-        m_computePS.Create();
+        bool computeOk = m_computePS.Create();
 
         m_buildGridPS.SetDevice(device);
         m_buildGridPS.SetRootSignature(m_computeRS.Get());
         m_buildGridPS.SetCS(L"BuildGridCS.cso");
-        m_buildGridPS.Create();
+        bool buildOk = m_buildGridPS.Create();
+
+        if (!computeOk || !buildOk) {
+                wprintf(L"[Warning] Compute PSO creation failed. Falling back to CPU simulation.\n");
+                m_useGpu = false;
+        }
 
 	// ---------------------------------------------------------------------
 	// Particle and meta buffers

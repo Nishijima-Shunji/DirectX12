@@ -27,10 +27,10 @@ void ComputePipelineState::SetCS(const std::wstring& path) {
 }
 
 // 生成
-void ComputePipelineState::Create() {
+bool ComputePipelineState::Create() {
     if (!m_csBlob) {
         wprintf(L"[Error] Compute shader is not loaded.\n");
-        return;
+        return false;
     }
 
     // desc.CS は SetCS() で設定済みだが、安全のため再設定しておく
@@ -41,5 +41,7 @@ void ComputePipelineState::Create() {
 
     if (FAILED(hr)) {
         wprintf(L"Compute PSO生成失敗 0x%08X\n", hr);
+        return false;
     }
+    return true;
 }
