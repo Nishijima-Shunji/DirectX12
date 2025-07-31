@@ -203,17 +203,16 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
 		m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
 
 	// 定数バッファ
-	D3D12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-        D3D12_RESOURCE_DESC   cbd = CD3DX12_RESOURCE_DESC::Buffer(
-                sizeof(DirectX::XMFLOAT4X4) +
-                sizeof(DirectX::XMFLOAT4X4) +
-                sizeof(DirectX::XMFLOAT3) +
-                sizeof(float) +
-                sizeof(UINT) +
-                sizeof(DirectX::XMFLOAT3));
-	device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &cbd,
-		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-		IID_PPV_ARGS(&m_graphicsCB));
+        D3D12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        size_t cbSize = sizeof(DirectX::XMFLOAT4X4) * 2 +
+                        sizeof(DirectX::XMFLOAT3) + sizeof(float) +
+                        sizeof(UINT) + sizeof(DirectX::XMFLOAT3);
+        cbSize = (cbSize + (D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT - 1)) &
+                 ~(D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT - 1);
+        D3D12_RESOURCE_DESC cbd = CD3DX12_RESOURCE_DESC::Buffer(cbSize);
+        device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &cbd,
+                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+                IID_PPV_ARGS(&m_graphicsCB));
 
 	// アップロードヒープ (CPU→GPU 転送用)
 	CD3DX12_HEAP_PROPERTIES upProps(D3D12_HEAP_TYPE_UPLOAD);
