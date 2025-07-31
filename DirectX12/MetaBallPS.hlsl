@@ -9,8 +9,8 @@ cbuffer MetaCB : register(b0)
 
 struct ParticleMeta
 {
-    float3 pos; // ƒ[ƒ‹ƒh‹óŠÔˆÊ’u
-    float r;    // ”¼Œa
+    float3 pos; // ãƒ¯ãƒ¼ãƒ«ãƒ‰ç©ºé–“ä½ç½®
+    float r;    // åŠå¾„
 };
 
 struct VSOutput
@@ -19,10 +19,10 @@ struct VSOutput
     float2 uv : TEXCOORD;
 };
 
-static const int MAX_STEP = 32; // •`‰æ—p‚Ì§ŒÀ
+static const int MAX_STEP = 32; // æç”»ç”¨ã®åˆ¶é™
 StructuredBuffer<ParticleMeta> Particles : register(t0);
 
-// MetaBall‚ÌƒtƒB[ƒ‹ƒhŠÖ”
+// MetaBallã®ãƒ•ã‚£ãƒ¼ãƒ«ãƒ‰é–¢æ•°
 float Field(float3 p)
 {
     float sum = 0;
@@ -60,5 +60,6 @@ float4 main(VSOutput IN) : SV_TARGET
     Field(p + float3(0, 0, 0.001)) - Field(p - float3(0, 0, 0.001))
   ));
     float diff = saturate(dot(n, normalize(float3(1, 1, 1))));
-    return float4(diff, diff, diff, 1);
+            // Water-like bluish tint
+    return float4(diff * 0.2, diff * 0.4, diff, 1);
 }
