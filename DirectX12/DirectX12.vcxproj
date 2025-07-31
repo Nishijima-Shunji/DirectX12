@@ -170,6 +170,7 @@
     <ClCompile Include="RootSignature.cpp" />
     <ClCompile Include="Scene.cpp" />
     <ClCompile Include="SceneManager.cpp" />
+    <ClCompile Include="FadeController.cpp" />
     <ClCompile Include="SharedStruct.cpp" />
     <ClCompile Include="SphereMeshGenerator.cpp" />
     <ClCompile Include="Texture2D.cpp" />
@@ -200,6 +201,7 @@
     <ClInclude Include="RootSignature.h" />
     <ClInclude Include="Scene.h" />
     <ClInclude Include="SceneManager.h" />
+    <ClInclude Include="FadeController.h" />
     <ClInclude Include="SharedStruct.h" />
     <ClInclude Include="SphereMeshGenerator.h" />
     <ClInclude Include="SpatialGrid.h" />
