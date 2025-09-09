@@ -15,12 +15,12 @@ GameScene::GameScene(Game* game) : BaseScene(game) {
 	if (g_pCurrentScene == this) {
 		g_pCurrentScene = nullptr;
 	}
-	printf("GameScene生成\n");
+	printf("GameScene Create\n");
 	Init();
 }
 
 GameScene::~GameScene() {
-	printf("GameScene破棄\n");
+	printf("GameScene Release\n");
 	m_objects.clear();
 	if (g_pCurrentScene == this) {
 		g_pCurrentScene = nullptr;
