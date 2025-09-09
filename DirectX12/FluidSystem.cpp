@@ -762,8 +762,8 @@ void FluidSystem::CreateSSAResources(ID3D12Device* device, DXGI_FORMAT mainRTFor
 
 	// 2Dテクスチャ作成（R16_FLOAT）
 	DXGI_FORMAT accumFmt = m_mainRTFormat;
-	CD3DX12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Tex2D(accumFmt, w, h, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
-	FLOAT clearV[4] = { 0,0,0,0 };
+        CD3DX12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Tex2D(accumFmt, w, h, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+        FLOAT clearV[4] = { 0,0,0,0 };
 	D3D12_CLEAR_VALUE cv = { accumFmt, {clearV[0],clearV[1],clearV[2],clearV[3]} };
 	CD3DX12_HEAP_PROPERTIES hp(D3D12_HEAP_TYPE_DEFAULT);
 

@@ -9,7 +9,7 @@
 #include "ConstantBuffer.h"
 #include "SpatialGrid.h"
 #include <vector>
-#include "FullScreenPSO.h"
+#include "FullscreenPSO.h"
 
 struct FluidParticle {
     DirectX::XMFLOAT3 position;

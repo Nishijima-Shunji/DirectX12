@@ -1,4 +1,4 @@
-#include "FullScreenPSO.h"
+#include "FullscreenPSO.h"
 #include <stdexcept>
 
 using Microsoft::WRL::ComPtr;
@@ -6,9 +6,9 @@ using Microsoft::WRL::ComPtr;
 void FullscreenPSO::SetShaders(const wchar_t* vsCsoPath, const wchar_t* psCsoPath)
 {
     HRESULT hr = D3DReadFileToBlob(vsCsoPath, &vs_);
-    if (FAILED(hr)) throw std::runtime_error("VScso “Ç‚İ‚İ¸”s");
+    if (FAILED(hr)) throw std::runtime_error("VScso èª­ã¿è¾¼ã¿å¤±æ•—");
     hr = D3DReadFileToBlob(psCsoPath, &ps_);
-    if (FAILED(hr)) throw std::runtime_error("PScso “Ç‚İ‚İ¸”s");
+    if (FAILED(hr)) throw std::runtime_error("PScso èª­ã¿è¾¼ã¿å¤±æ•—");
 }
 
 bool FullscreenPSO::Create(ID3D12Device* dev)
@@ -20,13 +20,13 @@ bool FullscreenPSO::Create(ID3D12Device* dev)
     p.VS = { vs_->GetBufferPointer(), vs_->GetBufferSize() };
     p.PS = { ps_->GetBufferPointer(), ps_->GetBufferSize() };
 
-    // ƒtƒ‹ƒXƒNƒŠ[ƒ“Œü‚¯‚Ì’èŒ`
+    // ãƒ•ãƒ«ã‚¹ã‚¯ãƒªãƒ¼ãƒ³å‘ã‘ã®å®šå½¢
     p.InputLayout.pInputElementDescs = nullptr;
     p.InputLayout.NumElements = 0;
     p.PrimitiveTopologyType = topo_;
     p.SampleMask = 0xFFFFFFFF;
 
-    // ƒ‰ƒXƒ^ƒ‰ƒCƒUiD3D12ƒfƒtƒHƒ‹ƒg‘Š“–Eƒwƒ‹ƒp[•sg—pj
+    // ãƒ©ã‚¹ã‚¿ãƒ©ã‚¤ã‚¶ï¼ˆD3D12ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆç›¸å½“ãƒ»ãƒ˜ãƒ«ãƒ‘ãƒ¼ä¸ä½¿ç”¨ï¼‰
     D3D12_RASTERIZER_DESC rast = {};
     rast.FillMode = D3D12_FILL_MODE_SOLID;
     rast.CullMode = D3D12_CULL_MODE_BACK;
@@ -41,7 +41,7 @@ bool FullscreenPSO::Create(ID3D12Device* dev)
     rast.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
     p.RasterizerState = rast;
 
-    // [“xŠ®‘SOFF{DSV•s—v
+    // æ·±åº¦å®Œå…¨OFFï¼‹DSVä¸è¦
     D3D12_DEPTH_STENCIL_DESC ds = {};
     ds.DepthEnable = FALSE;
     ds.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
@@ -53,9 +53,9 @@ bool FullscreenPSO::Create(ID3D12Device* dev)
     ds.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
     ds.BackFace = ds.FrontFace;
     p.DepthStencilState = ds;
-    p.DSVFormat = dsv_; // Šù’è UNKNOWN
+    p.DSVFormat = dsv_; // æ—¢å®š UNKNOWN
 
-    // ƒuƒŒƒ“ƒhƒvƒŠƒZƒbƒg
+    // ãƒ–ãƒ¬ãƒ³ãƒ‰ãƒ—ãƒªã‚»ãƒƒãƒˆ
     D3D12_BLEND_DESC blend = {};
     blend.AlphaToCoverageEnable = FALSE;
     blend.IndependentBlendEnable = FALSE;
