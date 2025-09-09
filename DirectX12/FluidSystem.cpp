@@ -926,9 +926,9 @@ void FluidSystem::CreateSSAResources(ID3D12Device* device, DXGI_FORMAT mainRTFor
 //    }
 //}
 
-void FluidSystem::CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT)
+void FluidSystem::CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumFormat)
 {
-	using Microsoft::WRL::ComPtr;
+        using Microsoft::WRL::ComPtr;
 
 	// ===== RootSignatures =====
 	// Accum: VS で b0(CB) / t0(StructuredBuffer:粒子)
@@ -994,19 +994,19 @@ void FluidSystem::CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT)
 		if (FAILED(hr)) return;
 	}
 
-	// ===== PSO =====
-	// Accum（加算）: 出力RT = R16_FLOAT
-	m_psoAccum.SetRootSignature(m_rsAccum.Get());
-	m_psoAccum.SetShaders(L"AccumBillboardVS.cso", L"AccumBillboardPS.cso");
-	m_psoAccum.SetFormats(DXGI_FORMAT_R16_FLOAT, DXGI_FORMAT_UNKNOWN);
+        // ===== PSO =====
+        // Accum（加算）: 出力RT = accumFormat
+        m_psoAccum.SetRootSignature(m_rsAccum.Get());
+        m_psoAccum.SetShaders(L"AccumBillboardVS.cso", L"AccumBillboardPS.cso");
+        m_psoAccum.SetFormats(accumFormat, DXGI_FORMAT_UNKNOWN);
 	m_psoAccum.SetBlend(FullscreenPSO::Blend::Additive);
 	m_psoAccum.SetTopology(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 	if (!m_psoAccum.Create(device)) return;
 
-	// Blur（通常）: 出力RT = R16_FLOAT
-	m_psoBlur.SetRootSignature(m_rsBlur.Get());
-	m_psoBlur.SetShaders(L"FullscreenVS.cso", L"BlurPS.cso");
-	m_psoBlur.SetFormats(DXGI_FORMAT_R16_FLOAT, DXGI_FORMAT_UNKNOWN);
+        // Blur（通常）: 出力RT = accumFormat
+        m_psoBlur.SetRootSignature(m_rsBlur.Get());
+        m_psoBlur.SetShaders(L"FullscreenVS.cso", L"BlurPS.cso");
+        m_psoBlur.SetFormats(accumFormat, DXGI_FORMAT_UNKNOWN);
 	m_psoBlur.SetBlend(FullscreenPSO::Blend::Opaque);
 	m_psoBlur.SetTopology(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 	if (!m_psoBlur.Create(device)) return;
@@ -1067,13 +1067,16 @@ void FluidSystem::UpdateSSAConstantBuffers(ID3D12GraphicsCommandList* cmd)
 void FluidSystem::RenderSSA(ID3D12GraphicsCommandList* cmd)
 {
 	// accum
-	{
-		// Dispatch直後：UAV→SRV
-		auto toSRVParticles = CD3DX12_RESOURCE_BARRIER::Transition(
-			m_metaBuffer.Get(),
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		cmd->ResourceBarrier(1, &toSRVParticles);
+        {
+                // Dispatch直後：UAV→SRV
+                if (!m_metaInSrvState) {
+                        auto toSRVParticles = CD3DX12_RESOURCE_BARRIER::Transition(
+                                m_metaBuffer.Get(),
+                                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+                        cmd->ResourceBarrier(1, &toSRVParticles);
+                        m_metaInSrvState = true;
+                }
 
 		// accumulate へ
 		auto toRTaccum = CD3DX12_RESOURCE_BARRIER::Transition(
