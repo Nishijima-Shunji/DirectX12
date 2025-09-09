@@ -509,18 +509,25 @@ ID3D12Device6* Engine::Device()
 // コマンドリスト情報を取得
 ID3D12GraphicsCommandList* Engine::CommandList()
 {
-	return m_pCommandList.Get();
+        return m_pCommandList.Get();
 }
 
 // バッファのフレーム番号を取得
 UINT Engine::CurrentBackBufferIndex()
 {
-	return m_CurrentBackBufferIndex;
+        return m_CurrentBackBufferIndex;
+}
+
+D3D12_CPU_DESCRIPTOR_HANDLE Engine::CurrentBackBufferView() const
+{
+        D3D12_CPU_DESCRIPTOR_HANDLE handle = m_pRtvHeap->GetCPUDescriptorHandleForHeapStart();
+        handle.ptr += m_CurrentBackBufferIndex * m_RtvDescriptorSize;
+        return handle;
 }
 
 UINT Engine::FrameBufferWidth() const
 {
-	return m_FrameBufferWidth;
+        return m_FrameBufferWidth;
 }
 
 UINT Engine::FrameBufferHeight() const

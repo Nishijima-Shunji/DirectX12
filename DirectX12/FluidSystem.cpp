@@ -1173,17 +1173,20 @@ void FluidSystem::RenderSSA(ID3D12GraphicsCommandList* cmd)
 	}
 
 
-	// 合成
-	{
-		// 最終RTへ（外側のレンダリングループでセット済みなら不要）
-		cmd->SetPipelineState(m_psoComposite.Get());
-		cmd->SetGraphicsRootSignature(m_rsComposite.Get());
-		cmd->SetGraphicsRootConstantBufferView(0, m_cbComposite->GetGPUVirtualAddress());
-		ID3D12DescriptorHeap* heaps2[] = { m_srvHeapSSA.Get() };
-		cmd->SetDescriptorHeaps(1, heaps2);
-		cmd->SetGraphicsRootDescriptorTable(1, m_accumSRV);
+        // 合成
+        {
+                // 最終的なバックバッファへ描画する
+                auto backBufferRTV = g_Engine->CurrentBackBufferView();
+                cmd->OMSetRenderTargets(1, &backBufferRTV, FALSE, nullptr);
 
-		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		cmd->DrawInstanced(3, 1, 0, 0);
-	}
+                cmd->SetPipelineState(m_psoComposite.Get());
+                cmd->SetGraphicsRootSignature(m_rsComposite.Get());
+                cmd->SetGraphicsRootConstantBufferView(0, m_cbComposite->GetGPUVirtualAddress());
+                ID3D12DescriptorHeap* heaps2[] = { m_srvHeapSSA.Get() };
+                cmd->SetDescriptorHeaps(1, heaps2);
+                cmd->SetGraphicsRootDescriptorTable(1, m_accumSRV);
+
+                cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                cmd->DrawInstanced(3, 1, 0, 0);
+        }
 }
