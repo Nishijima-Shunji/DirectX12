@@ -210,9 +210,12 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	srvd.Buffer.NumElements = maxParticles;
 	srvd.Buffer.StructureByteStride = sizeof(ParticleMeta);
 	srvd.Format = DXGI_FORMAT_UNKNOWN;
-	srvd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	device->CreateShaderResourceView(m_metaBuffer.Get(), &srvd,
-		m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
+        srvd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        device->CreateShaderResourceView(m_metaBuffer.Get(), &srvd,
+                m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
+
+        // 保持しておき、後で描画時に設定する
+        m_particleSRV = m_graphicsSrvHeap->GetGPUDescriptorHandleForHeapStart();
 
 	// 定数バッファ
 	D3D12_HEAP_PROPERTIES hp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
@@ -1082,9 +1085,9 @@ void FluidSystem::RenderSSA(ID3D12GraphicsCommandList* cmd)
 		cmd->SetPipelineState(m_psoAccum.Get());
 		cmd->SetGraphicsRootSignature(m_rsAccum.Get());
 		cmd->SetGraphicsRootConstantBufferView(0, m_cbAccum->GetGPUVirtualAddress());
-		ID3D12DescriptorHeap* heaps[] = { m_srvHeapSSA.Get() };
-		cmd->SetDescriptorHeaps(1, heaps);
-		cmd->SetGraphicsRootDescriptorTable(1, m_particleSRV); // ★ 粒子SRV
+               ID3D12DescriptorHeap* heaps[] = { m_graphicsSrvHeap.Get() };
+               cmd->SetDescriptorHeaps(1, heaps);
+               cmd->SetGraphicsRootDescriptorTable(1, m_particleSRV); // ★ 粒子SRV
 
 		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 		cmd->DrawInstanced(4, m_maxParticles, 0, 0);
