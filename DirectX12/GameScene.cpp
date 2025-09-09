@@ -43,7 +43,7 @@ bool GameScene::Init() {
         const UINT maxParticles = 50;
         m_fluid.Init(device, rtvFormat, maxParticles, 0);
         m_fluid.SetSpatialCellSize(0.1f); // 計算範囲
-        m_fluid.UseGPU(false); // GPU でシミュレーションをするかどうか
+        m_fluid.UseGPU(true); // GPU でシミュレーションをするかどうか
 
 
 	return true;
