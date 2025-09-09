@@ -736,9 +736,11 @@ void FluidSystem::DestroySSAResources()
 
 void FluidSystem::CreateSSAResources(ID3D12Device* device, DXGI_FORMAT mainRTFormat, UINT viewW, UINT viewH)
 {
-	DestroySSAResources();
+        DestroySSAResources();
 
-	UINT w = max(1u, viewW / m_ssaScale);
+        m_mainRTFormat = mainRTFormat;
+
+        UINT w = max(1u, viewW / m_ssaScale);
 	UINT h = max(1u, viewH / m_ssaScale);
 
 	// RTVヒープ（accum, blur）
@@ -763,8 +765,8 @@ void FluidSystem::CreateSSAResources(ID3D12Device* device, DXGI_FORMAT mainRTFor
 	m_accumSRV = srvStart;
 	m_blurSRV = { srvStart.ptr + srvInc };
 
-	// 2Dテクスチャ作成（R16_FLOAT）
-	DXGI_FORMAT accumFmt = m_mainRTFormat;
+        // 2Dテクスチャ作成（R16_FLOAT）
+        DXGI_FORMAT accumFmt = DXGI_FORMAT_R16_FLOAT;
         CD3DX12_RESOURCE_DESC rd = CD3DX12_RESOURCE_DESC::Tex2D(accumFmt, w, h, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
         FLOAT clearV[4] = { 0,0,0,0 };
 	D3D12_CLEAR_VALUE cv = { accumFmt, {clearV[0],clearV[1],clearV[2],clearV[3]} };
@@ -1127,13 +1129,8 @@ void FluidSystem::RenderSSA(ID3D12GraphicsCommandList* cmd)
 		cmd->SetGraphicsRootConstantBufferView(0, m_cbBlur->GetGPUVirtualAddress());
 		cmd->SetGraphicsRootDescriptorTable(1, m_accumSRV);
 
-		// 念のため再度RTへ（状態が怪しいときの保険）
-		auto fixRT = CD3DX12_RESOURCE_BARRIER::Transition(
-			m_blurTex.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
-		cmd->ResourceBarrier(1, &fixRT);
-
-		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		cmd->DrawInstanced(3, 1, 0, 0);
+                cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                cmd->DrawInstanced(3, 1, 0, 0);
 
 		auto toSRV = CD3DX12_RESOURCE_BARRIER::Transition(
 			m_blurTex.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
@@ -1164,12 +1161,8 @@ void FluidSystem::RenderSSA(ID3D12GraphicsCommandList* cmd)
 		cmd->SetGraphicsRootConstantBufferView(0, m_cbBlur->GetGPUVirtualAddress());
 		cmd->SetGraphicsRootDescriptorTable(1, m_blurSRV);
 
-		auto fixRT2 = CD3DX12_RESOURCE_BARRIER::Transition(
-			m_accumTex.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
-		cmd->ResourceBarrier(1, &fixRT2);
-
-		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		cmd->DrawInstanced(3, 1, 0, 0);
+                cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                cmd->DrawInstanced(3, 1, 0, 0);
 
 		auto toSRV2 = CD3DX12_RESOURCE_BARRIER::Transition(
 			m_accumTex.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
