@@ -1,4 +1,4 @@
-#include "FullscreenPSO.h"
+#include "FullScreenPSO.h"
 #include <stdexcept>
 
 using Microsoft::WRL::ComPtr;
@@ -6,9 +6,9 @@ using Microsoft::WRL::ComPtr;
 void FullscreenPSO::SetShaders(const wchar_t* vsCsoPath, const wchar_t* psCsoPath)
 {
     HRESULT hr = D3DReadFileToBlob(vsCsoPath, &vs_);
-    if (FAILED(hr)) throw std::runtime_error("VScso 読み込み失敗");
+    if (FAILED(hr)) throw std::runtime_error("VScso load failed");
     hr = D3DReadFileToBlob(psCsoPath, &ps_);
-    if (FAILED(hr)) throw std::runtime_error("PScso 読み込み失敗");
+    if (FAILED(hr)) throw std::runtime_error("PScso load failed");
 }
 
 bool FullscreenPSO::Create(ID3D12Device* dev)

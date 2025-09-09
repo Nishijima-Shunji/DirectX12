@@ -25,7 +25,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> pso_;
     ID3D12RootSignature* rs_ = nullptr;
     DXGI_FORMAT rtv_ = DXGI_FORMAT_R8G8B8A8_UNORM;
-    DXGI_FORMAT dsv_ = DXGI_FORMAT_UNKNOWN; // �� ���^�{�[���O�̃t���X�N���[���p�̂��ߐ[�x�g��Ȃ��ݒ�
+    DXGI_FORMAT dsv_ = DXGI_FORMAT_UNKNOWN; // ← メタボール前のフルスクリーン用のため深度使わない設定
     Blend blend_ = Blend::Opaque;
     D3D12_PRIMITIVE_TOPOLOGY_TYPE topo_ = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 };
