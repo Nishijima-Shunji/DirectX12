@@ -1,4 +1,7 @@
 #pragma once
+
+struct ID3D12GraphicsCommandList;
+
 struct IActor {
 	virtual ~IActor() = default;
 	virtual void Update(float deltaTime) = 0;
