@@ -61,15 +61,6 @@
     <Filter Include="ヘッダー ファイル\System\DescriptorHeap">
       <UniqueIdentifier>{2f229c0a-2929-458c-b0f9-f271e89040ba}</UniqueIdentifier>
     </Filter>
-    <Filter Include="リソース ファイル\PixelShader">
-      <UniqueIdentifier>{8117fc0b-0b3b-4795-81f3-66d4d1710778}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="リソース ファイル\VertexShader">
-      <UniqueIdentifier>{965176ea-49ee-4cec-9cab-908c0ce3d57d}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="リソース ファイル\ComputeShader">
-      <UniqueIdentifier>{5ad1b8a0-dfca-4bd3-83dd-0a0fdbd6e866}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -255,60 +246,33 @@
     <ClInclude Include="Camera.h">
       <Filter>ヘッダー ファイル\Game\Object</Filter>
     </ClInclude>
-    <ClCompile Include="FullscreenPSO.cpp">
-      <Filter>ソース ファイル\System\PSO</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="FadePS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
-    <FxCompile Include="MetaBallPS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
-    <FxCompile Include="ParticlePS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
+    <FxCompile Include="SimpleVS.hlsl">
+      <Filter>リソース ファイル</Filter>
     </FxCompile>
     <FxCompile Include="SimplePS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
-    <FxCompile Include="FadeVS.hlsl">
-      <Filter>リソース ファイル\VertexShader</Filter>
-    </FxCompile>
-    <FxCompile Include="MetaBallVS.hlsl">
-      <Filter>リソース ファイル\VertexShader</Filter>
+      <Filter>リソース ファイル</Filter>
     </FxCompile>
     <FxCompile Include="ParticleVS.hlsl">
-      <Filter>リソース ファイル\VertexShader</Filter>
+      <Filter>リソース ファイル</Filter>
     </FxCompile>
-    <FxCompile Include="SimpleVS.hlsl">
-      <Filter>リソース ファイル\VertexShader</Filter>
+    <FxCompile Include="ParticlePS.hlsl">
+      <Filter>リソース ファイル</Filter>
     </FxCompile>
-    <FxCompile Include="BuildGridCS.hlsl">
-      <Filter>リソース ファイル\ComputeShader</Filter>
+    <FxCompile Include="MetaBallVS.hlsl">
+      <Filter>リソース ファイル</Filter>
     </FxCompile>
-    <FxCompile Include="ParticleCS.hlsl">
-      <Filter>リソース ファイル\ComputeShader</Filter>
+    <FxCompile Include="MetaBallPS.hlsl">
+      <Filter>リソース ファイル</Filter>
     </FxCompile>
-    <FxCompile Include="AccumBillboardPS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
+    <FxCompile Include="FadeVS.hlsl">
+      <Filter>リソース ファイル</Filter>
     </FxCompile>
-    <FxCompile Include="AccumBillboardVS.hlsl">
-      <Filter>リソース ファイル\VertexShader</Filter>
+    <FxCompile Include="FadePS.hlsl">
+      <Filter>リソース ファイル</Filter>
     </FxCompile>
-    <FxCompile Include="FullscreenVS.hlsl">
-      <Filter>リソース ファイル\VertexShader</Filter>
-    </FxCompile>
-    <FxCompile Include="BlurPS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
-    <FxCompile Include="CompositePS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="FullscreenPSO.h">
-      <Filter>ヘッダー ファイル\System\PSO</Filter>
-    </ClInclude>
+    <FxCompile Include="ParticleCS.hlsl" />
+    <FxCompile Include="BuildGridCS.hlsl" />
   </ItemGroup>
 </Project>

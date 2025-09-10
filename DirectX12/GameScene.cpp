@@ -44,10 +44,15 @@ bool GameScene::Init() {
         const UINT maxParticles = 50;
         m_fluid.Init(device, rtvFormat, maxParticles, 0);
         m_fluid.SetSpatialCellSize(0.1f); // 計算範囲
+<<<<<<< HEAD
         m_fluid.UseGPU(true); // GPU でシミュレーションをするかどうか
 
         // テスト用の立方体をシーンに追加
         Spawn<TestCube>();
+=======
+
+        m_fluid.UseGPU(false); // GPU でシミュレーションを行かどうか
+>>>>>>> parent of 18b5a9b (一旦上げ)
 
 
 	return true;
