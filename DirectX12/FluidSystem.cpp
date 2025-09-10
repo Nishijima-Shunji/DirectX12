@@ -1212,4 +1212,17 @@ void FluidSystem::RenderSSA(ID3D12GraphicsCommandList* cmd)
                 cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                 cmd->DrawInstanced(3, 1, 0, 0);
         }
+
+        // SSA 描画で変更した状態を元に戻す
+        {
+                // ディスクリプタヒープを標準状態に戻す
+                ID3D12DescriptorHeap* heaps[] = { m_graphicsSrvHeap.Get() };
+                cmd->SetDescriptorHeaps(1, heaps);
+
+                // ビューポートとシザーをフルサイズへ再設定
+                D3D12_VIEWPORT vp{ 0.0f, 0.0f, static_cast<float>(m_viewWidth), static_cast<float>(m_viewHeight), 0.0f, 1.0f };
+                D3D12_RECT sc{ 0, 0, (LONG)m_viewWidth, (LONG)m_viewHeight };
+                cmd->RSSetViewports(1, &vp);
+                cmd->RSSetScissorRects(1, &sc);
+        }
 }
