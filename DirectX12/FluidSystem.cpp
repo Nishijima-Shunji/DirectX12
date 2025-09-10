@@ -734,9 +734,9 @@ void FluidSystem::DestroySSAResources()
 	m_accumRTV = {};
 	m_blurRTV = {};
 
-	m_accumSRV = {};
-	m_blurSRV = {};
-	m_particleSRV = {};
+        m_accumSRV = {};
+        m_blurSRV = {};
+        // m_particleSRV はグラフィックス用ヒープにあるためここではリセットしない
 }
 
 void FluidSystem::CreateSSAResources(ID3D12Device* device, DXGI_FORMAT mainRTFormat, UINT viewW, UINT viewH)
