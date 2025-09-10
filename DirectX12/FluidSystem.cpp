@@ -1022,29 +1022,41 @@ void FluidSystem::CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumForm
 
 void FluidSystem::UpdateSSAConstantBuffers(ID3D12GraphicsCommandList* cmd)
 {
-	// AccumCB への書き込み
-	struct AccumCB {
-		float View[16]; float Proj[16];
-		float CameraRight[4];
-		float CameraUp[4];
-		float ViewportSize[2]; float _padA[2];
-		float PixelScale; float _padB[3];
-	} acb = {};
+        // AccumCB への書き込み
+        struct AccumCB {
+                float View[16]; float Proj[16];
+                float CameraRight[4];
+                float CameraUp[4];
+                float ViewportSize[2]; float _padA[2];
+                float PixelScale; float _padB[3];
+        } acb = {};
 
-	// 既存のカメラから行列と Right/Up を取得してください（プロジェクト依存）
-	// 下は疑似コード：
-	// auto V = camera->GetViewMatrix(); auto P = camera->GetProjMatrix();
-	// auto right = camera->GetRight();  auto up = camera->GetUp();
+        // カメラ情報を取得し、定数バッファ用のデータを設定する
+        Camera* cam = g_Engine->GetObj<Camera>("Camera");
+        if (cam) {
+                // View / Proj 行列をコピー
+                DirectX::XMFLOAT4X4 viewMat, projMat;
+                DirectX::XMStoreFloat4x4(&viewMat, cam->GetViewMatrix());
+                DirectX::XMStoreFloat4x4(&projMat, cam->GetProjMatrix());
+                memcpy(acb.View, &viewMat, sizeof(viewMat));
+                memcpy(acb.Proj, &projMat, sizeof(projMat));
 
-	// acb.View[...] = ...
-	// acb.Proj[...] = ...
-	// acb.CameraRight[0..2] = right; acb.CameraUp[0..2] = up;
+                // カメラの右方向と上方向を計算
+                DirectX::XMMATRIX invView = DirectX::XMMatrixInverse(nullptr, cam->GetViewMatrix());
+                DirectX::XMFLOAT3 right, up;
+                DirectX::XMStoreFloat3(&right, invView.r[0]);
+                DirectX::XMStoreFloat3(&up, invView.r[1]);
+                acb.CameraRight[0] = right.x; acb.CameraRight[1] = right.y; acb.CameraRight[2] = right.z; acb.CameraRight[3] = 0.0f;
+                acb.CameraUp[0] = up.x;     acb.CameraUp[1] = up.y;     acb.CameraUp[2] = up.z;     acb.CameraUp[3] = 0.0f;
+        }
 
-	acb.ViewportSize[0] = float(max(1u, m_viewWidth / m_ssaScale));
-	acb.ViewportSize[1] = float(max(1u, m_viewHeight / m_ssaScale));
-	acb.PixelScale = 8.0f; // 画面半径スケール（必要に応じて調整）
+        // 画面サイズとスケール
+        acb.ViewportSize[0] = float(std::max(1u, m_viewWidth / m_ssaScale));
+        acb.ViewportSize[1] = float(std::max(1u, m_viewHeight / m_ssaScale));
+        acb.PixelScale = 8.0f; // 画面半径スケール（必要に応じて調整）
 
-	void* p; m_cbAccum->Map(0, nullptr, &p); memcpy(p, &acb, sizeof(acb)); m_cbAccum->Unmap(0, nullptr);
+        // 定数バッファへ書き込み
+        void* p; m_cbAccum->Map(0, nullptr, &p); memcpy(p, &acb, sizeof(acb)); m_cbAccum->Unmap(0, nullptr);
 
 	// BlurCB
 	struct BlurCB { float TexelSize[2]; float Dir[2]; } bcb{};
