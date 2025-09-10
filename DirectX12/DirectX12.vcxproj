@@ -166,6 +166,7 @@
     <ClCompile Include="MetaBallPipelineState.cpp" />
     <ClCompile Include="Object.cpp" />
     <ClCompile Include="Particle.cpp" />
+    <ClCompile Include="TestCube.cpp" />
     <ClCompile Include="PipelineState.cpp" />
     <ClCompile Include="ParticlePipelineState.cpp" />
     <ClCompile Include="RootSignature.cpp" />
@@ -198,6 +199,7 @@
     <ClInclude Include="MetaBallPipelineState.h" />
     <ClInclude Include="Object.h" />
     <ClInclude Include="Particle.h" />
+    <ClInclude Include="TestCube.h" />
     <ClInclude Include="PipelineState.h" />
     <ClInclude Include="ParticlePipelineState.h" />
     <ClInclude Include="RootSignature.h" />
