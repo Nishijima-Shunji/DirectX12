@@ -3,7 +3,7 @@ cbuffer MetaCB : register(b0)
     float4x4 invViewProj;
     float3 camPos;
     float isoLevel;
-    uint particleCount;
+    uint nearCount;     // 近傍パーティクル数
     float pad[3];
 };
 
@@ -20,7 +20,7 @@ struct VSOutput
 };
 
 static const int MAX_STEP = 16; // 描画用の制限を半分にし負荷を軽減
-StructuredBuffer<ParticleMeta> Particles : register(t0);
+StructuredBuffer<ParticleMeta> NearParticles : register(t0); // 近傍パーティクルのみ
 
 // MetaBallのフィールド値と勾配を同時に計算する
 float Field(float3 p, out float3 grad)
@@ -28,13 +28,11 @@ float Field(float3 p, out float3 grad)
     float sum = 0;
     grad = float3(0, 0, 0); // 勾配の初期化
   [loop]
-    for (uint i = 0; i < particleCount; ++i)
+    // 近傍リスト分だけループ
+    for (uint i = 0; i < nearCount; ++i)
     {
-        float3 d = p - Particles[i].pos;
-        float r2 = Particles[i].r * Particles[i].r;
-        float denom = dot(d, d) + 1e-6;
-        sum += r2 / denom; // フィールド値を累積
-        grad += (-2 * r2 * d) / pow(denom, 2); // 勾配を累積
+        float3 d = p - NearParticles[i].pos;
+        sum += (NearParticles[i].r * NearParticles[i].r) / (dot(d, d) + 1e-6);
 
         // 規定値を超えたら早期終了して無駄な計算を抑える
         if (sum > isoLevel)
