@@ -154,6 +154,7 @@
     <ClCompile Include="ComputePipelineState.cpp" />
     <ClCompile Include="ComputeRootSignature.cpp" />
     <ClCompile Include="ConstantBuffer.cpp" />
+    <ClCompile Include="DebugCube.cpp" />
     <ClCompile Include="DescriptorHeap.cpp" />
     <ClCompile Include="Engine.cpp" />
     <ClCompile Include="FluidSystem.cpp" />
@@ -187,6 +188,7 @@
     <ClInclude Include="ComputePipelineState.h" />
     <ClInclude Include="ComputeRootSignature.h" />
     <ClInclude Include="ConstantBuffer.h" />
+    <ClInclude Include="DebugCube.h" />
     <ClInclude Include="DescriptorHeap.h" />
     <ClInclude Include="Engine.h" />
     <ClInclude Include="FluidSystem.h" />
@@ -231,6 +233,10 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
+      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+    </FxCompile>
+    <FxCompile Include="ColorPS.hlsl">
+      <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
     </FxCompile>
     <FxCompile Include="CompositePS.hlsl">
