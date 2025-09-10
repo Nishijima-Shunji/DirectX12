@@ -1191,6 +1191,12 @@ void FluidSystem::RenderSSA(ID3D12GraphicsCommandList* cmd)
                 auto backBufferRTV = g_Engine->CurrentBackBufferView();
                 cmd->OMSetRenderTargets(1, &backBufferRTV, FALSE, nullptr);
 
+                // SSAO処理で縮小したビューポート／シザー矩形をフルサイズに戻す
+                D3D12_VIEWPORT vp{ 0.0f, 0.0f, (float)m_viewWidth, (float)m_viewHeight, 0.0f, 1.0f };
+                D3D12_RECT sc{ 0, 0, (LONG)m_viewWidth, (LONG)m_viewHeight };
+                cmd->RSSetViewports(1, &vp);
+                cmd->RSSetScissorRects(1, &sc);
+
                 cmd->SetPipelineState(m_psoComposite.Get());
                 cmd->SetGraphicsRootSignature(m_rsComposite.Get());
                 cmd->SetGraphicsRootConstantBufferView(0, m_cbComposite->GetGPUVirtualAddress());
