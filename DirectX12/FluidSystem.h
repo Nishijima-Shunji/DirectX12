@@ -154,7 +154,7 @@ private:
         // 初期化＆サイズ変更＆描画ヘルパ
         void CreateSSAResources(ID3D12Device* device, DXGI_FORMAT mainRTFormat, UINT viewW, UINT viewH);
         void DestroySSAResources();
-        void CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumFormat);
+        bool CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumFormat);
         void UpdateSSAConstantBuffers(ID3D12GraphicsCommandList* cmd);
         void RenderSSA(ID3D12GraphicsCommandList* cmd);
 

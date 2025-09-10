@@ -197,7 +197,9 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 
 	// SSAリソース＆PSO生成（低解像度RTとPSO）
 	CreateSSAResources(device, rtvFormat, m_viewWidth, m_viewHeight);
-	CreateSSAPipelines(device, DXGI_FORMAT_R16_FLOAT);
+        if (!CreateSSAPipelines(device, DXGI_FORMAT_R16_FLOAT)) {
+                m_useScreenSpace = false; // シェーダ読み込み失敗
+        }
 
 	// SRV ヒープ
 	D3D12_DESCRIPTOR_HEAP_DESC hd2 = {};
@@ -931,7 +933,7 @@ void FluidSystem::CreateSSAResources(ID3D12Device* device, DXGI_FORMAT mainRTFor
 //    }
 //}
 
-void FluidSystem::CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumFormat)
+bool FluidSystem::CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumFormat)
 {
         using Microsoft::WRL::ComPtr;
 
@@ -947,10 +949,10 @@ void FluidSystem::CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumForm
 			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
 		ComPtr<ID3DBlob> sig, err;
-		HRESULT hr = D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err);
-		if (FAILED(hr)) { if (err) OutputDebugStringA((char*)err->GetBufferPointer()); return; }
-		hr = device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&m_rsAccum));
-		if (FAILED(hr)) return;
+                HRESULT hr = D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err);
+                if (FAILED(hr)) { if (err) OutputDebugStringA((char*)err->GetBufferPointer()); return false; }
+                hr = device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&m_rsAccum));
+                if (FAILED(hr)) return false;
 	}
 
 	// Blur: PS で b0(CB:Texel/Dir) / t0(SRV:Src) / s0
@@ -970,10 +972,10 @@ void FluidSystem::CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumForm
 			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
 		ComPtr<ID3DBlob> sig, err;
-		HRESULT hr = D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err);
-		if (FAILED(hr)) { if (err) OutputDebugStringA((char*)err->GetBufferPointer()); return; }
-		hr = device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&m_rsBlur));
-		if (FAILED(hr)) return;
+                HRESULT hr = D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err);
+                if (FAILED(hr)) { if (err) OutputDebugStringA((char*)err->GetBufferPointer()); return false; }
+                hr = device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&m_rsBlur));
+                if (FAILED(hr)) return false;
 	}
 
 	// Composite: PS で b0(CB:Threshold等) / t0(SRV:Density) / s0
@@ -993,10 +995,10 @@ void FluidSystem::CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumForm
 			D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
 		ComPtr<ID3DBlob> sig, err;
-		HRESULT hr = D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err);
-		if (FAILED(hr)) { if (err) OutputDebugStringA((char*)err->GetBufferPointer()); return; }
-		hr = device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&m_rsComposite));
-		if (FAILED(hr)) return;
+                HRESULT hr = D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &sig, &err);
+                if (FAILED(hr)) { if (err) OutputDebugStringA((char*)err->GetBufferPointer()); return false; }
+                hr = device->CreateRootSignature(0, sig->GetBufferPointer(), sig->GetBufferSize(), IID_PPV_ARGS(&m_rsComposite));
+                if (FAILED(hr)) return false;
 	}
 
         // ===== PSO =====
@@ -1006,7 +1008,7 @@ void FluidSystem::CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumForm
         m_psoAccum.SetFormats(accumFormat, DXGI_FORMAT_UNKNOWN);
 	m_psoAccum.SetBlend(FullscreenPSO::Blend::Additive);
 	m_psoAccum.SetTopology(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-	if (!m_psoAccum.Create(device)) return;
+        if (!m_psoAccum.Create(device)) return false;
 
         // Blur（通常）: 出力RT = accumFormat
         m_psoBlur.SetRootSignature(m_rsBlur.Get());
@@ -1014,7 +1016,7 @@ void FluidSystem::CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumForm
         m_psoBlur.SetFormats(accumFormat, DXGI_FORMAT_UNKNOWN);
 	m_psoBlur.SetBlend(FullscreenPSO::Blend::Opaque);
 	m_psoBlur.SetTopology(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-	if (!m_psoBlur.Create(device)) return;
+        if (!m_psoBlur.Create(device)) return false;
 
 	// Composite（不透明 or α）: 出力RT = 最終RTフォーマット
 	m_psoComposite.SetRootSignature(m_rsComposite.Get());
@@ -1022,7 +1024,8 @@ void FluidSystem::CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumForm
 	m_psoComposite.SetFormats(m_mainRTFormat, DXGI_FORMAT_UNKNOWN);
 	m_psoComposite.SetBlend(FullscreenPSO::Blend::Alpha); // 透過合成ならAlpha/Opaqueは不透明
 	m_psoComposite.SetTopology(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-	if (!m_psoComposite.Create(device)) return;
+        if (!m_psoComposite.Create(device)) return false;
+        return true;
 }
 
 void FluidSystem::UpdateSSAConstantBuffers(ID3D12GraphicsCommandList* cmd)
@@ -1078,7 +1081,9 @@ void FluidSystem::UpdateSSAConstantBuffers(ID3D12GraphicsCommandList* cmd)
 // 画面蓄積の描画一式
 void FluidSystem::RenderSSA(ID3D12GraphicsCommandList* cmd)
 {
-	// accum
+        if (!m_psoAccum.Get() || !m_psoBlur.Get() || !m_psoComposite.Get()) return; // PSO 未生成時は描画しない
+
+        // accum
         {
                 // Dispatch直後：UAV→SRV
                 if (!m_metaInSrvState) {
