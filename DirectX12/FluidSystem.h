@@ -74,6 +74,10 @@ private:
     // CPU シミュレーション用一時バッファ
     std::vector<float> m_density;
     std::vector<size_t> m_neighborBuffer;
+    // 描画範囲内パーティクルのインデックスリスト
+    std::vector<size_t> m_renderIndices;
+    // GPUへ送る粒子数
+    UINT m_renderCount = 0;
 
     // メタバッファがシェーダリソース状態にあるか
     bool m_metaInSrvState = false;
