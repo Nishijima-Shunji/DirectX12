@@ -22,15 +22,19 @@ struct VSOutput
 static const int MAX_STEP = 16; // 描画用の制限を半分にし負荷を軽減
 StructuredBuffer<ParticleMeta> Particles : register(t0);
 
-// MetaBallのフィールド関数
-float Field(float3 p)
+// MetaBallのフィールド値と勾配を同時に計算する
+float Field(float3 p, out float3 grad)
 {
     float sum = 0;
+    grad = float3(0, 0, 0); // 勾配の初期化
   [loop]
     for (uint i = 0; i < particleCount; ++i)
     {
         float3 d = p - Particles[i].pos;
-        sum += (Particles[i].r * Particles[i].r) / (dot(d, d) + 1e-6);
+        float r2 = Particles[i].r * Particles[i].r;
+        float denom = dot(d, d) + 1e-6;
+        sum += r2 / denom; // フィールド値を累積
+        grad += (-2 * r2 * d) / pow(denom, 2); // 勾配を累積
 
         // 規定値を超えたら早期終了して無駄な計算を抑える
         if (sum > isoLevel)
@@ -48,21 +52,18 @@ float4 main(VSOutput IN) : SV_TARGET
     float3 ro = camPos, rd = normalize(wp.xyz - camPos);
     float3 p = ro;
     float d;
+    float3 grad; // フィールドの勾配
   [loop]
     for (int i = 0; i < MAX_STEP; ++i)
     {
-        d = Field(p);
+        d = Field(p, grad); // フィールド値と勾配を取得
         if (abs(d) < 0.001)
             break;
         p += rd * d * 0.5;
     }
     if (abs(d) >= 0.001)
         return float4(0, 0, 0, 0);
-    float3 n = normalize(float3(
-    Field(p + float3(0.001, 0, 0)) - Field(p - float3(0.001, 0, 0)),
-    Field(p + float3(0, 0.001, 0)) - Field(p - float3(0, 0.001, 0)),
-    Field(p + float3(0, 0, 0.001)) - Field(p - float3(0, 0, 0.001))
-  ));
+    float3 n = normalize(grad); // 累積した勾配から法線を計算
     float diff = saturate(dot(n, normalize(float3(1, 1, 1))));
             // Water-like bluish tint
     return float4(diff * 0.2, diff * 0.4, diff, 1);
