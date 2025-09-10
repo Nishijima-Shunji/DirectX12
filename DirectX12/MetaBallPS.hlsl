@@ -19,7 +19,7 @@ struct VSOutput
     float2 uv : TEXCOORD;
 };
 
-static const int MAX_STEP = 32; // 描画用の制限
+static const int MAX_STEP = 16; // 描画用の制限を半分にし負荷を軽減
 StructuredBuffer<ParticleMeta> Particles : register(t0);
 
 // MetaBallのフィールド関数
@@ -31,6 +31,10 @@ float Field(float3 p)
     {
         float3 d = p - Particles[i].pos;
         sum += (Particles[i].r * Particles[i].r) / (dot(d, d) + 1e-6);
+
+        // 規定値を超えたら早期終了して無駄な計算を抑える
+        if (sum > isoLevel)
+            break;
     }
     return sum - isoLevel;
 }

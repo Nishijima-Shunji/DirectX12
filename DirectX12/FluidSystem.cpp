@@ -603,7 +603,12 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4
 	memcpy(p, &cb, sizeof(cb));
 	m_graphicsCB->Unmap(0, nullptr);
 
-	if (m_useScreenSpace) { RenderSSA(cmd); return; }
+        if (m_useScreenSpace) {
+                // スクリーンスペース版の定数バッファを更新して描画
+                UpdateSSAConstantBuffers(cmd);
+                RenderSSA(cmd);
+                return;
+        }
 
 
 	// 描画
@@ -1031,14 +1036,21 @@ void FluidSystem::UpdateSSAConstantBuffers(ID3D12GraphicsCommandList* cmd)
 		float PixelScale; float _padB[3];
 	} acb = {};
 
-	// 既存のカメラから行列と Right/Up を取得してください（プロジェクト依存）
-	// 下は疑似コード：
-	// auto V = camera->GetViewMatrix(); auto P = camera->GetProjMatrix();
-	// auto right = camera->GetRight();  auto up = camera->GetUp();
+        // カメラ行列と方向ベクトルを取得して定数バッファに書き込む
+        if (auto* cam = g_Engine->GetObj<Camera>("Camera")) {
+                DirectX::XMMATRIX V = cam->GetViewMatrix();
+                DirectX::XMMATRIX P = cam->GetProjMatrix();
 
-	// acb.View[...] = ...
-	// acb.Proj[...] = ...
-	// acb.CameraRight[0..2] = right; acb.CameraUp[0..2] = up;
+                // 行列を配列に格納
+                DirectX::XMStoreFloat4x4(reinterpret_cast<DirectX::XMFLOAT4X4*>(acb.View), V);
+                DirectX::XMStoreFloat4x4(reinterpret_cast<DirectX::XMFLOAT4X4*>(acb.Proj), P);
+
+                // ビュー行列の1行目・2行目から右方向と上方向を算出
+                DirectX::XMFLOAT4X4 vM;
+                DirectX::XMStoreFloat4x4(&vM, V);
+                acb.CameraRight[0] = vM._11; acb.CameraRight[1] = vM._12; acb.CameraRight[2] = vM._13; acb.CameraRight[3] = 0.0f;
+                acb.CameraUp[0]    = vM._21; acb.CameraUp[1]    = vM._22; acb.CameraUp[2]    = vM._23; acb.CameraUp[3]    = 0.0f;
+        }
 
 	acb.ViewportSize[0] = float(max(1u, m_viewWidth / m_ssaScale));
 	acb.ViewportSize[1] = float(max(1u, m_viewHeight / m_ssaScale));
