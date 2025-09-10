@@ -106,14 +106,11 @@ void GameScene::Update(float deltaTime) {
 }
 
 void GameScene::Draw() {
-        commandList = g_Engine->CommandList(); // コマンドリストを取得
-        auto cmd = g_Engine->CommandList();
-        auto invViewProj = g_Engine->GetObj<Camera>("Camera")->GetInvViewProj();
-        auto cameraPos = g_Engine->GetObj<Camera>("Camera")->GetPosition();
-        // 画面効果用の定数バッファを更新
-        m_fluid.UpdateSSAConstantBuffers(cmd);
-        // 流体を描画
-        m_fluid.Render(cmd, invViewProj, cameraPos, 1.0f);
+	commandList = g_Engine->CommandList(); // コマンドリストを取得
+	auto cmd = g_Engine->CommandList();
+	auto invViewProj = g_Engine->GetObj<Camera>("Camera")->GetInvViewProj();
+	auto cameraPos = g_Engine->GetObj<Camera>("Camera")->GetPosition();
+	m_fluid.Render(cmd, invViewProj, cameraPos, 1.0f);
 
 	//particle->Draw();
 
