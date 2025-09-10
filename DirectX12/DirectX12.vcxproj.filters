@@ -126,9 +126,6 @@
     <ClCompile Include="Particle.cpp">
       <Filter>ソース ファイル\Game\Object</Filter>
     </ClCompile>
-    <ClCompile Include="TestCube.cpp">
-      <Filter>ソース ファイル\Game\Object</Filter>
-    </ClCompile>
     <ClCompile Include="Camera.cpp">
       <Filter>ソース ファイル\Game</Filter>
     </ClCompile>
@@ -214,9 +211,6 @@
       <Filter>ヘッダー ファイル\Game\Object</Filter>
     </ClInclude>
     <ClInclude Include="Particle.h">
-      <Filter>ヘッダー ファイル\Game\Object</Filter>
-    </ClInclude>
-    <ClInclude Include="TestCube.h">
       <Filter>ヘッダー ファイル\Game\Object</Filter>
     </ClInclude>
     <ClInclude Include="ParticlePipelineState.h">

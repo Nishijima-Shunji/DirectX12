@@ -4,7 +4,6 @@
 #include <DirectXMath.h>
 #include "SharedStruct.h"
 #include "App.h"
-#include "TestCube.h" // テスト用立方体
 
 #include <windows.h>
 
@@ -45,9 +44,6 @@ bool GameScene::Init() {
         m_fluid.Init(device, rtvFormat, maxParticles, 0);
         m_fluid.SetSpatialCellSize(0.1f); // 計算範囲
         m_fluid.UseGPU(true); // GPU でシミュレーションをするかどうか
-
-        // テスト用の立方体をシーンに追加
-        Spawn<TestCube>();
 
 
 	return true;
