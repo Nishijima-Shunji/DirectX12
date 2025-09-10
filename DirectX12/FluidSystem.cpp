@@ -37,9 +37,8 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	m_threadGroupCount = (maxParticles + 255) / 256;
 	m_cpuParticles.resize(maxParticles);
 	m_density.resize(maxParticles);
-        m_neighborBuffer.reserve(MAX_PARTICLES_PER_CELL * 27);
-        m_mainRTFormat = rtvFormat;
-        m_renderCount = maxParticles; // 初期は全粒子を描画対象とする
+	m_neighborBuffer.reserve(MAX_PARTICLES_PER_CELL * 27);
+	m_mainRTFormat = rtvFormat;
 
 
 	for (auto& p : m_cpuParticles) {
@@ -534,66 +533,73 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 			if (m_cpuParticles[i].position.z < -1 || m_cpuParticles[i].position.z > 1) m_cpuParticles[i].velocity.z *= -0.1f;
 		}
 
-                // カメラ周辺の粒子のみを検索し、その情報だけをGPUへ送信
-                if (auto* cam = g_Engine->GetObj<Camera>("Camera")) {
-                        DirectX::XMFLOAT3 eye = cam->GetPosition();
-                        float range = radius * 40.0f; // 描画範囲の半径
-                        m_grid.Query(eye, range, m_renderIndices);
-                        m_renderCount = static_cast<UINT>(m_renderIndices.size());
-                } else {
-                        m_renderIndices.clear();
-                        m_renderCount = 0;
-                }
+		// CPU→GPU 転送 (particles)
+		auto toCopyParticle = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_particleBuffer.Get(),
+			m_particleInSrvState ?
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE :
+			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+			D3D12_RESOURCE_STATE_COPY_DEST);
+		auto toCopyMeta = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_metaBuffer.Get(),
+			m_metaInSrvState ?
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE :
+			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+			D3D12_RESOURCE_STATE_COPY_DEST);
+		CD3DX12_RESOURCE_BARRIER preCopy[] = { toCopyParticle, toCopyMeta };
+		cmd->ResourceBarrier(2, preCopy);
 
-                auto toCopyMeta = CD3DX12_RESOURCE_BARRIER::Transition(
-                        m_metaBuffer.Get(),
-                        m_metaInSrvState ?
-                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
-                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE :
-                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-                        D3D12_RESOURCE_STATE_COPY_DEST);
-                cmd->ResourceBarrier(1, &toCopyMeta);
+		D3D12_SUBRESOURCE_DATA srcParticle = {};
+		srcParticle.pData = m_cpuParticles.data();
+		srcParticle.RowPitch = sizeof(FluidParticle) * m_maxParticles;
+		srcParticle.SlicePitch = srcParticle.RowPitch;
+		UpdateSubresources<1>(cmd, m_particleBuffer.Get(), m_particleUpload.Get(), 0, 0, 1, &srcParticle);
 
-                // 近傍パーティクルのみをアップロード
-                std::vector<ParticleMeta> metas(m_renderCount);
-                for (UINT i = 0; i < m_renderCount; ++i) {
-                        size_t idx = m_renderIndices[i];
-                        metas[i].pos = m_cpuParticles[idx].position;
-                        metas[i].r = radius;
-                }
-                void* dst = nullptr;
-                m_metaUpload->Map(0, nullptr, &dst);
-                memcpy(dst, metas.data(), sizeof(ParticleMeta) * m_renderCount);
-                m_metaUpload->Unmap(0, nullptr);
-                cmd->CopyBufferRegion(m_metaBuffer.Get(), 0, m_metaUpload.Get(), 0,
-                        sizeof(ParticleMeta) * m_renderCount);
+		std::vector<ParticleMeta> metas(m_maxParticles);
+		for (UINT i = 0; i < m_maxParticles; ++i) {
+			metas[i].pos = m_cpuParticles[i].position;
+			metas[i].r = radius;
+		}
+		D3D12_SUBRESOURCE_DATA srcMeta = {};
+		srcMeta.pData = metas.data();
+		srcMeta.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
+		srcMeta.SlicePitch = srcMeta.RowPitch;
+		UpdateSubresources<1>(cmd, m_metaBuffer.Get(), m_metaUpload.Get(), 0, 0, 1, &srcMeta);
 
-                auto toSrvMeta = CD3DX12_RESOURCE_BARRIER::Transition(
-                        m_metaBuffer.Get(),
-                        D3D12_RESOURCE_STATE_COPY_DEST,
-                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
-                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-                cmd->ResourceBarrier(1, &toSrvMeta);
-                m_metaInSrvState = true;
+		auto toSrvParticle = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_particleBuffer.Get(),
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		auto toSrvMeta = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_metaBuffer.Get(),
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		CD3DX12_RESOURCE_BARRIER postCopy[] = { toSrvParticle, toSrvMeta };
+		cmd->ResourceBarrier(2, postCopy);
+		m_particleInSrvState = true;
+		m_metaInSrvState = true;
 	}
 }
 
 // 描画
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4X4& invViewProj, const DirectX::XMFLOAT3& camPos, float isoLevel) {
 	// 定数バッファ更新
-        struct MetaCB {
-                DirectX::XMFLOAT4X4 invVP;
-                DirectX::XMFLOAT3 cam;
-                float iso;
-                UINT nearCount; // 近傍パーティクル数
-                DirectX::XMFLOAT3 pad;
-        } cb;
+	struct MetaCB {
+		DirectX::XMFLOAT4X4 invVP;
+		DirectX::XMFLOAT3 cam;
+		float iso;
+		UINT count;
+		DirectX::XMFLOAT3 pad;
+	} cb;
 	cb.invVP = invViewProj;
 	cb.cam = camPos;
 	cb.iso = isoLevel;
-        // 近傍パーティクル数を設定
-        cb.nearCount = m_renderCount;
-        cb.pad = DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f);
+	cb.count = m_maxParticles;
+	cb.pad = DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f);
 	void* p;
 	m_graphicsCB->Map(0, nullptr, &p);
 	memcpy(p, &cb, sizeof(cb));
@@ -1105,9 +1111,8 @@ void FluidSystem::RenderSSA(ID3D12GraphicsCommandList* cmd)
                cmd->SetDescriptorHeaps(1, heaps);
                cmd->SetGraphicsRootDescriptorTable(1, m_particleSRV); // ★ 粒子SRV
 
-                cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-                // 近傍パーティクル分だけインスタンス描画
-                cmd->DrawInstanced(4, m_renderCount, 0, 0);
+		cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+		cmd->DrawInstanced(4, m_maxParticles, 0, 0);
 
 		auto backToSRV = CD3DX12_RESOURCE_BARRIER::Transition(
 			m_accumTex.Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
