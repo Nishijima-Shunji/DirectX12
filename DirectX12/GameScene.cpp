@@ -4,6 +4,7 @@
 #include <DirectXMath.h>
 #include "SharedStruct.h"
 #include "App.h"
+#include "DebugCube.h" // デバッグ用キューブ
 
 #include <windows.h>
 
@@ -45,8 +46,10 @@ bool GameScene::Init() {
         m_fluid.SetSpatialCellSize(0.1f); // 計算範囲
         m_fluid.UseGPU(false); // GPU でシミュレーションをするかどうか
 
+        // 描画確認用のキューブを生成
+        Spawn<DebugCube>();
 
-	return true;
+        return true;
 }
 
 void GameScene::Update(float deltaTime) {
