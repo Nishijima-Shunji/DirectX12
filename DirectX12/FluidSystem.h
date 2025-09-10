@@ -85,8 +85,7 @@ private:
     float m_dragDepth = 0.0f;
 
 
-        // 初期状態ではスクリーンスペースエフェクトを無効化
-        bool m_useScreenSpace = false;
+	bool m_useScreenSpace = true; // スクリーンスペースエフェクトを使うか
 
     // 低解像度（1/2）蓄積RT と ブラー用RT
     Microsoft::WRL::ComPtr<ID3D12Resource> m_accumTex; // R16_FLOAT or R32_FLOAT
