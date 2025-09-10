@@ -1051,8 +1051,8 @@ void FluidSystem::UpdateSSAConstantBuffers(ID3D12GraphicsCommandList* cmd)
         }
 
         // 画面サイズとスケール
-        acb.ViewportSize[0] = float(std::max(1u, m_viewWidth / m_ssaScale));
-        acb.ViewportSize[1] = float(std::max(1u, m_viewHeight / m_ssaScale));
+        acb.ViewportSize[0] = float((std::max)(1u, m_viewWidth / m_ssaScale));
+        acb.ViewportSize[1] = float((std::max)(1u, m_viewHeight / m_ssaScale));
         acb.PixelScale = 8.0f; // 画面半径スケール（必要に応じて調整）
 
         // 定数バッファへ書き込み
