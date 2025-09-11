@@ -61,10 +61,13 @@ float4 main(VSOutput IN) : SV_TARGET
             break;
         p += rd * d * 0.5;
     }
+    // フィールドが閾値に達しなければ描画しない
+    // （ここで色を書き込むと背景が黒く塗りつぶされてしまう）
     if (abs(d) >= 0.001)
-        return float4(0, 0, 0, 0);
+        discard;
+
     float3 n = normalize(grad); // 累積した勾配から法線を計算
     float diff = saturate(dot(n, normalize(float3(1, 1, 1))));
-            // Water-like bluish tint
+    // ここでは水っぽい青色を返す
     return float4(diff * 0.2, diff * 0.4, diff, 1);
 }
