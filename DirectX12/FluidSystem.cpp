@@ -37,7 +37,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	m_threadGroupCount = (maxParticles + 255) / 256;
 	m_cpuParticles.resize(maxParticles);
 	m_density.resize(maxParticles);
-        m_neighborBuffer.reserve(MAX_PARTICLES_PER_CELL * 27);
+	m_neighborBuffer.reserve(MAX_PARTICLES_PER_CELL * 27);
 
 
 	for (auto& p : m_cpuParticles) {
@@ -203,9 +203,9 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	srvd.Buffer.NumElements = maxParticles;
 	srvd.Buffer.StructureByteStride = sizeof(ParticleMeta);
 	srvd.Format = DXGI_FORMAT_UNKNOWN;
-        srvd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        device->CreateShaderResourceView(m_metaBuffer.Get(), &srvd,
-                m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
+	srvd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	device->CreateShaderResourceView(m_metaBuffer.Get(), &srvd,
+		m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
 
 
 	// 定数バッファ
@@ -446,6 +446,14 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		cmd->ResourceBarrier(1, &toSrv);
 		m_metaInSrvState = true;
+		// 粒子バッファも読み取り用にSRV状態へ戻す
+		auto particleToSrv = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_particleBuffer.Get(),
+			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		cmd->ResourceBarrier(1, &particleToSrv);
+		m_particleInSrvState = true;
 	}
 	else {
 		// CPU シミュレーション
@@ -594,8 +602,8 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4
 	memcpy(p, &cb, sizeof(cb));
 	m_graphicsCB->Unmap(0, nullptr);
 
-        // スクリーンスペース処理を行わず直接描画する
-        cmd->SetDescriptorHeaps(1, m_graphicsSrvHeap.GetAddressOf());
+	// スクリーンスペース処理を行わず直接描画する
+	cmd->SetDescriptorHeaps(1, m_graphicsSrvHeap.GetAddressOf());
 	cmd->SetGraphicsRootSignature(m_graphicsRS.Get());
 	cmd->SetPipelineState(m_graphicsPS->Get());
 	cmd->SetGraphicsRootDescriptorTable(0, m_graphicsSrvHeap->GetGPUDescriptorHandleForHeapStart());

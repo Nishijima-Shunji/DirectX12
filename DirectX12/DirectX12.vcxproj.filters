@@ -252,6 +252,9 @@
     <ClCompile Include="FullscreenPSO.cpp">
       <Filter>ソース ファイル\System\PSO</Filter>
     </ClCompile>
+    <ClCompile Include="DebugCube.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="FadePS.hlsl">
@@ -299,10 +302,16 @@
     <FxCompile Include="CompositePS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
+    <FxCompile Include="ColorPS.hlsl">
+      <Filter>リソース ファイル\PixelShader</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FullscreenPSO.h">
       <Filter>ヘッダー ファイル\System\PSO</Filter>
+    </ClInclude>
+    <ClInclude Include="DebugCube.h">
+      <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>
