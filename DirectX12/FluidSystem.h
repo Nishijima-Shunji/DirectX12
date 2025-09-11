@@ -9,7 +9,6 @@
 #include "ConstantBuffer.h"
 #include "SpatialGrid.h"
 #include <vector>
-#include "FullscreenPSO.h"
 
 struct FluidParticle {
     DirectX::XMFLOAT3 position;
@@ -85,47 +84,6 @@ private:
     float m_dragDepth = 0.0f;
 
 
-	bool m_useScreenSpace = true; // スクリーンスペースエフェクトを使うか
-
-    // 低解像度（1/2）蓄積RT と ブラー用RT
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_accumTex; // R16_FLOAT or R32_FLOAT
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_blurTex;
-
-    // RTV（CPU）と SRV（GPU可視）
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_rtvHeapSSA;       // RTV×2
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_srvHeapSSA;       // SRV×2 + サンプラは既存の静的サンプラでOK
-
-    D3D12_CPU_DESCRIPTOR_HANDLE m_accumRTV = {};
-    D3D12_CPU_DESCRIPTOR_HANDLE m_blurRTV = {};
-    D3D12_GPU_DESCRIPTOR_HANDLE m_accumSRV = {};
-    D3D12_GPU_DESCRIPTOR_HANDLE m_blurSRV = {};
-
-    // ルートシグネチャとPSO
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rsAccum;     // 粒子→蓄積
-    FullscreenPSO m_psoAccum;
-
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rsBlur;      // ブラー
-    FullscreenPSO m_psoBlur;
-
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rsComposite; // 合成
-    FullscreenPSO m_psoComposite;
-
-    // 定数バッファ（各パス用）
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_cbAccum;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_cbBlur;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_cbComposite;
-
-    // 画面サイズ・縮小係数
-    UINT m_viewWidth = 0;
-    UINT m_viewHeight = 0;
-    UINT m_ssaScale = 2; // 1/2解像度
-
-    // 粒子SRV
-    D3D12_GPU_DESCRIPTOR_HANDLE m_particleSRV = {};
-    // 画面フォーマット保存
-    DXGI_FORMAT m_mainRTFormat = DXGI_FORMAT_UNKNOWN;
-
-
     public:
         // 初期化: デバイス・RTV形式・最大粒子数・スレッドグループ数
         void Init(ID3D12Device* device, DXGI_FORMAT rtvFormat,
@@ -150,12 +108,5 @@ private:
 
         // 格子サイズ変更（CPU シミュレーション用）
         void SetSpatialCellSize(float s) { m_grid.SetCellSize(s); }
-
-        // 初期化＆サイズ変更＆描画ヘルパ
-        void CreateSSAResources(ID3D12Device* device, DXGI_FORMAT mainRTFormat, UINT viewW, UINT viewH);
-        void DestroySSAResources();
-        bool CreateSSAPipelines(ID3D12Device* device, DXGI_FORMAT accumFormat);
-        void UpdateSSAConstantBuffers(ID3D12GraphicsCommandList* cmd);
-        void RenderSSA(ID3D12GraphicsCommandList* cmd);
 
 };
