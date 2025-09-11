@@ -411,8 +411,8 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 		};
 		cmd->ResourceBarrier(2, gridBarriers);
 
-		// ルートパラメーター: b0, b1, t0, u0, u1
-		// 定数バッファ更新
+                // ルートパラメーター: b0, b1, t0, u0, u1, u2, u3
+                // 定数バッファ更新
 		if (m_sphParamCB && m_sphParamCB->IsValid()) {
 			auto* cb = m_sphParamCB->GetPtr<SPHParamsCB>();
 			cb->timeStep = dt;
