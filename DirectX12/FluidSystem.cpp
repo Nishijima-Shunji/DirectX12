@@ -142,8 +142,9 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_uavHeap));
 
-	UINT handleSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	D3D12_CPU_DESCRIPTOR_HANDLE handle = m_uavHeap->GetCPUDescriptorHandleForHeapStart();
+        // UAVヒープのハンドルを取得
+        UINT uavHandleSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        D3D12_CPU_DESCRIPTOR_HANDLE uavHandle = m_uavHeap->GetCPUDescriptorHandleForHeapStart();
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -151,27 +152,92 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	srvDesc.Buffer.StructureByteStride = sizeof(FluidParticle);
 	srvDesc.Format = DXGI_FORMAT_UNKNOWN;
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	device->CreateShaderResourceView(m_particleBuffer.Get(), &srvDesc, handle);
+        device->CreateShaderResourceView(m_particleBuffer.Get(), &srvDesc, uavHandle);
 
-	handle.ptr += handleSize;
+        uavHandle.ptr += uavHandleSize;
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uavd = {};
 	uavd.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
 	uavd.Buffer.NumElements = maxParticles;
 	uavd.Buffer.StructureByteStride = sizeof(FluidParticle);
-	device->CreateUnorderedAccessView(m_particleBuffer.Get(), nullptr, &uavd, handle);
+        device->CreateUnorderedAccessView(m_particleBuffer.Get(), nullptr, &uavd, uavHandle);
 
-	handle.ptr += handleSize;
+        uavHandle.ptr += uavHandleSize;
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uavMeta = {};
 	uavMeta.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
 	uavMeta.Buffer.NumElements = maxParticles;
 	uavMeta.Buffer.StructureByteStride = sizeof(ParticleMeta);
-	device->CreateUnorderedAccessView(m_metaBuffer.Get(), nullptr, &uavMeta, handle);
+        device->CreateUnorderedAccessView(m_metaBuffer.Get(), nullptr, &uavMeta, uavHandle);
 
-	handle.ptr += handleSize;
+        uavHandle.ptr += uavHandleSize;
 
-	// 描画用パイプライン生成
-	// ルートシグネチャ
-	CD3DX12_DESCRIPTOR_RANGE graRanges[3];
+        // --------------------------------------------------
+        // Compute用定数バッファとグリッド関連リソースの生成
+        // --------------------------------------------------
+        m_sphParamCB = new ConstantBuffer(sizeof(SPHParamsCB));
+        m_viewProjCB = new ConstantBuffer(sizeof(ViewProjCB));
+
+        if (m_sphParamCB && m_sphParamCB->IsValid()) {
+                auto* cb = m_sphParamCB->GetPtr<SPHParamsCB>();
+                cb->restDensity = 1000.0f;
+                cb->particleMass = 1.0f;
+                cb->viscosity = 1.0f;
+                cb->stiffness = 200.0f;
+                cb->radius = 0.1f;
+                cb->timeStep = 0.016f;
+                cb->particleCount = m_maxParticles;
+                cb->pad0 = 0;
+                cb->gridMin = m_gridMin;
+
+                m_params.restDensity = cb->restDensity;
+                m_params.particleMass = cb->particleMass;
+                m_params.viscosity = cb->viscosity;
+                m_params.stiffness = cb->stiffness;
+                m_params.radius = cb->radius;
+                m_params.timeStep = cb->timeStep;
+                m_grid.SetCellSize(cb->radius);
+
+                m_gridDimX = static_cast<UINT>(ceil((2.0f) / cb->radius)) + 1;
+                m_gridDimY = static_cast<UINT>(ceil((6.0f) / cb->radius)) + 1;
+                m_gridDimZ = static_cast<UINT>(ceil((2.0f) / cb->radius)) + 1;
+                cb->gridDim = DirectX::XMUINT3(m_gridDimX, m_gridDimY, m_gridDimZ);
+                cb->pad1 = cb->pad2 = 0;
+                m_cellCount = m_gridDimX * m_gridDimY * m_gridDimZ;
+
+                D3D12_RESOURCE_DESC rdCount = CD3DX12_RESOURCE_DESC::Buffer(
+                        sizeof(UINT) * m_cellCount,
+                        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+                D3D12_RESOURCE_DESC rdTable = CD3DX12_RESOURCE_DESC::Buffer(
+                        sizeof(UINT) * m_cellCount * MAX_PARTICLES_PER_CELL,
+                        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+
+                // グリッド用バッファを生成
+                device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rdCount,
+                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                        IID_PPV_ARGS(&m_gridCount));
+                device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rdTable,
+                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+                        IID_PPV_ARGS(&m_gridTable));
+
+                // UAVを連続したハンドルで作成
+                D3D12_CPU_DESCRIPTOR_HANDLE gridHandle = m_uavHeap->GetCPUDescriptorHandleForHeapStart();
+                gridHandle.ptr += uavHandleSize * 3;
+                D3D12_UNORDERED_ACCESS_VIEW_DESC uavCount = {};
+                uavCount.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+                uavCount.Buffer.NumElements = m_cellCount;
+                uavCount.Buffer.StructureByteStride = sizeof(UINT);
+                device->CreateUnorderedAccessView(m_gridCount.Get(), nullptr, &uavCount, gridHandle);
+
+                gridHandle.ptr += uavHandleSize;
+                D3D12_UNORDERED_ACCESS_VIEW_DESC uavTable = {};
+                uavTable.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+                uavTable.Buffer.NumElements = m_cellCount * MAX_PARTICLES_PER_CELL;
+                uavTable.Buffer.StructureByteStride = sizeof(UINT);
+                device->CreateUnorderedAccessView(m_gridTable.Get(), nullptr, &uavTable, gridHandle);
+        }
+
+        // 描画用パイプライン生成
+        // ルートシグネチャ
+        CD3DX12_DESCRIPTOR_RANGE graRanges[3];
 	graRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0
 	graRanges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1); // t1
 	graRanges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2); // t2
@@ -202,40 +268,40 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	hd2.NumDescriptors = 3;
 	hd2.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	hd2.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	device->CreateDescriptorHeap(&hd2, IID_PPV_ARGS(&m_graphicsSrvHeap));
+        device->CreateDescriptorHeap(&hd2, IID_PPV_ARGS(&m_graphicsSrvHeap));
 
-	// ハンドルを一度だけ取得し、連続して使用する
-	D3D12_CPU_DESCRIPTOR_HANDLE handle = m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart();
-	UINT handleSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        // 描画用SRVを連続したハンドルで作成
+        D3D12_CPU_DESCRIPTOR_HANDLE srvHandle = m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart();
+        UINT srvHandleSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	// MetaBuffer用SRVをヒープの0番目に作成
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvd = {};
-	srvd.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	srvd.Buffer.NumElements = maxParticles;
-	srvd.Buffer.StructureByteStride = sizeof(ParticleMeta);
-	srvd.Format = DXGI_FORMAT_UNKNOWN;
-	srvd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	device->CreateShaderResourceView(m_metaBuffer.Get(), &srvd, handle);
+        // MetaBuffer用SRV(0番目)
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvd = {};
+        srvd.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        srvd.Buffer.NumElements = maxParticles;
+        srvd.Buffer.StructureByteStride = sizeof(ParticleMeta);
+        srvd.Format = DXGI_FORMAT_UNKNOWN;
+        srvd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        device->CreateShaderResourceView(m_metaBuffer.Get(), &srvd, srvHandle);
 
-	// GridCount用SRVをヒープの1番目に作成
-	handle.ptr += handleSize; // ハンドルを1つ進める
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvd_count = {};
-	srvd_count.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	srvd_count.Buffer.NumElements = m_cellCount;
-	srvd_count.Buffer.StructureByteStride = sizeof(UINT);
-	srvd_count.Format = DXGI_FORMAT_UNKNOWN;
-	srvd_count.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	device->CreateShaderResourceView(m_gridCount.Get(), &srvd_count, handle);
+        // GridCount用SRV(1番目)
+        srvHandle.ptr += srvHandleSize;
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvd_count = {};
+        srvd_count.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        srvd_count.Buffer.NumElements = m_cellCount;
+        srvd_count.Buffer.StructureByteStride = sizeof(UINT);
+        srvd_count.Format = DXGI_FORMAT_UNKNOWN;
+        srvd_count.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        device->CreateShaderResourceView(m_gridCount.Get(), &srvd_count, srvHandle);
 
-	// GridTable用SRVをヒープの2番目に作成
-	handle.ptr += handleSize; // ハンドルをさらに1つ進める
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvd_table = {};
-	srvd_table.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-	srvd_table.Buffer.NumElements = m_cellCount * MAX_PARTICLES_PER_CELL;
-	srvd_table.Buffer.StructureByteStride = sizeof(UINT);
-	srvd_table.Format = DXGI_FORMAT_UNKNOWN;
-	srvd_table.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	device->CreateShaderResourceView(m_gridTable.Get(), &srvd_table, handle);
+        // GridTable用SRV(2番目)
+        srvHandle.ptr += srvHandleSize;
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvd_table = {};
+        srvd_table.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        srvd_table.Buffer.NumElements = m_cellCount * MAX_PARTICLES_PER_CELL;
+        srvd_table.Buffer.StructureByteStride = sizeof(UINT);
+        srvd_table.Format = DXGI_FORMAT_UNKNOWN;
+        srvd_table.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        device->CreateShaderResourceView(m_gridTable.Get(), &srvd_table, srvHandle);
 
 
 	// 定数バッファ
@@ -310,90 +376,6 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	g_Engine->Flush();
 
 
-	// Compute用定数バッファ作成
-	m_sphParamCB = new ConstantBuffer(sizeof(SPHParamsCB));
-	m_viewProjCB = new ConstantBuffer(sizeof(ViewProjCB));
-
-	// 初期値設定
-	if (m_sphParamCB && m_sphParamCB->IsValid()) {
-		auto* cb = m_sphParamCB->GetPtr<SPHParamsCB>();
-		cb->restDensity = 1000.0f;
-		cb->particleMass = 1.0f;
-		cb->viscosity = 1.0f;
-		cb->stiffness = 200.0f;
-		cb->radius = 0.1f;
-		cb->timeStep = 0.016f;
-		cb->particleCount = m_maxParticles;
-		cb->pad0 = 0;
-		cb->gridMin = m_gridMin;
-
-		m_params.restDensity = cb->restDensity;
-		m_params.particleMass = cb->particleMass;
-		m_params.viscosity = cb->viscosity;
-		m_params.stiffness = cb->stiffness;
-		m_params.radius = cb->radius;
-		m_params.timeStep = cb->timeStep;
-		m_grid.SetCellSize(cb->radius);
-
-		m_gridDimX = static_cast<UINT>(ceil((2.0f) / cb->radius)) + 1;
-		m_gridDimY = static_cast<UINT>(ceil((6.0f) / cb->radius)) + 1;
-		m_gridDimZ = static_cast<UINT>(ceil((2.0f) / cb->radius)) + 1;
-		cb->gridDim = DirectX::XMUINT3(m_gridDimX, m_gridDimY, m_gridDimZ);
-		cb->pad1 = cb->pad2 = 0;
-		m_cellCount = m_gridDimX * m_gridDimY * m_gridDimZ;
-
-		D3D12_RESOURCE_DESC rdCount = CD3DX12_RESOURCE_DESC::Buffer(
-			sizeof(UINT) * m_cellCount,
-			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-		D3D12_RESOURCE_DESC rdTable = CD3DX12_RESOURCE_DESC::Buffer(
-			sizeof(UINT) * m_cellCount * MAX_PARTICLES_PER_CELL,
-			D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-
-		// m_gridCount のリソース生成
-		device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rdCount,
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
-			IID_PPV_ARGS(&m_gridCount));
-		// m_gridTable のリソース生成
-		device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rdTable,
-			D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
-			IID_PPV_ARGS(&m_gridTable));
-
-		// GridCount用SRV
-		handle.ptr += handleSize;
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvd_count = {};
-		srvd_count.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-		srvd_count.Buffer.NumElements = m_cellCount;
-		srvd_count.Buffer.StructureByteStride = sizeof(UINT);
-		srvd_count.Format = DXGI_FORMAT_UNKNOWN;
-		srvd_count.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		device->CreateShaderResourceView(m_gridCount.Get(), &srvd_count, handle);
-
-		// GridTable用SRV
-		handle.ptr += handleSize;
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvd_table = {};
-		srvd_table.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-		srvd_table.Buffer.NumElements = m_cellCount * MAX_PARTICLES_PER_CELL;
-		srvd_table.Buffer.StructureByteStride = sizeof(UINT);
-		srvd_table.Format = DXGI_FORMAT_UNKNOWN;
-		srvd_table.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		device->CreateShaderResourceView(m_gridTable.Get(), &srvd_table, handle);
-
-
-		D3D12_CPU_DESCRIPTOR_HANDLE gridHandle = m_uavHeap->GetCPUDescriptorHandleForHeapStart();
-		gridHandle.ptr += handleSize * 3;
-		D3D12_UNORDERED_ACCESS_VIEW_DESC uavCount = {};
-		uavCount.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-		uavCount.Buffer.NumElements = m_cellCount;
-		uavCount.Buffer.StructureByteStride = sizeof(UINT);
-		device->CreateUnorderedAccessView(m_gridCount.Get(), nullptr, &uavCount, gridHandle);
-
-		gridHandle.ptr += handleSize;
-		D3D12_UNORDERED_ACCESS_VIEW_DESC uavTable = {};
-		uavTable.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-		uavTable.Buffer.NumElements = m_cellCount * MAX_PARTICLES_PER_CELL;
-		uavTable.Buffer.StructureByteStride = sizeof(UINT);
-		device->CreateUnorderedAccessView(m_gridTable.Get(), nullptr, &uavTable, gridHandle);
-	}
 
 	if (m_viewProjCB && m_viewProjCB->IsValid()) {
 		auto* cb = m_viewProjCB->GetPtr<ViewProjCB>();
