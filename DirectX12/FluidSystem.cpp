@@ -354,7 +354,7 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 		};
 		cmd->ResourceBarrier(_countof(barriers), barriers);
 
-		if (m_metaInSrvState) {
+		if (m_metaInSrvState) { // SRV状態ならUAVへ
 			auto toUav = CD3DX12_RESOURCE_BARRIER::Transition(
 				m_metaBuffer.Get(),
 				D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
@@ -362,7 +362,7 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 			cmd->ResourceBarrier(1, &toUav);
 			m_metaInSrvState = false;
 		}
-		if (m_particleInSrvState) {
+		if (m_particleInSrvState) { // SRV状態ならUAVへ
 			auto toUav = CD3DX12_RESOURCE_BARRIER::Transition(
 				m_particleBuffer.Get(),
 				D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
@@ -431,22 +431,21 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 		UINT groups = (m_maxParticles + 255) / 256;
 		cmd->Dispatch(groups, 1, 1);
 
-		// Add the following resource barriers
+		// 計算が終わったので、次回の描画で読み取れる状態(SRV)へ遷移
 		auto toSrv = CD3DX12_RESOURCE_BARRIER::Transition(
 			m_metaBuffer.Get(),
 			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
-			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		cmd->ResourceBarrier(1, &toSrv);
 		m_metaInSrvState = true;
 
 		auto particleToSrv = CD3DX12_RESOURCE_BARRIER::Transition(
 			m_particleBuffer.Get(),
 			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
-			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 		cmd->ResourceBarrier(1, &particleToSrv);
 		m_particleInSrvState = true;
+
 	}
 	else {
 		// CPU シミュレーション
