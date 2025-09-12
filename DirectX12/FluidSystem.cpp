@@ -322,19 +322,10 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	device->CreateCommittedResource(&upProps, D3D12_HEAP_FLAG_NONE, &uploadDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
 		IID_PPV_ARGS(&m_particleUpload));
-        uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(ParticleMeta) * maxParticles);
-        device->CreateCommittedResource(&upProps, D3D12_HEAP_FLAG_NONE, &uploadDesc,
-                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                IID_PPV_ARGS(&m_metaUpload));
-        // グリッド用アップロードバッファ
-        uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(UINT) * m_cellCount);
-        device->CreateCommittedResource(&upProps, D3D12_HEAP_FLAG_NONE, &uploadDesc,
-                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                IID_PPV_ARGS(&m_gridCountUpload));
-        uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(UINT) * m_cellCount * MAX_PARTICLES_PER_CELL);
-        device->CreateCommittedResource(&upProps, D3D12_HEAP_FLAG_NONE, &uploadDesc,
-                D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-                IID_PPV_ARGS(&m_gridTableUpload));
+	uploadDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(ParticleMeta) * maxParticles);
+	device->CreateCommittedResource(&upProps, D3D12_HEAP_FLAG_NONE, &uploadDesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+		IID_PPV_ARGS(&m_metaUpload));
 
 	auto cmd = g_Engine->CommandList();
 	auto allocator = g_Engine->CommandAllocator(g_Engine->CurrentBackBufferIndex());
@@ -607,95 +598,35 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 		srcMeta.pData = metas.data();
 		srcMeta.RowPitch = sizeof(ParticleMeta) * m_maxParticles;
 		srcMeta.SlicePitch = srcMeta.RowPitch;
-                UpdateSubresources<1>(cmd, m_metaBuffer.Get(), m_metaUpload.Get(), 0, 0, 1, &srcMeta);
+		UpdateSubresources<1>(cmd, m_metaBuffer.Get(), m_metaUpload.Get(), 0, 0, 1, &srcMeta);
 
-                auto toSrvParticle = CD3DX12_RESOURCE_BARRIER::Transition(
-                        m_particleBuffer.Get(),
-                        D3D12_RESOURCE_STATE_COPY_DEST,
-                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
-                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-                auto toSrvMeta = CD3DX12_RESOURCE_BARRIER::Transition(
-                        m_metaBuffer.Get(),
-                        D3D12_RESOURCE_STATE_COPY_DEST,
-                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
-                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-                CD3DX12_RESOURCE_BARRIER postCopy[] = { toSrvParticle, toSrvMeta };
-                cmd->ResourceBarrier(2, postCopy);
-                m_particleInSrvState = true;
-                m_metaInSrvState = true;
-
-                // --------------------------------------------------
-                // m_gridに格納した粒子IDをGPUバッファへコピー
-                // --------------------------------------------------
-                std::vector<UINT> gridCount(m_cellCount, 0);
-                std::vector<UINT> gridTable(m_cellCount * MAX_PARTICLES_PER_CELL, 0);
-
-                int ox = static_cast<int>(std::floor(m_gridMin.x / radius));
-                int oy = static_cast<int>(std::floor(m_gridMin.y / radius));
-                int oz = static_cast<int>(std::floor(m_gridMin.z / radius));
-
-                for (const auto& cell : m_grid.Cells()) {
-                        int gx = cell.first.x - ox;
-                        int gy = cell.first.y - oy;
-                        int gz = cell.first.z - oz;
-                        if (gx < 0 || gy < 0 || gz < 0 ||
-                                gx >= static_cast<int>(m_gridDimX) ||
-                                gy >= static_cast<int>(m_gridDimY) ||
-                                gz >= static_cast<int>(m_gridDimZ)) {
-                                continue; // グリッド範囲外はスキップ
-                        }
-                        UINT cellId = gx + m_gridDimX * (gy + m_gridDimY * gz);
-                        UINT count = static_cast<UINT>(std::min<size_t>(cell.second.size(), MAX_PARTICLES_PER_CELL));
-                        gridCount[cellId] = count;
-                        for (UINT i = 0; i < count; ++i) {
-                                gridTable[cellId * MAX_PARTICLES_PER_CELL + i] = static_cast<UINT>(cell.second[i]);
-                        }
-                }
-
-                auto toCopyGrid = {
-                        CD3DX12_RESOURCE_BARRIER::Transition(
-                                m_gridCount.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST),
-                        CD3DX12_RESOURCE_BARRIER::Transition(
-                                m_gridTable.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST)
-                };
-                cmd->ResourceBarrier(toCopyGrid.size(), toCopyGrid.begin());
-
-                D3D12_SUBRESOURCE_DATA srcCount = {};
-                srcCount.pData = gridCount.data();
-                srcCount.RowPitch = sizeof(UINT) * m_cellCount;
-                srcCount.SlicePitch = srcCount.RowPitch;
-                UpdateSubresources<1>(cmd, m_gridCount.Get(), m_gridCountUpload.Get(), 0, 0, 1, &srcCount);
-
-                D3D12_SUBRESOURCE_DATA srcTable = {};
-                srcTable.pData = gridTable.data();
-                srcTable.RowPitch = sizeof(UINT) * m_cellCount * MAX_PARTICLES_PER_CELL;
-                srcTable.SlicePitch = srcTable.RowPitch;
-                UpdateSubresources<1>(cmd, m_gridTable.Get(), m_gridTableUpload.Get(), 0, 0, 1, &srcTable);
-
-                auto toSrvGrid = {
-                        CD3DX12_RESOURCE_BARRIER::Transition(
-                                m_gridCount.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
-                        CD3DX12_RESOURCE_BARRIER::Transition(
-                                m_gridTable.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
-                };
-                cmd->ResourceBarrier(toSrvGrid.size(), toSrvGrid.begin());
-                m_gridInSrvState = true;
-        }
+		auto toSrvParticle = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_particleBuffer.Get(),
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		auto toSrvMeta = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_metaBuffer.Get(),
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE |
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		CD3DX12_RESOURCE_BARRIER postCopy[] = { toSrvParticle, toSrvMeta };
+		cmd->ResourceBarrier(2, postCopy);
+		m_particleInSrvState = true;
+		m_metaInSrvState = true;
+	}
 }
 
 // 描画
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4X4& invViewProj, const DirectX::XMFLOAT3& camPos, float isoLevel) {
-        // CPUモードではSimulate内でSRVへの遷移を済ませている
-        if (!m_gridInSrvState) {
-                auto gridToSrv = {
-                        CD3DX12_RESOURCE_BARRIER::Transition(
-                                m_gridCount.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
-                        CD3DX12_RESOURCE_BARRIER::Transition(
-                                m_gridTable.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
-                };
-                cmd->ResourceBarrier(gridToSrv.size(), gridToSrv.begin());
-                m_gridInSrvState = true;
-        }
+	// グリッドバッファをUAVからSRVステートへ遷移
+	auto gridToSrv = {
+		CD3DX12_RESOURCE_BARRIER::Transition(
+			m_gridCount.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE),
+		CD3DX12_RESOURCE_BARRIER::Transition(
+			m_gridTable.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+	};
+	cmd->ResourceBarrier(gridToSrv.size(), gridToSrv.begin());
 
 	// 定数バッファ更新
 	struct MetaCB {
@@ -740,14 +671,13 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4
 	cmd->DrawInstanced(3, 1, 0, 0);
 	
 	// 次フレームのシミュレーションのためにSRVからUAVステートへ戻す
-        auto gridToUav = {
-                CD3DX12_RESOURCE_BARRIER::Transition(
-                        m_gridCount.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
-                CD3DX12_RESOURCE_BARRIER::Transition(
-                        m_gridTable.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
-        };
-        cmd->ResourceBarrier(gridToUav.size(), gridToUav.begin());
-        m_gridInSrvState = false;
+	auto gridToUav = {
+		CD3DX12_RESOURCE_BARRIER::Transition(
+			m_gridCount.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
+		CD3DX12_RESOURCE_BARRIER::Transition(
+			m_gridTable.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+	};
+	cmd->ResourceBarrier(gridToUav.size(), gridToUav.begin());
 }
 
 // マウスクリックでパーティクルを選択

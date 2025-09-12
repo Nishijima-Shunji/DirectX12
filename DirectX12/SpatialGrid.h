@@ -13,12 +13,11 @@ public:
     void Insert(size_t index, const DirectX::XMFLOAT3& pos);
     void Query(const DirectX::XMFLOAT3& center, float radius, std::vector<size_t>& results) const;
 
-    // セルのキーを表すストラクチャ
+private:
     struct Int3 {
         int x, y, z;
         bool operator==(const Int3& other) const { return x == other.x && y == other.y && z == other.z; }
     };
-    // Int3用のハッシュ関数
     struct Int3Hash {
         size_t operator()(const Int3& k) const {
             size_t h1 = std::hash<int>{}(k.x);
@@ -28,10 +27,6 @@ public:
         }
     };
 
-    // 空間ハッシュ一覧を取得
-    const std::unordered_map<Int3, std::vector<size_t>, Int3Hash>& Cells() const { return m_cells; }
-
-private:
     float m_cellSize;
     std::unordered_map<Int3, std::vector<size_t>, Int3Hash> m_cells;
 
