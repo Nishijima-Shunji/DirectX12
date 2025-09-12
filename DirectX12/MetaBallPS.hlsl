@@ -92,24 +92,21 @@ float4 main(VSOutput IN) : SV_TARGET
     float4 wp = mul(invViewProj, clip);
     wp /= wp.w;
     float3 ro = camPos, rd = normalize(wp.xyz - camPos);
-    float3 p = ro;           // 現在のレイ位置
-    float d;                 // フィールド値
-    float3 grad;             // フィールドの勾配
-
-    [loop]
+    float3 p = ro;
+    float d;
+    float3 grad; // フィールドの勾配
+  [loop]
     for (int i = 0; i < MAX_STEP; ++i)
     {
-        d = Field(p, grad);        // フィールド値と勾配を取得
-        if (abs(d) < 0.001)        // 収束したらループを抜ける
+        d = Field(p, grad); // フィールド値と勾配を取得
+        if (abs(d) < 0.001)
             break;
-        // 外側では d が負になるため、符号を反転してレイを前進
-        p += rd * -d * 0.5;
+        p += rd * d * 0.5;
     }
-    if (abs(d) >= 0.001)          // 収束しなければ描画しない
+    if (abs(d) >= 0.001)
         discard;
 
-    // 外側を向く法線が得られるよう勾配の符号も反転
-    float3 n = normalize(-grad);
+    float3 n = normalize(grad);
     float diff = saturate(dot(n, normalize(float3(1, 1, 1))));
     return float4(diff * 0.2, diff * 0.4, diff, 1);
 }
