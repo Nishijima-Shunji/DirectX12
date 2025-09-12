@@ -1,19 +1,19 @@
 cbuffer MetaCB : register(b0)
 {
     float4x4 invViewProj;
-    float3   camPos;
-    float    isoLevel;
-    uint     particleCount;
-    float3   gridMin;
-    uint3    gridDim;
-    float    radius;
-    float    pad;
+    float3 camPos;
+    float isoLevel;
+    uint particleCount;
+    float3 gridMin;
+    uint3 gridDim;
+    float radius;
+    float pad;
 };
 
 struct ParticleMeta
 {
     float3 pos; // ワールド空間位置
-    float  r;    // 半径
+    float r; // 半径
 };
 
 struct VSOutput
@@ -22,7 +22,7 @@ struct VSOutput
     float2 uv : TEXCOORD;
 };
 
-static const int MAX_STEP = 16; // 描画用の制限を半分にし負荷を軽減
+static const int MAX_STEP = 16;
 static const uint MAX_PARTICLES_PER_CELL = 64;
 
 // リソース定義
@@ -59,7 +59,6 @@ float Field(float3 p, out float3 grad)
 
                 // 3Dセルインデックスを1Dインデックスに変換
                 uint cellIdx = neighborCell.x + neighborCell.y * gridDim.x + neighborCell.z * gridDim.x * gridDim.y;
-
                 uint countInCell = GridCounts[cellIdx];
                 if (countInCell > 0)
                 {
@@ -81,7 +80,6 @@ float Field(float3 p, out float3 grad)
         }
     }
     
-    // 近傍全ての寄与を計算した後に閾値と比較する。
     return sum - isoLevel;
 }
 
@@ -94,15 +92,17 @@ float4 main(VSOutput IN) : SV_TARGET
     float3 ro = camPos, rd = normalize(wp.xyz - camPos);
     float3 p = ro;
     float d;
-    float3 grad; // フィールドの勾配
-  [loop]
+    float3 grad;
+
+    [loop]
     for (int i = 0; i < MAX_STEP; ++i)
     {
-        d = Field(p, grad); // フィールド値と勾配を取得
+        d = Field(p, grad);
         if (abs(d) < 0.001)
             break;
-        p += rd * d * 0.5;
+        p += rd * d * 0.2;
     }
+
     if (abs(d) >= 0.001)
         discard;
 
