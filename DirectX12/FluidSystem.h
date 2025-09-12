@@ -27,10 +27,12 @@ private:
 	ComPtr<ID3D12DescriptorHeap>  m_graphicsSrvHeap;    // SRV用ヒープ
 
 	// グリッド情報
-	ComPtr<ID3D12Resource>        m_gridCount;          // 各セルの粒子数
-	ComPtr<ID3D12Resource>        m_gridTable;          // セルごとの粒子インデックステーブル
-	ComPtr<ID3D12Resource>        m_particleUpload;     // パーティクル転送用
-	ComPtr<ID3D12Resource>        m_metaUpload;         // メタボール転送用
+        ComPtr<ID3D12Resource>        m_gridCount;          // 各セルの粒子数
+        ComPtr<ID3D12Resource>        m_gridTable;          // セルごとの粒子インデックステーブル
+        ComPtr<ID3D12Resource>        m_particleUpload;     // パーティクル転送用
+        ComPtr<ID3D12Resource>        m_metaUpload;         // メタボール転送用
+        ComPtr<ID3D12Resource>        m_gridCountUpload;    // グリッドカウント転送用
+        ComPtr<ID3D12Resource>        m_gridTableUpload;    // グリッドテーブル転送用
 
 	// Compute 用定数バッファ
 	ConstantBuffer* m_sphParamCB = nullptr;
@@ -75,10 +77,12 @@ private:
 	std::vector<float> m_density;
 	std::vector<size_t> m_neighborBuffer;
 
-	// メタバッファがシェーダリソース状態にあるか
-	bool m_metaInSrvState = false;
-	// パーティクルバッファがシェーダリソース状態にあるか
-	bool m_particleInSrvState = false;
+        // メタバッファがシェーダリソース状態にあるか
+        bool m_metaInSrvState = false;
+        // パーティクルバッファがシェーダリソース状態にあるか
+        bool m_particleInSrvState = false;
+        // グリッドバッファがシェーダリソース状態にあるか
+        bool m_gridInSrvState = false;
 
 	// ドラッグ中の粒子インデックスとその距離
 	int   m_dragIndex = -1;
