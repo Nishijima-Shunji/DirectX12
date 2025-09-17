@@ -34,10 +34,12 @@ struct ViewProjCB {
 // 描画用定数バッファ
 struct MetaCB {
 	DirectX::XMFLOAT4X4 invVP;
-	DirectX::XMFLOAT3 cam;
-	float iso;
-	UINT count;
-	DirectX::XMFLOAT3 pad;
+	DirectX::XMFLOAT3	cam;
+	float				iso;
+	DirectX::XMFLOAT3	gridMin;
+	UINT				count;
+	DirectX::XMUINT3	gridDim;
+	float				radius;
 };
 
 
@@ -177,13 +179,17 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 
 	// ---------------------------------------------------------------------
 	// 描画用パイプライン生成
-	// ルートシグネチャ (SRV t0, CBV b0 のみ)
-	CD3DX12_DESCRIPTOR_RANGE graRange;
-	graRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	// ルートシグネチャ
+	CD3DX12_DESCRIPTOR_RANGE graRange[3];
+	graRange[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0: ParticleMeta
+	graRange[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1); // t1: Grid Count
+	graRange[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2); // t2: Grid Table
+
 	CD3DX12_ROOT_PARAMETER graRootParam[2];
-	graRootParam[0].InitAsDescriptorTable(1, &graRange, D3D12_SHADER_VISIBILITY_PIXEL);
+	graRootParam[0].InitAsDescriptorTable(3, graRange, D3D12_SHADER_VISIBILITY_PIXEL);
 	graRootParam[1].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
-	CD3DX12_ROOT_SIGNATURE_DESC rsd(2, graRootParam, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+	CD3DX12_ROOT_SIGNATURE_DESC rsd(_countof(graRootParam), graRootParam, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
 	ComPtr<ID3DBlob> graBlob, graErr;
 	D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &graBlob, &graErr);
 	device->CreateRootSignature(0, graBlob->GetBufferPointer(), graBlob->GetBufferSize(), IID_PPV_ARGS(&m_graphicsRS));
@@ -200,10 +206,12 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 
 	// SRV ヒープ (ディスクリプタ数は1つ)
 	D3D12_DESCRIPTOR_HEAP_DESC hd2 = {};
-	hd2.NumDescriptors = 1;
+	hd2.NumDescriptors = 3;
 	hd2.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	hd2.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	device->CreateDescriptorHeap(&hd2, IID_PPV_ARGS(&m_graphicsSrvHeap));
+
+	D3D12_CPU_DESCRIPTOR_HANDLE srvHandle = m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart();
 
 	// MetaBuffer用のSRVをヒープに作成
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvd = {};
@@ -214,6 +222,26 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	srvd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	device->CreateShaderResourceView(m_metaBuffer.Get(), &srvd,
 		m_graphicsSrvHeap->GetCPUDescriptorHandleForHeapStart());
+
+	// GridCount用のSRVを作成
+	srvHandle.ptr += handleSize;
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvd_gc = {};
+	srvd_gc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	srvd_gc.Buffer.NumElements = m_cellCount;
+	srvd_gc.Buffer.StructureByteStride = sizeof(UINT);
+	srvd_gc.Format = DXGI_FORMAT_UNKNOWN;
+	srvd_gc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	device->CreateShaderResourceView(m_gridCount.Get(), &srvd_gc, srvHandle);
+
+	// GridTable用のSRVを作成
+	srvHandle.ptr += handleSize;
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvd_gt = {};
+	srvd_gt.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	srvd_gt.Buffer.NumElements = m_cellCount * MAX_PARTICLES_PER_CELL;
+	srvd_gt.Buffer.StructureByteStride = sizeof(UINT);
+	srvd_gt.Format = DXGI_FORMAT_UNKNOWN;
+	srvd_gt.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	device->CreateShaderResourceView(m_gridTable.Get(), &srvd_gt, srvHandle);
 
 
 	// 定数バッファ (正しいサイズで作成)
@@ -370,6 +398,15 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 			cmd->ResourceBarrier(1, &toUav);
 			m_particleInSrvState = false;
 		}
+		if (m_gridInSrvState) {
+			auto toUav = CD3DX12_RESOURCE_BARRIER::Transition(
+				m_gridCount.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+			cmd->ResourceBarrier(1, &toUav);
+			toUav = CD3DX12_RESOURCE_BARRIER::Transition(
+				m_gridTable.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+			cmd->ResourceBarrier(1, &toUav);
+			m_gridInSrvState = false;
+		}
 
 		cmd->SetComputeRootSignature(m_computeRS.Get());
 		ID3D12DescriptorHeap* heaps[] = { m_uavHeap.Get() };
@@ -446,6 +483,13 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 		cmd->ResourceBarrier(1, &particleToSrv);
 		m_particleInSrvState = true;
 
+		auto gridToSrv = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_gridCount.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		cmd->ResourceBarrier(1, &gridToSrv);
+		gridToSrv = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_gridTable.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		cmd->ResourceBarrier(1, &gridToSrv);
+		m_gridInSrvState = true;
 	}
 	else {
 		// CPU シミュレーション
@@ -564,7 +608,15 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4
 	cb.cam = camPos;
 	cb.iso = isoLevel;
 	cb.count = m_maxParticles;
-	cb.pad = DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f);
+
+	if (m_sphParamCB && m_sphParamCB->IsValid())
+	{
+		auto* sph_cb = m_sphParamCB->GetPtr<SPHParamsCB>();
+		cb.gridMin = sph_cb->gridMin;
+		cb.radius = sph_cb->radius;
+		cb.gridDim = sph_cb->gridDim;
+	}
+
 	void* p;
 	m_graphicsCB->Map(0, nullptr, &p);
 	memcpy(p, &cb, sizeof(cb));

@@ -45,6 +45,7 @@ private:
 	ComPtr<ID3D12RootSignature>    m_graphicsRS;
 	PipelineState* m_graphicsPS;
 	ComPtr<ID3D12Resource>         m_graphicsCB;
+	UINT                           m_sphereIndexCount = 0;
 
 	UINT m_maxParticles;
 	UINT m_threadGroupCount;
@@ -79,6 +80,8 @@ private:
 	bool m_metaInSrvState = false;
 	// パーティクルバッファがシェーダリソース状態にあるか
 	bool m_particleInSrvState = false;
+
+	bool m_gridInSrvState = false;
 
 	// ドラッグ中の粒子インデックスとその距離
 	int   m_dragIndex = -1;
