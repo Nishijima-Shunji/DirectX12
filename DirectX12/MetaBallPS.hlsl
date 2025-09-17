@@ -60,7 +60,7 @@ float4 main(VSOutput IN) : SV_TARGET
         // フィールド値と勾配を取得
         if (abs(d) < 0.001)
             break;
-        p += rd * d * 0.2; // ステップ幅を調整
+        p += rd * d * 0.8; // ステップ幅を調整
     }
 
     if (abs(d) >= 0.001)

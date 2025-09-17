@@ -81,6 +81,8 @@ void CSMain(uint3 id : SV_DispatchThreadID)
             }
         }
     }
+    
+    density = max(density, 0.000001f); // 密度がゼロになるのを防ぎ、ゼロ除算を回避する
     float pressure = stiffness * (density - restDensity);
 
     // ========================================
