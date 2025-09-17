@@ -92,7 +92,7 @@ float4 main(VSOutput IN) : SV_TARGET
         d = Field(p, grad);
         if (abs(d) < 0.01)
             break;
-        p += rd * d * 0.4;
+        p += rd * (-d) * 0.4;
     }
 
     if (abs(d) >= 0.01)

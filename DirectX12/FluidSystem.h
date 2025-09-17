@@ -43,12 +43,13 @@ private:
 
 	// 描画用パイプライン
 	ComPtr<ID3D12RootSignature>    m_graphicsRS;
-	PipelineState* m_graphicsPS;
+	std::unique_ptr<PipelineState> m_graphicsPS;
 	ComPtr<ID3D12Resource>         m_graphicsCB;
 	UINT                           m_sphereIndexCount = 0;
 
 	UINT m_maxParticles;
-	UINT m_threadGroupCount;
+	UINT m_threadGroupCount = 0;
+	UINT m_gridThreadGroupCount = 0;
 	bool m_useGpu = false;
 
 	// グリッド設定

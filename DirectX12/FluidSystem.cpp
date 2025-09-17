@@ -47,15 +47,23 @@ struct MetaCB {
 void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxParticles, UINT threadGroupCount) {
 	m_maxParticles = maxParticles;
 	m_threadGroupCount = (maxParticles + 255) / 256;
+	m_gridThreadGroupCount = (m_cellCount + 255) / 256;
 	m_cpuParticles.resize(maxParticles);
 	m_density.resize(maxParticles);
 	m_neighborBuffer.reserve(MAX_PARTICLES_PER_CELL * 27);
-
 
 	for (auto& p : m_cpuParticles) {
 		p.position = { RandFloat(-1.0f, 1.0f), RandFloat(-1.0f, 5.0f), RandFloat(-1.0f, 1.0f) };
 		p.velocity = { 0.0f, 0.0f, 0.0f };
 	}
+
+	// グリッド解像度の計算
+	m_params.radius = 0.1f; // 半径
+	m_grid.SetCellSize(m_params.radius);
+	m_gridDimX = static_cast<UINT>(ceil((2.0f) / m_params.radius)) + 1;
+	m_gridDimY = static_cast<UINT>(ceil((6.0f) / m_params.radius)) + 1;
+	m_gridDimZ = static_cast<UINT>(ceil((2.0f) / m_params.radius)) + 1;
+	m_cellCount = m_gridDimX * m_gridDimY * m_gridDimZ;
 
 	// ---------------------------------------------------------------------
 	// Computeルートシグネチャー
@@ -144,6 +152,21 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 		nullptr,
 		IID_PPV_ARGS(&m_metaBuffer));
 
+	// グリッドリソースの作成
+	D3D12_RESOURCE_DESC rdCount = CD3DX12_RESOURCE_DESC::Buffer(
+		sizeof(UINT) * m_cellCount,
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	D3D12_RESOURCE_DESC rdTable = CD3DX12_RESOURCE_DESC::Buffer(
+		sizeof(UINT) * m_cellCount * MAX_PARTICLES_PER_CELL,
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rdCount,
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+		IID_PPV_ARGS(&m_gridCount));
+	device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &rdTable,
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
+		IID_PPV_ARGS(&m_gridTable));
+
+	// ディスクリプタヒープ
 	D3D12_DESCRIPTOR_HEAP_DESC hd = {};
 	hd.NumDescriptors = 5; // SRV + UAV + UAV + UAV + UAV
 	hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
@@ -195,7 +218,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	device->CreateRootSignature(0, graBlob->GetBufferPointer(), graBlob->GetBufferSize(), IID_PPV_ARGS(&m_graphicsRS));
 
 	// PSO
-	m_graphicsPS = new PipelineState();
+	m_graphicsPS = std::make_unique<PipelineState>(); // unique_ptrで生成
 	m_graphicsPS->SetRootSignature(m_graphicsRS.Get());
 	D3D12_INPUT_LAYOUT_DESC nullIL{ nullptr, 0 };
 	m_graphicsPS->SetInputLayout(nullIL);
@@ -312,11 +335,13 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 		cb->particleMass = 1.0f;
 		cb->viscosity = 1.0f;
 		cb->stiffness = 200.0f;
-		cb->radius = 0.1f;
+		cb->radius = m_params.radius;
 		cb->timeStep = 0.016f;
 		cb->particleCount = m_maxParticles;
 		cb->pad0 = 0;
 		cb->gridMin = m_gridMin;
+		cb->gridDim = DirectX::XMUINT3(m_gridDimX, m_gridDimY, m_gridDimZ);
+		cb->pad1 = cb->pad2 = 0;
 
 		m_params.restDensity = cb->restDensity;
 		m_params.particleMass = cb->particleMass;
@@ -602,6 +627,8 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 
 // 描画
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4X4& invViewProj, const DirectX::XMFLOAT3& camPos, float isoLevel) {
+	if (!m_graphicsPS || !m_graphicsPS->IsValid()) return; // PSOが有効かチェック
+
 	// 定数バッファ更新
 	MetaCB cb;
 	cb.invVP = invViewProj;
