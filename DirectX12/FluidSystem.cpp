@@ -170,7 +170,7 @@ void FluidSystem::StepCPU(float dt)
                 const float r = Length(rij);
                 density += mass * Poly6(r, h);
             }
-            pi.density = std::max(density, restDensity * 0.1f);
+            pi.density = (std::max)(density, restDensity * 0.1f);
             const float Ci = pi.density * invRestDensity - 1.0f;
 
             XMFLOAT3 gradSum = XMFLOAT3(0.0f, 0.0f, 0.0f);
@@ -275,7 +275,7 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList*, float dt)
     {
         return;
     }
-    const float clampedDt = std::max(dt, 1.0f / 240.0f); // 極端に小さいdtを避ける
+    const float clampedDt = (std::max)(dt, 1.0f / 240.0f); // 極端に小さいdtを避ける
     StepCPU(clampedDt);
     UpdateVertexBuffer();
 }
