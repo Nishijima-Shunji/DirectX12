@@ -1,10 +1,10 @@
 #include "FluidSystem.h"
 #include "Engine.h"
-#include "Camera.h"
+#include "MetaBallPipelineState.h"
 #include "RandomUtil.h"
+#include <d3dx12.h>
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 
 using namespace DirectX;
 
@@ -58,6 +58,13 @@ namespace
     {
         return std::sqrt(Dot(v, v));
     }
+
+    // GPUへ渡す粒子メタデータ構造体
+    struct ParticleMetaGPU
+    {
+        XMFLOAT3 position; // ワールド座標
+        float radius;      // レイマーチ半径
+    };
 }
 
 void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxParticles, UINT threadGroupCount)
@@ -69,7 +76,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
     m_maxParticles = std::min<UINT>(maxParticles, 512);
 
     m_cpuParticles.resize(m_maxParticles);
-    m_cpuVertices.resize(m_maxParticles);
+    m_particleCount = m_maxParticles;
 
     // 粒子初期配置（簡易的に立方体内へランダム配置）
     for (UINT i = 0; i < m_maxParticles; ++i)
@@ -80,53 +87,57 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
         p.x_pred = p.position;
         p.lambda = 0.0f;
         p.density = m_restDensity;
-        m_cpuVertices[i].position = p.position;
     }
 
-    // 頂点バッファをアップロードヒープに作成
-    m_vertexBuffer = std::make_unique<VertexBuffer>(sizeof(ParticleVertex) * m_maxParticles,
-        sizeof(ParticleVertex), m_cpuVertices.data());
-    if (!m_vertexBuffer || !m_vertexBuffer->IsValid())
+    // 粒子メタデータを格納するアップロードバッファを生成
+    const UINT64 bufferSize = sizeof(ParticleMetaGPU) * m_maxParticles;
+    auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+    auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+    if (FAILED(device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE,
+            &bufferDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS(m_particleMetaBuffer.ReleaseAndGetAddressOf()))))
     {
-        printf("FluidSystem: 頂点バッファ生成に失敗しました\n");
+        printf("FluidSystem: 粒子メタデータ用バッファ生成に失敗しました\n");
         return;
     }
 
-    // ルートシグネチャとPSOを生成（ポイント描画）
-    m_rootSignature = std::make_unique<RootSignature>();
-    if (!m_rootSignature || !m_rootSignature->IsValid())
+    // SRVをディスクリプタヒープへ登録（シェーダーから粒子配列を参照するため）
+    m_particleSRV = g_Engine->CbvSrvUavHeap()->RegisterBuffer(
+        m_particleMetaBuffer.Get(), m_maxParticles, sizeof(ParticleMetaGPU));
+    if (!m_particleSRV)
     {
-        printf("FluidSystem: RootSignature生成に失敗しました\n");
+        printf("FluidSystem: 粒子SRVの登録に失敗しました\n");
         return;
     }
 
-    m_pipelineState = std::make_unique<PipelineState>();
-    m_pipelineState->SetInputLayout(ParticleVertex::InputLayout);
-    m_pipelineState->SetRootSignature(m_rootSignature->Get());
-    m_pipelineState->SetVS(L"ParticleVS.cso");
-    m_pipelineState->SetPS(L"ParticlePS.cso");
-    m_pipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT);
-    if (!m_pipelineState || !m_pipelineState->IsValid())
+    // メタボール描画用のルートシグネチャとPSOを生成
+    graphics::MetaBallPipeline::CreateRootSignature(device, m_metaRootSignature);
+    if (!m_metaRootSignature)
     {
-        printf("FluidSystem: PSO生成に失敗しました\n");
+        printf("FluidSystem: MetaBall用RootSignature生成に失敗しました\n");
         return;
     }
 
-    // Transform用定数バッファ（フレーム数分）
+    graphics::MetaBallPipeline::CreatePipelineState(device, m_metaRootSignature.Get(), rtvFormat, m_metaPipelineState);
+    if (!m_metaPipelineState)
+    {
+        printf("FluidSystem: MetaBall用PSO生成に失敗しました\n");
+        return;
+    }
+
+    // メタボール描画に必要な定数バッファ（ダブルバッファリング）
     for (UINT i = 0; i < kFrameCount; ++i)
     {
-        m_transformCB[i] = std::make_unique<ConstantBuffer>(sizeof(Transform));
-        if (!m_transformCB[i] || !m_transformCB[i]->IsValid())
+        m_metaCB[i] = std::make_unique<ConstantBuffer>(sizeof(MetaConstants));
+        if (!m_metaCB[i] || !m_metaCB[i]->IsValid())
         {
-            printf("FluidSystem: ConstantBuffer生成に失敗しました\n");
+            printf("FluidSystem: MetaBall定数バッファ生成に失敗しました\n");
             return;
         }
-
-        auto* cb = m_transformCB[i]->GetPtr<Transform>();
-        cb->World = XMMatrixIdentity();
-        cb->View = XMMatrixIdentity();
-        cb->Proj = XMMatrixIdentity();
     }
+
+    // 初期データをGPUバッファへコピー
+    UpdateParticleBuffer();
 
     m_initialized = true;
 }
@@ -247,26 +258,39 @@ void FluidSystem::StepCPU(float dt)
     }
 }
 
-void FluidSystem::UpdateVertexBuffer()
+void FluidSystem::UpdateParticleBuffer()
 {
-    if (!m_vertexBuffer)
+    if (!m_particleMetaBuffer)
     {
         return;
     }
 
-    for (UINT i = 0; i < m_maxParticles; ++i)
-    {
-        m_cpuVertices[i].position = m_cpuParticles[i].position;
-    }
+    const UINT cpuCount = static_cast<UINT>(m_cpuParticles.size());
+    const UINT count = (std::min)(cpuCount, m_maxParticles);
+    m_particleCount = count;
 
-    void* mapped = nullptr;
-    if (FAILED(m_vertexBuffer->GetResource()->Map(0, nullptr, &mapped)))
+    ParticleMetaGPU* mapped = nullptr;
+    if (FAILED(m_particleMetaBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped))) || !mapped)
     {
-        printf("FluidSystem: 頂点バッファのマップに失敗しました\n");
+        printf("FluidSystem: 粒子メタデータのマップに失敗しました\n");
         return;
     }
-    std::memcpy(mapped, m_cpuVertices.data(), sizeof(ParticleVertex) * m_maxParticles);
-    m_vertexBuffer->GetResource()->Unmap(0, nullptr);
+
+    // 使用している粒子をGPUバッファへ書き戻す
+    for (UINT i = 0; i < count; ++i)
+    {
+        mapped[i].position = m_cpuParticles[i].position;
+        mapped[i].radius = m_renderRadius;
+    }
+
+    // 余剰領域は半径0で埋めて寄与を無効化しておく
+    for (UINT i = count; i < m_maxParticles; ++i)
+    {
+        mapped[i].position = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        mapped[i].radius = 0.0f;
+    }
+
+    m_particleMetaBuffer->Unmap(0, nullptr);
 }
 
 void FluidSystem::Simulate(ID3D12GraphicsCommandList*, float dt)
@@ -277,35 +301,36 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList*, float dt)
     }
     const float clampedDt = (std::max)(dt, 1.0f / 240.0f); // 極端に小さいdtを避ける
     StepCPU(clampedDt);
-    UpdateVertexBuffer();
+    UpdateParticleBuffer();
 }
 
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
-    const XMFLOAT4X4&, const XMFLOAT3&, float)
+    const XMFLOAT4X4& invViewProj, const XMFLOAT3& camPos, float isoLevel)
 {
-    if (!m_initialized || !cmd)
-    {
-        return;
-    }
+    const UINT count = (std::min)(m_particleCount, m_maxParticles);
 
-    auto* camera = g_Engine->GetObj<Camera>("Camera");
-    if (!camera)
+    if (!m_initialized || !cmd || count == 0 || !m_particleSRV)
     {
         return;
     }
 
     const UINT frameIndex = g_Engine->CurrentBackBufferIndex();
-    auto* cb = m_transformCB[frameIndex]->GetPtr<Transform>();
-    cb->World = XMMatrixIdentity();
-    cb->View = camera->GetViewMatrix();
-    cb->Proj = camera->GetProjMatrix();
+    auto* cb = m_metaCB[frameIndex]->GetPtr<MetaConstants>();
+    cb->InvViewProj = invViewProj;
+    cb->CamRadius = XMFLOAT4(camPos.x, camPos.y, camPos.z, m_renderRadius);
+    // ガウスカーネルの特性上しきい値は1未満で扱いやすいので少しスケールダウン
+    cb->IsoCount = XMFLOAT4(isoLevel * 0.6f, static_cast<float>(count), m_rayStepScale, 0.0f);
 
-    cmd->SetGraphicsRootSignature(m_rootSignature->Get());
-    cmd->SetPipelineState(m_pipelineState->Get());
-    cmd->SetGraphicsRootConstantBufferView(0, m_transformCB[frameIndex]->GetAddress());
+    // SRVテーブルを参照できるようにディスクリプタヒープをセット
+    ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
+    cmd->SetDescriptorHeaps(1, heaps);
 
-    auto vbView = m_vertexBuffer->View();
-    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
-    cmd->IASetVertexBuffers(0, 1, &vbView);
-    cmd->DrawInstanced(m_maxParticles, 1, 0, 0);
+    cmd->SetGraphicsRootSignature(m_metaRootSignature.Get());
+    cmd->SetPipelineState(m_metaPipelineState.Get());
+    cmd->SetGraphicsRootDescriptorTable(0, m_particleSRV->HandleGPU);
+    cmd->SetGraphicsRootConstantBufferView(1, m_metaCB[frameIndex]->GetAddress());
+
+    // フルスクリーン三角形を描画してメタボールのスクリーンスペースレイマーチを実行
+    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cmd->DrawInstanced(3, 1, 0, 0);
 }

@@ -78,7 +78,16 @@ namespace graphics {
         desc.SampleDesc.Count = 1;
         desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
         desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        desc.BlendState.RenderTarget[0].BlendEnable = TRUE; // 水らしい半透明表現のためにアルファブレンドを有効化
+        desc.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
+        desc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+        desc.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
+        desc.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
+        desc.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
+        desc.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
+        desc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+        desc.DepthStencilState.DepthEnable = FALSE; // スクリーンスペース合成なのでデプスは参照しない
 
         device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&outPSO));
     }

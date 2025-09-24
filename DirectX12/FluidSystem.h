@@ -4,9 +4,7 @@
 #include <wrl.h>
 #include <DirectXMath.h>
 #include "ConstantBuffer.h"
-#include "RootSignature.h"
-#include "PipelineState.h"
-#include "VertexBuffer.h"
+#include "DescriptorHeap.h"
 #include "SharedStruct.h"
 #include <array>
 #include <memory>
@@ -24,16 +22,27 @@ class FluidSystem {
 private:
     static constexpr UINT kFrameCount = 2; // ダブルバッファ分のCB
 
+    struct MetaConstants
+    {
+        DirectX::XMFLOAT4X4 InvViewProj; // ビュー射影逆行列
+        DirectX::XMFLOAT4   CamRadius;   // xyz: カメラ座標 / w: 粒子半径
+        DirectX::XMFLOAT4   IsoCount;    // x: 等値面しきい値 / y: 粒子数 / z: レイステップ係数 / w: 予約
+    };
+
     std::vector<FluidParticle>          m_cpuParticles;   // CPU上の粒子データ
-    std::vector<ParticleVertex>         m_cpuVertices;    // GPU転送用の頂点配列
-    std::unique_ptr<RootSignature>      m_rootSignature;  // 描画用ルートシグネチャ
-    std::unique_ptr<PipelineState>      m_pipelineState;  // 描画用PSO
-    std::unique_ptr<VertexBuffer>       m_vertexBuffer;   // 粒子座標用VB
-    std::array<std::unique_ptr<ConstantBuffer>, kFrameCount> m_transformCB; // TransformCB
+    ComPtr<ID3D12RootSignature>         m_metaRootSignature; // メタボール描画用ルートシグネチャ
+    ComPtr<ID3D12PipelineState>         m_metaPipelineState; // メタボール描画用PSO
+    std::array<std::unique_ptr<ConstantBuffer>, kFrameCount> m_metaCB; // メタボール用定数バッファ
+    ComPtr<ID3D12Resource>              m_particleMetaBuffer; // 粒子メタデータ（位置＋半径）
+    DescriptorHandle*                   m_particleSRV = nullptr; // 粒子メタデータ用SRVハンドル
+    UINT                                m_particleCount = 0; // 実際に描画する粒子数
 
     UINT        m_maxParticles = 0; // 粒子数
     float       m_timeStep = 1.0f / 60.0f; // 1フレームの時間
     bool        m_initialized = false;     // 初期化済みかどうか
+
+    float       m_renderRadius = 0.10f; // メタボール半径（描画用）
+    float       m_rayStepScale = 0.4f;  // レイマーチの移動係数
 
     // PBFパラメータ（CPU版の簡易実装）
     float                      m_restDensity = 1000.0f;   // 基準密度
@@ -44,7 +53,7 @@ private:
     DirectX::XMFLOAT3          m_gravity = { 0.0f, -9.8f, 0.0f }; // 重力
 
     void StepCPU(float dt);             // CPUでPBF計算を行う
-    void UpdateVertexBuffer();          // GPUへ頂点データを転送
+    void UpdateParticleBuffer();        // GPUへ粒子メタデータを転送
 
 public:
     void Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxParticles, UINT threadGroupCount);
