@@ -316,7 +316,13 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
 
     const UINT frameIndex = g_Engine->CurrentBackBufferIndex();
     auto* cb = m_metaCB[frameIndex]->GetPtr<MetaConstants>();
-    cb->InvViewProj = invViewProj;
+    //cb->InvViewProj = invViewProj;
+
+    // HLSL側は列優先行列を前提としているため、逆ビュー射影行列を転置してから書き込む
+    DirectX::XMMATRIX invVP = DirectX::XMLoadFloat4x4(&invViewProj);
+    invVP = DirectX::XMMatrixTranspose(invVP);
+    DirectX::XMStoreFloat4x4(&cb->InvViewProj, invVP);
+
     cb->CamRadius = XMFLOAT4(camPos.x, camPos.y, camPos.z, m_renderRadius);
     // ガウスカーネルの特性上しきい値は1未満で扱いやすいので少しスケールダウン
     cb->IsoCount = XMFLOAT4(isoLevel * 0.6f, static_cast<float>(count), m_rayStepScale, 0.0f);
