@@ -4,83 +4,59 @@
 #include <wrl.h>
 #include <DirectXMath.h>
 #include "ConstantBuffer.h"
+#include "RootSignature.h"
+#include "PipelineState.h"
+#include "VertexBuffer.h"
+#include "SharedStruct.h"
+#include <array>
+#include <memory>
 #include <vector>
 
 struct FluidParticle {
-    DirectX::XMFLOAT3 position; float _pad0 = 0;
-    DirectX::XMFLOAT3 velocity; float _pad1 = 0;
-    DirectX::XMFLOAT3 x_pred;   float lambda = 0;
-    float density = 0; float _pad2[3] = { 0,0,0 };
+    DirectX::XMFLOAT3 position; // 現在位置
+    DirectX::XMFLOAT3 velocity; // 速度
+    DirectX::XMFLOAT3 x_pred;   // 予測位置
+    float             lambda = 0.0f; // PBF用ラグランジュ乗数
+    float             density = 0.0f; // 推定密度
 };
 
 class FluidSystem {
 private:
-    // CPU側
-    std::vector<FluidParticle>             m_cpuParticles;
+    static constexpr UINT kFrameCount = 2; // ダブルバッファ分のCB
 
-    // 粒子バッファ（SRV/UAV）
-    ComPtr<ID3D12Resource>                 m_particleBuffer;
+    std::vector<FluidParticle>          m_cpuParticles;   // CPU上の粒子データ
+    std::vector<ParticleVertex>         m_cpuVertices;    // GPU転送用の頂点配列
+    std::unique_ptr<RootSignature>      m_rootSignature;  // 描画用ルートシグネチャ
+    std::unique_ptr<PipelineState>      m_pipelineState;  // 描画用PSO
+    std::unique_ptr<VertexBuffer>       m_vertexBuffer;   // 粒子座標用VB
+    std::array<std::unique_ptr<ConstantBuffer>, kFrameCount> m_transformCB; // TransformCB
 
-    // 近傍グリッド（GPU）
-    ComPtr<ID3D12Resource>                 m_cellStart;
-    ComPtr<ID3D12Resource>                 m_cellEnd;
-    ComPtr<ID3D12Resource>                 m_sortedIndices;
+    UINT        m_maxParticles = 0; // 粒子数
+    float       m_timeStep = 1.0f / 60.0f; // 1フレームの時間
+    bool        m_initialized = false;     // 初期化済みかどうか
 
-    // ヒープ
-    ComPtr<ID3D12DescriptorHeap>           m_uavHeap;
-    ComPtr<ID3D12DescriptorHeap>           m_graphicsSrvHeap;
+    // PBFパラメータ（CPU版の簡易実装）
+    float                      m_restDensity = 1000.0f;   // 基準密度
+    float                      m_particleMass = 1.0f;     // 粒子質量
+    float                      m_smoothingRadius = 0.12f; // カーネル半径
+    float                      m_epsilon = 100.0f;        // 安定化項
+    int                        m_solverIterations = 3;    // ソルバ反復回数
+    DirectX::XMFLOAT3          m_gravity = { 0.0f, -9.8f, 0.0f }; // 重力
 
-    // PBF: RS/PSO/CB
-    ComPtr<ID3D12RootSignature>            m_rsPBF;
-    ComPtr<ID3D12PipelineState>            m_psoPredict;
-    ComPtr<ID3D12PipelineState>            m_psoLambda;
-    ComPtr<ID3D12PipelineState>            m_psoDeltaP;
-    ComPtr<ID3D12PipelineState>            m_psoVelocity;
-    ConstantBuffer* m_pbfParamCB = nullptr;
-
-    // SSFR: RS/PSO/RT
-    ComPtr<ID3D12RootSignature>            m_rsSSFR_Gfx;
-    ComPtr<ID3D12RootSignature>            m_rsSSFR_Compute;
-    ComPtr<ID3D12PipelineState>            m_psoSSFR_Particle;
-    ComPtr<ID3D12PipelineState>            m_psoSSFR_Bilateral;
-    ComPtr<ID3D12PipelineState>            m_psoSSFR_Normal;
-    ComPtr<ID3D12PipelineState>            m_psoSSFR_Composite;
-    ComPtr<ID3D12Resource>                 m_texFluidDepth;
-    ComPtr<ID3D12Resource>                 m_texThickness;
-    ComPtr<ID3D12Resource>                 m_texFluidNormal;
-    ComPtr<ID3D12Resource>                 m_cbSSFR_Camera;
-
-    // 表示設定
-    UINT                                   m_viewWidth = 0, m_viewHeight = 0;
-    DXGI_FORMAT                            m_mainRTFormat{};
-    UINT                                   m_sphereIndexCount = 0; // 粒子スプラット用
-    UINT                                   m_ssfrScale = 2;
-
-    // グリッド設定
-    UINT                                   m_gridDimX = 1, m_gridDimY = 1, m_gridDimZ = 1;
-    UINT                                   m_cellCount = 1;
-    DirectX::XMFLOAT3                      m_gridMin{ -1.0f, -1.0f, -1.0f };
-
-    // 状態
-    bool                                   m_particleInSrvState = false;
-    bool                                   m_gridInSrvState = false;
-    bool                                   m_useGpu = true;
-
-    // ドラッグ
-    int                                    m_dragIndex = -1;
-    float                                  m_dragDepth = 0.0f;
+    void StepCPU(float dt);             // CPUでPBF計算を行う
+    void UpdateVertexBuffer();          // GPUへ頂点データを転送
 
 public:
     void Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxParticles, UINT threadGroupCount);
-    void UseGPU(bool enable) { m_useGpu = enable; }
+    void UseGPU(bool enable) { /* GPU実装は未対応なのでダミー */ }
 
     void Simulate(ID3D12GraphicsCommandList* cmd, float dt); // PBF更新
     void Render(ID3D12GraphicsCommandList* cmd,
         const DirectX::XMFLOAT4X4& invViewProj,
         const DirectX::XMFLOAT3& camPos,
-        float isoLevel); // 中でSSFR合成を呼ぶ（isoLevelは互換のため残置OK）
+        float isoLevel);
 
-    void StartDrag(int mouseX, int mouseY, class Camera* cam);
-    void Drag(int mouseX, int mouseY, class Camera* cam);
-    void EndDrag();
+    void StartDrag(int, int, class Camera*) {}
+    void Drag(int, int, class Camera*) {}
+    void EndDrag() {}
 };

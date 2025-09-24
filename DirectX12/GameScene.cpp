@@ -43,8 +43,6 @@ bool GameScene::Init() {
 
         const UINT maxParticles = 5000;
         m_fluid.Init(device, rtvFormat, maxParticles, 0);
-        m_fluid.SetSpatialCellSize(0.1f); // 計算範囲
-        m_fluid.UseGPU(true); // GPU でシミュレーションをするかどうか
 
         // 描画確認用のキューブを生成
         Spawn<DebugCube>();
@@ -57,26 +55,6 @@ void GameScene::Update(float deltaTime) {
         //particle->Update(deltaTime);
         auto cmd = g_Engine->CommandList();
         m_fluid.Simulate(cmd, deltaTime);
-
-        // マウスによる粒子ドラッグ
-        static bool dragging = false;
-        POINT pt; GetCursorPos(&pt); ScreenToClient(g_hWnd, &pt);
-        auto cam = g_Engine->GetObj<Camera>("Camera");
-        if (GetAsyncKeyState(VK_LBUTTON) & 0x8000) {
-                if (!dragging) {
-                        m_fluid.StartDrag(pt.x, pt.y, cam);
-                        dragging = true;
-                }
-                else {
-                        m_fluid.Drag(pt.x, pt.y, cam);
-                }
-        }
-        else {
-                if (dragging) {
-                        m_fluid.EndDrag();
-                        dragging = false;
-                }
-        }
 
 	// 全体のupdate
 	for (auto& obj : m_objects) {
