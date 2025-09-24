@@ -299,10 +299,16 @@
     <FxCompile Include="BlurPS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
-    <FxCompile Include="CompositePS.hlsl">
+    <FxCompile Include="ColorPS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
-    <FxCompile Include="ColorPS.hlsl">
+    <FxCompile Include="Composite.hlsl">
+      <Filter>リソース ファイル\PixelShader</Filter>
+    </FxCompile>
+    <FxCompile Include="PBFCS.hlsl">
+      <Filter>リソース ファイル\ComputeShader</Filter>
+    </FxCompile>
+    <FxCompile Include="SSFRPS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
   </ItemGroup>

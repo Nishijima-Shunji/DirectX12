@@ -41,7 +41,7 @@ bool GameScene::Init() {
 	auto device = g_Engine->Device();
 	const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-        const UINT maxParticles = 50;
+        const UINT maxParticles = 5000;
         m_fluid.Init(device, rtvFormat, maxParticles, 0);
         m_fluid.SetSpatialCellSize(0.1f); // 計算範囲
         m_fluid.UseGPU(true); // GPU でシミュレーションをするかどうか
@@ -104,7 +104,6 @@ void GameScene::Draw() {
 	auto cmd = g_Engine->CommandList();
 	auto invViewProj = g_Engine->GetObj<Camera>("Camera")->GetInvViewProj();
 	auto cameraPos = g_Engine->GetObj<Camera>("Camera")->GetPosition();
-	m_fluid.Render(cmd, invViewProj, cameraPos, 1.0f);
 
 	//particle->Draw();
 
@@ -112,4 +111,5 @@ void GameScene::Draw() {
 		if (actor->IsAlive)
 			actor->Render(commandList);
 	}
+	m_fluid.Render(cmd, invViewProj, cameraPos, 1.0f);
 }

@@ -535,4 +535,9 @@ UINT Engine::FrameBufferHeight() const
 	return m_FrameBufferHeight;
 }
 
+D3D12_CPU_DESCRIPTOR_HANDLE Engine::DepthStencilView() const
+{
+	// DSV ヒープの先頭（1枚だけ使っている前提）
+	return m_pDsvHeap->GetCPUDescriptorHandleForHeapStart();
+}
 

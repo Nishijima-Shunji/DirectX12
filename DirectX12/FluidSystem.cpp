@@ -42,15 +42,20 @@ struct MetaCB {
 	float				radius;
 };
 
+// Accum用CBのCPU側定義
+struct AccumCBCPU {
+	float View[16];
+	float Proj[16];
+	float CameraRight[3]; float _pad0;
+	float CameraUp[3];    float _pad1;
+	float ViewportSize[2]; float _pad2[2];
+	float PixelScale;      float _pad3[3];
+};
+
 
 // 流体システム初期化
 void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxParticles, UINT threadGroupCount) {
-	m_maxParticles = maxParticles;
-	m_threadGroupCount = (maxParticles + 255) / 256;
-	m_gridThreadGroupCount = (m_cellCount + 255) / 256;
 	m_cpuParticles.resize(maxParticles);
-	m_density.resize(maxParticles);
-	m_neighborBuffer.reserve(MAX_PARTICLES_PER_CELL * 27);
 
 	for (auto& p : m_cpuParticles) {
 		p.position = { RandFloat(-1.0f, 1.0f), RandFloat(-1.0f, 5.0f), RandFloat(-1.0f, 1.0f) };
@@ -218,13 +223,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	device->CreateRootSignature(0, graBlob->GetBufferPointer(), graBlob->GetBufferSize(), IID_PPV_ARGS(&m_graphicsRS));
 
 	// PSO
-	m_graphicsPS = std::make_unique<PipelineState>(); // unique_ptrで生成
-	m_graphicsPS->SetRootSignature(m_graphicsRS.Get());
-	D3D12_INPUT_LAYOUT_DESC nullIL{ nullptr, 0 };
-	m_graphicsPS->SetInputLayout(nullIL);
-	m_graphicsPS->SetVS(L"MetaBallVS.cso");
-	m_graphicsPS->SetPS(L"MetaBallPS.cso");
-	m_graphicsPS->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+
 
 
 	// SRV ヒープ (ディスクリプタ数は1つ)
@@ -324,10 +323,6 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 	g_Engine->Flush();
 
 
-	// Compute用定数バッファ作成
-	m_sphParamCB = new ConstantBuffer(sizeof(SPHParamsCB));
-	m_viewProjCB = new ConstantBuffer(sizeof(ViewProjCB));
-
 	// 初期値設定
 	if (m_sphParamCB && m_sphParamCB->IsValid()) {
 		auto* cb = m_sphParamCB->GetPtr<SPHParamsCB>();
@@ -392,6 +387,10 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 		auto* cb = m_viewProjCB->GetPtr<ViewProjCB>();
 		DirectX::XMStoreFloat4x4(&cb->viewProj, DirectX::XMMatrixIdentity());
 	}
+
+	m_mainRTFormat = rtvFormat;
+	m_viewWidth = g_Engine->FrameBufferWidth();
+	m_viewHeight = g_Engine->FrameBufferHeight();
 }
 
 // シミュレーション実行
@@ -627,7 +626,6 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt) {
 
 // 描画
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4X4& invViewProj, const DirectX::XMFLOAT3& camPos, float isoLevel) {
-	if (!m_graphicsPS || !m_graphicsPS->IsValid()) return; // PSOが有効かチェック
 
 	// 定数バッファ更新
 	MetaCB cb;
@@ -636,27 +634,6 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const DirectX::XMFLOAT4
 	cb.iso = isoLevel;
 	cb.count = m_maxParticles;
 
-	if (m_sphParamCB && m_sphParamCB->IsValid())
-	{
-		auto* sph_cb = m_sphParamCB->GetPtr<SPHParamsCB>();
-		cb.gridMin = sph_cb->gridMin;
-		cb.radius = sph_cb->radius;
-		cb.gridDim = sph_cb->gridDim;
-	}
-
-	void* p;
-	m_graphicsCB->Map(0, nullptr, &p);
-	memcpy(p, &cb, sizeof(cb));
-	m_graphicsCB->Unmap(0, nullptr);
-
-	// スクリーンスペース処理を行わず直接描画する
-	cmd->SetDescriptorHeaps(1, m_graphicsSrvHeap.GetAddressOf());
-	cmd->SetGraphicsRootSignature(m_graphicsRS.Get());
-	cmd->SetPipelineState(m_graphicsPS->Get());
-	cmd->SetGraphicsRootDescriptorTable(0, m_graphicsSrvHeap->GetGPUDescriptorHandleForHeapStart());
-	cmd->SetGraphicsRootConstantBufferView(1, m_graphicsCB->GetGPUVirtualAddress());
-	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	cmd->DrawInstanced(3, 1, 0, 0);
 }
 
 // マウスクリックでパーティクルを選択
@@ -738,3 +715,5 @@ void FluidSystem::EndDrag()
 {
 	m_dragIndex = -1;
 }
+
+
