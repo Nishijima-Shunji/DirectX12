@@ -19,9 +19,9 @@ SamplerState samplerLinearClamp : register(s0);
 Texture2D SceneColor : register(t0);
 Texture2D SceneDepth : register(t1);
 Texture2D<float> ThicknessTex : register(t3);
-RWTexture2D<uint> FluidDepth : register(u0); // R32_FLOAT
-RWTexture2D<uint> Thickness : register(u1); // R16_FLOAT or R32_FLOAT
-RWTexture2D<float4> FluidNormal : register(u2); // 8:8:8:8_UNORM でも可
+RWTexture2D<uint> FluidDepth : register(u1); // R32_FLOAT
+RWTexture2D<uint> Thickness : register(u2); // R16_FLOAT or R32_FLOAT
+RWTexture2D<float4> FluidNormal : register(u3); // 8:8:8:8_UNORM でも可
 
 // 1 粒子スプラット（VS/PS 最小）
 struct VSIn
@@ -90,6 +90,36 @@ void CS_Normal(uint3 id : SV_DispatchThreadID)
     FluidNormal[p] = float4(N * 0.5 + 0.5, 1);
 }
 
+// 3 合成（PS）
+float4 PS_Composite(float4 svpos : SV_POSITION, float2 uv : TEXCOORD) : SV_TARGET
+{
+    uint2 p = uint2(svpos.xy);
+
+    // 深度はuintとして格納しているのでasfloatで復元
+    uint du = FluidDepth.Load(int3(p, 0));
+    float d = asfloat(du);
+    if (d == 0.0)
+        discard; // 事前クリア次第で条件は調整
+
+    // 厚みはRTVに描いたテクスチャをSRVとして読む（t3想定）
+    float t = ThicknessTex.Load(int3(p, 0));
+
+    float3 N = normalize(FluidNormal.Load(int3(p, 0)).xyz * 2 - 1);
+
+    // Fresnel（Schlick）
+    float3 V = float3(0, 0, 1); // 簡易。実際は view 空間の -normalize(viewPos) 推奨
+    float cosT = saturate(dot(N, V));
+    float3 F = iorF0 + (1 - iorF0) * pow(1 - cosT, 5);
+
+    // 屈折（簡易オフセット）
+    float2 refrUV = uv + N.xy * 0.02;
+    float3 refr = SceneColor.SampleLevel(samplerLinearClamp, refrUV, 0).rgb;
+
+    // Beer-Lambert
+    float3 trans = exp(-absorb.xxx * t);
+    float3 col = lerp(refr * trans, 1.0.xxx, F);
+    return float4(col, 1);
+}
 
 
 //============================================================
@@ -125,33 +155,4 @@ float4 main(float4 svpos : SV_POSITION, float2 uv : TEXCOORD) : SV_TARGET
 #error "Define one of: PASS_PARTICLE_VS / PASS_PARTICLE_PS / PASS_BILATERAL_CS / PASS_NORMAL_CS / PASS_COMPOSITE_PS"
 #endif
 
-// 3 合成（PS）
-float4 PS_Composite(float4 svpos : SV_POSITION, float2 uv : TEXCOORD) : SV_TARGET
-{
-    uint2 p = uint2(svpos.xy);
 
-    // 深度はuintとして格納しているのでasfloatで復元
-    uint du = FluidDepth.Load(int3(p, 0));
-    float d = asfloat(du);
-    if (d == 0.0)
-        discard; // 事前クリア次第で条件は調整
-
-    // 厚みはRTVに描いたテクスチャをSRVとして読む（t3想定）
-    float t = ThicknessTex.Load(int3(p, 0));
-
-    float3 N = normalize(FluidNormal.Load(int3(p, 0)).xyz * 2 - 1);
-
-    // Fresnel（Schlick）
-    float3 V = float3(0, 0, 1); // 簡易。実際は view 空間の -normalize(viewPos) 推奨
-    float cosT = saturate(dot(N, V));
-    float3 F = iorF0 + (1 - iorF0) * pow(1 - cosT, 5);
-
-    // 屈折（簡易オフセット）
-    float2 refrUV = uv + N.xy * 0.02;
-    float3 refr = SceneColor.SampleLevel(samplerLinearClamp, refrUV, 0).rgb;
-
-    // Beer-Lambert
-    float3 trans = exp(-absorb.xxx * t);
-    float3 col = lerp(refr * trans, 1.0.xxx, F);
-    return float4(col, 1);
-}
