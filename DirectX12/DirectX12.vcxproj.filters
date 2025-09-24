@@ -308,8 +308,20 @@
     <FxCompile Include="PBFCS.hlsl">
       <Filter>リソース ファイル\ComputeShader</Filter>
     </FxCompile>
-    <FxCompile Include="SSFRPS.hlsl">
+    <FxCompile Include="SSFRParticlePS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
+    </FxCompile>
+    <FxCompile Include="SSFRCompositePS.hlsl">
+      <Filter>リソース ファイル\PixelShader</Filter>
+    </FxCompile>
+    <FxCompile Include="SSFRParticleVS.hlsl">
+      <Filter>リソース ファイル\VertexShader</Filter>
+    </FxCompile>
+    <FxCompile Include="SSFRBilateralCS.hlsl">
+      <Filter>リソース ファイル\ComputeShader</Filter>
+    </FxCompile>
+    <FxCompile Include="SSFRNormalCS.hlsl">
+      <Filter>リソース ファイル\ComputeShader</Filter>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>

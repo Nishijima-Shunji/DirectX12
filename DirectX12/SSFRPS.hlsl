@@ -1,18 +1,18 @@
 
-// 1 —±q‚ğ‹…ƒCƒ“ƒXƒ^ƒ“ƒVƒ“ƒO‚Å•`‚«AFluidDepth/Thickness‚ğì‚é
-// 2 [“x‚ğƒoƒCƒ‰ƒeƒ‰ƒ‹•½ŠŠ -> –@üÄ\¬
-// 3 ‹üÜ + Fresnel”½Ë + Beer-Lambert ‚Å‡¬
+// 1 ç²’å­ã‚’çƒã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚·ãƒ³ã‚°ã§æãã€FluidDepth/Thicknessã‚’ä½œã‚‹
+// 2 æ·±åº¦ã‚’ãƒã‚¤ãƒ©ãƒ†ãƒ©ãƒ«å¹³æ»‘ -> æ³•ç·šå†æ§‹æˆ
+// 3 å±ˆæŠ˜ + Fresnelåå°„ + Beer-Lambert ã§åˆæˆ
 
 cbuffer CameraCB : register(b0)
 {
-    float4x4 proj; // “§‹“Š‰e
+    float4x4 proj; // é€è¦–æŠ•å½±
     float4x4 view;
     float2 screenSize;
     float2 invScreenSize;
     float nearZ;
     float farZ;
-    float3 iorF0; // IOR‚©‚ç•ÏŠ·‚µ‚½F0i—á: … 0.02j
-    float absorb; // ‹zûŒW”iBeer-Lambertj
+    float3 iorF0; // IORã‹ã‚‰å¤‰æ›ã—ãŸF0ï¼ˆä¾‹: æ°´ 0.02ï¼‰
+    float absorb; // å¸åä¿‚æ•°ï¼ˆBeer-Lambertï¼‰
 }
 
 SamplerState samplerLinearClamp : register(s0);
@@ -20,9 +20,9 @@ Texture2D SceneColor : register(t0);
 Texture2D SceneDepth : register(t1);
 RWTexture2D<uint> FluidDepth : register(u0); // R32_FLOAT
 RWTexture2D<uint> Thickness : register(u1); // R16_FLOAT or R32_FLOAT
-RWTexture2D<float4> FluidNormal : register(u2); // 8:8:8:8_UNORM ‚Å‚à‰Â
+RWTexture2D<float4> FluidNormal : register(u2); // 8:8:8:8_UNORM ã§ã‚‚å¯
 
-// 1 —±qƒXƒvƒ‰ƒbƒgiVS/PS Å¬j
+// 1 ç²’å­ã‚¹ãƒ—ãƒ©ãƒƒãƒˆï¼ˆVS/PS æœ€å°ï¼‰
 struct VSIn
 {
     float3 pos : POSITION;
@@ -40,7 +40,7 @@ VSOut VS_Particle(VSIn v)
     VSOut o;
     float4 wpos = float4(v.center, 1);
     float4 vpos = mul(view, wpos);
-    // ƒXƒNƒŠ[ƒ“‹óŠÔ‚Ì‰~”Â‚ÖiŠÈˆÕFƒ|ƒCƒ“ƒgƒXƒvƒ‰ƒCƒg‘ã‘Öj
+    // ã‚¹ã‚¯ãƒªãƒ¼ãƒ³ç©ºé–“ã®å††æ¿ã¸ï¼ˆç°¡æ˜“ï¼šãƒã‚¤ãƒ³ãƒˆã‚¹ãƒ—ãƒ©ã‚¤ãƒˆä»£æ›¿ï¼‰
     o.pos = mul(proj, vpos);
     o.viewPos = vpos.xyz;
     o.radius = v.radius;
@@ -49,32 +49,32 @@ VSOut VS_Particle(VSIn v)
 
 float sphereDepth(float2 uv, float3 viewCenter, float radius)
 {
-    // ‰æ–Êã‚Å‹…‚Ì[“x‚ğ‹ß—iƒXƒvƒ‰ƒCƒg“à‚ÌZ‚ğ‹‚ß‚éj
-    // ‚±‚±‚Å‚ÍŠÈ—ª‰»F’†S[“x‚ğÌ—piÀ‰^—p‚ÍUV‚©‚ç‹…–Ê•û’ö®‚ÅZ•â³j
+    // ç”»é¢ä¸Šã§çƒã®æ·±åº¦ã‚’è¿‘ä¼¼ï¼ˆã‚¹ãƒ—ãƒ©ã‚¤ãƒˆå†…ã®Zã‚’æ±‚ã‚ã‚‹ï¼‰
+    // ã“ã“ã§ã¯ç°¡ç•¥åŒ–ï¼šä¸­å¿ƒæ·±åº¦ã‚’æ¡ç”¨ï¼ˆå®Ÿé‹ç”¨ã¯UVã‹ã‚‰çƒé¢æ–¹ç¨‹å¼ã§Zè£œæ­£ï¼‰
     return -viewCenter.z;
 }
 
 float4 PS_DepthThickness(VSOut i) : SV_TARGET
 {
-    float2 uv = i.pos.xy * 0.5 / float2(screenSize.x * 0.5, screenSize.y * 0.5); // —ª
+    float2 uv = i.pos.xy * 0.5 / float2(screenSize.x * 0.5, screenSize.y * 0.5); // ç•¥
     float d = sphereDepth(uv, i.viewPos, i.radius);
-    InterlockedMin(FluidDepth[uint2(i.pos.xy)], d);             // ‹ß‚¢•û‚Ì[“x
-    InterlockedAdd(Thickness[uint2(i.pos.xy)], i.radius * 0.5); // ŠÈˆÕŒú‚İ
+    InterlockedMin(FluidDepth[uint2(i.pos.xy)], d);             // è¿‘ã„æ–¹ã®æ·±åº¦
+    InterlockedAdd(Thickness[uint2(i.pos.xy)], i.radius * 0.5); // ç°¡æ˜“åšã¿
     return 0;
 }
 
-// 2 ƒoƒCƒ‰ƒeƒ‰ƒ‹•½ŠŠ & –@ü
+// 2 ãƒã‚¤ãƒ©ãƒ†ãƒ©ãƒ«å¹³æ»‘ & æ³•ç·š
 [numthreads(8, 8, 1)]
 void CS_Bilateral(uint3 id : SV_DispatchThreadID)
 {
-    // ‹ß–T‚Ì[“x‚ğ[“x·d‚İ‚Å•½ŠŠ‰»iÀ‘•È—ªFƒKƒEƒX~[“x·j
+    // è¿‘å‚ã®æ·±åº¦ã‚’æ·±åº¦å·®é‡ã¿ã§å¹³æ»‘åŒ–ï¼ˆå®Ÿè£…çœç•¥ï¼šã‚¬ã‚¦ã‚¹Ã—æ·±åº¦å·®ï¼‰
     // FluidDepth[...] = blurredDepth;
 }
 
 float3 reconstructViewPos(uint2 px)
 {
     float z = FluidDepth[px];
-    // ‹tË‰e‚ÅviewÀ•W‚ğ–ß‚·iÈ—ªFÀ‘•‚ÍŠù‘¶‚Ì‹tË‰eŠÖ”‚ğj
+    // é€†å°„å½±ã§viewåº§æ¨™ã‚’æˆ»ã™ï¼ˆçœç•¥ï¼šå®Ÿè£…ã¯æ—¢å­˜ã®é€†å°„å½±é–¢æ•°ã‚’ï¼‰
     return float3(0, 0, z);
 }
 
@@ -89,7 +89,46 @@ void CS_Normal(uint3 id : SV_DispatchThreadID)
     FluidNormal[p] = float4(N * 0.5 + 0.5, 1);
 }
 
-// 3 ‡¬iPSj
+
+
+//============================================================
+// epXÉ‰mainÖØ‚Ö‚é‚½ß‚Ì•
+#if defined(PASS_PARTICLE_VS)
+VSOut main(VSIn v)
+{
+    // q`pVS{Ì‚Ä‚Ño
+    return VS_Particle(v);
+}
+#elif defined(PASS_PARTICLE_PS)
+float4 main(VSOut i) : SV_TARGET
+{
+    // qÌ[xÆŒİ‚PS{Ì‚Ä‚Ño
+    return PS_DepthThickness(i);
+}
+#elif defined(PASS_BILATERAL_CS)
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID)
+{
+    // [xeNX`ğ•½ŠCS{Ì‚Ä‚Ño
+    CS_Bilateral(id);
+}
+#elif defined(PASS_NORMAL_CS)
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID)
+{
+    // @Ä\CS{Ì‚Ä‚Ño
+    CS_Normal(id);
+}
+#elif defined(PASS_COMPOSITE_PS)
+float4 main(float4 svpos : SV_POSITION, float2 uv : TEXCOORD) : SV_TARGET
+{
+    // ÅIsPS{Ì‚Ä‚Ño
+    return PS_Composite(svpos, uv);
+}
+#else
+#error "Define one of: PASS_PARTICLE_VS / PASS_PARTICLE_PS / PASS_BILATERAL_CS / PASS_NORMAL_CS / PASS_COMPOSITE_PS"
+#endif
+// 3 åˆæˆï¼ˆPSï¼‰
 float4 PS_Composite(float4 svpos : SV_POSITION, float2 uv : TEXCOORD) : SV_TARGET
 {
     float d = FluidDepth[uint2(svpos.xy)];
@@ -99,18 +138,18 @@ float4 PS_Composite(float4 svpos : SV_POSITION, float2 uv : TEXCOORD) : SV_TARGE
     float t = Thickness[uint2(svpos.xy)];
     float3 N = normalize(FluidNormal[uint2(svpos.xy)].xyz * 2 - 1);
 
-    // FresneliSchlickj
+    // Fresnelï¼ˆSchlickï¼‰
     float3 V = float3(0, 0, 1);
     float cosT = saturate(dot(N, V));
     float3 F = iorF0 + (1 - iorF0) * pow(1 - cosT, 5);
 
-    // ‹üÜiŠÈˆÕF”wŒi‚ğƒIƒtƒZƒbƒgƒTƒ“ƒvƒ‹j
-    float2 refrUV = uv + N.xy * 0.02; // ŒW”‚Í’²®
+    // å±ˆæŠ˜ï¼ˆç°¡æ˜“ï¼šèƒŒæ™¯ã‚’ã‚ªãƒ•ã‚»ãƒƒãƒˆã‚µãƒ³ãƒ—ãƒ«ï¼‰
+    float2 refrUV = uv + N.xy * 0.02; // ä¿‚æ•°ã¯èª¿æ•´
     float3 refr = SceneColor.SampleLevel(samplerLinearClamp, refrUV, 0).rgb;
 
     // Beer-Lambert
     float3 trans = exp(-absorb.xxx * t);
-    float3 col = lerp(refr * trans, 1.0.xxx, F); // ”½Ë‚ÍÈ—ªorƒLƒ…[ƒuƒ}ƒbƒv‚Å‰ÁZ
+    float3 col = lerp(refr * trans, 1.0.xxx, F); // åå°„ã¯çœç•¥orã‚­ãƒ¥ãƒ¼ãƒ–ãƒãƒƒãƒ—ã§åŠ ç®—
 
     return float4(col, 1);
 }
