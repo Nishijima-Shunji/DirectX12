@@ -156,6 +156,9 @@ void FluidSystem::SetMaterial(const FluidMaterial& material)
     }
 }
 
+// ============================
+// 流体生成
+// ============================
 void FluidSystem::SpawnParticlesSphere(const XMFLOAT3& center, float radius, UINT count)
 {
     if (!m_initialized || count == 0)
@@ -195,6 +198,9 @@ void FluidSystem::SpawnParticlesSphere(const XMFLOAT3& center, float radius, UIN
     m_gpuDirty = true;
 }
 
+// ============================
+// 流体削除
+// ============================
 void FluidSystem::RemoveParticlesSphere(const XMFLOAT3& center, float radius)
 {
     if (!m_initialized || m_particleCount == 0)
@@ -215,6 +221,7 @@ void FluidSystem::RemoveParticlesSphere(const XMFLOAT3& center, float radius)
     m_cpuDirty = true;
     m_gpuDirty = true;
 }
+
 
 void FluidSystem::QueueGather(const XMFLOAT3& target, float radius, float strength)
 {
@@ -277,10 +284,7 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt)
     }
 }
 
-void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
-    const XMFLOAT4X4& invViewProj,
-    const XMFLOAT3& camPos,
-    float isoLevel)
+void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const XMFLOAT4X4& invViewProj, const XMFLOAT3& camPos, float isoLevel)
 {
     if (!m_initialized || !cmd || m_particleCount == 0 || !m_activeMetaSRV)
     {

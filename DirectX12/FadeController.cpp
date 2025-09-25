@@ -25,7 +25,6 @@ bool FadeController::Init()
         if (!m_constantBuffers[i]->IsValid()) return false;
     }
 
-    // simple root signature with one constant buffer
     CD3DX12_ROOT_PARAMETER param; 
     param.InitAsConstantBufferView(0);
     D3D12_ROOT_SIGNATURE_DESC rsDesc = {};

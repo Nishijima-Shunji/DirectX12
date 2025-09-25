@@ -41,20 +41,23 @@ bool GameScene::Init() {
 	auto device = g_Engine->Device();
 	const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-        const UINT maxParticles = 5000;
-        m_fluid.Init(device, rtvFormat, maxParticles, 0);
+	const UINT maxParticles = 5000;
+	m_fluid.Init(device, rtvFormat, maxParticles, 0);
+	m_fluid.SpawnParticlesSphere(XMFLOAT3(0.0f,0.0f,0.0f),10.0f,50);
+	m_fluid.UseGPU(true);
 
-        // 描画確認用のキューブを生成
-        Spawn<DebugCube>();
 
-        return true;
+	// 描画確認用のキューブを生成
+	Spawn<DebugCube>();
+
+	return true;
 }
 
 void GameScene::Update(float deltaTime) {
-        g_Engine->GetObj<Camera>("Camera")->Update(deltaTime);
-        //particle->Update(deltaTime);
-        auto cmd = g_Engine->CommandList();
-        m_fluid.Simulate(cmd, deltaTime);
+	g_Engine->GetObj<Camera>("Camera")->Update(deltaTime);
+	//particle->Update(deltaTime);
+	auto cmd = g_Engine->CommandList();
+	m_fluid.Simulate(cmd, deltaTime);
 
 	// 全体のupdate
 	for (auto& obj : m_objects) {
@@ -80,8 +83,9 @@ void GameScene::Update(float deltaTime) {
 void GameScene::Draw() {
 	commandList = g_Engine->CommandList(); // コマンドリストを取得
 	auto cmd = g_Engine->CommandList();
-	auto invViewProj = g_Engine->GetObj<Camera>("Camera")->GetInvViewProj();
-	auto cameraPos = g_Engine->GetObj<Camera>("Camera")->GetPosition();
+	auto camObj = g_Engine->GetObj<Camera>("Camera");
+	auto invViewProj = camObj->GetInvViewProj();
+	auto cameraPos = camObj->GetPosition();
 
 	//particle->Draw();
 
