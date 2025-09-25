@@ -168,7 +168,11 @@ namespace graphics {
         desc.RTVFormats[0] = rtvFormat;
         desc.SampleMask = UINT_MAX;
         desc.SampleDesc.Count = 1;
-        desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        //desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        auto rasterizerDesc = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        rasterizerDesc.FrontCounterClockwise = TRUE; // 反時計回りを表面とする
+        desc.RasterizerState = rasterizerDesc;
+
         desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
         desc.BlendState.RenderTarget[0].BlendEnable = TRUE; // 水らしい半透明表現のためにアルファブレンドを有効化
         desc.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
@@ -181,7 +185,11 @@ namespace graphics {
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
         desc.DepthStencilState.DepthEnable = FALSE; // スクリーンスペース合成なのでデプスは参照しない
 
-        device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&outPSO));
+        HRESULT hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&outPSO));
+        if (hr) {
+			printf("FluidSystem: メタボール用PSO生成に失敗しました (HRESULT=0x%08X)\n", hr);
+        }
+        
     }
 
 } // namespace graphics

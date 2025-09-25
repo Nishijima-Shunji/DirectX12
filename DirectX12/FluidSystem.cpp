@@ -202,7 +202,7 @@ void FluidSystem::StepCPU(float dt)
             }
             sumGrad2 += Dot(gradSum, gradSum);
 
-            pi.lambda = -Ci / (sumGrad2 + epsilon);
+            pi.lambda = Ci / (sumGrad2 + epsilon);
         }
 
         // Δpの計算
@@ -272,7 +272,7 @@ void FluidSystem::UpdateParticleBuffer()
     ParticleMetaGPU* mapped = nullptr;
     if (FAILED(m_particleMetaBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped))) || !mapped)
     {
-        printf("FluidSystem: 粒子メタデータのマップに失敗しました\n");
+        printf("FluidSystem : particle data map failed\n");
         return;
     }
 
@@ -316,7 +316,6 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
 
     const UINT frameIndex = g_Engine->CurrentBackBufferIndex();
     auto* cb = m_metaCB[frameIndex]->GetPtr<MetaConstants>();
-    //cb->InvViewProj = invViewProj;
 
     // HLSL側は列優先行列を前提としているため、逆ビュー射影行列を転置してから書き込む
     DirectX::XMMATRIX invVP = DirectX::XMLoadFloat4x4(&invViewProj);

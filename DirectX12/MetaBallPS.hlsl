@@ -111,4 +111,5 @@ float4 main(VSOutput IN) : SV_TARGET
     color = lerp(envColor, color, alpha); // 透過時は背景色と自然に混ざるように調整
 
     return float4(saturate(color), alpha);
+
 }
