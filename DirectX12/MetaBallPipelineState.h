@@ -10,11 +10,11 @@ namespace graphics {
 
     struct MetaBallPipeline
     {
-        // ‰Šú‰»
-        static void CreateRootSignature(ID3D12Device* device,
+        // ルートシグネチャ生成（失敗時は false を返す）
+        static bool CreateRootSignature(ID3D12Device* device,
             ComPtr<ID3D12RootSignature>& outRootSig);
 
-        static void CreatePipelineState(ID3D12Device* device,
+        static bool CreatePipelineState(ID3D12Device* device,
             ID3D12RootSignature* rootSig,
             DXGI_FORMAT rtvFormat,
             ComPtr<ID3D12PipelineState>& outPSO);

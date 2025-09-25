@@ -110,10 +110,15 @@ namespace graphics {
         }
     }
 
-    void MetaBallPipeline::CreateRootSignature(
+    bool MetaBallPipeline::CreateRootSignature(
         ID3D12Device* device,
         ComPtr<ID3D12RootSignature>& outRootSig)
     {
+        if (!device)
+        {
+            return false;
+        }
+
         // SRV(t0) + CBV(b0)
         CD3DX12_DESCRIPTOR_RANGE ranges[1];
         ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
@@ -129,32 +134,54 @@ namespace graphics {
         );
 
         ComPtr<ID3DBlob> blob, error;
-        D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error);
-        device->CreateRootSignature(
+        HRESULT hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error);
+        if (FAILED(hr))
+        {
+            if (error)
+            {
+                printf("FluidSystem: ルートシグネチャのシリアライズに失敗しました -> %s\n", static_cast<const char*>(error->GetBufferPointer()));
+            }
+            return false;
+        }
+
+        hr = device->CreateRootSignature(
             0,
             blob->GetBufferPointer(),
             blob->GetBufferSize(),
-            IID_PPV_ARGS(&outRootSig)
+            IID_PPV_ARGS(outRootSig.ReleaseAndGetAddressOf())
         );
+        if (FAILED(hr))
+        {
+            printf("FluidSystem: ルートシグネチャの生成に失敗しました (HRESULT=0x%08X)\n", hr);
+            outRootSig.Reset();
+            return false;
+        }
+
+        return true;
     }
 
-    void MetaBallPipeline::CreatePipelineState(
+    bool MetaBallPipeline::CreatePipelineState(
         ID3D12Device* device,
         ID3D12RootSignature* rootSig,
         DXGI_FORMAT rtvFormat,
         ComPtr<ID3D12PipelineState>& outPSO)
     {
+        if (!device || !rootSig)
+        {
+            return false;
+        }
+
         // メタボール描画用シェーダーを読み込み（失敗時はその場でコンパイルを試みる）
         ComPtr<ID3DBlob> vsBlob;
         if (!LoadOrCompileShader(L"MetaBallVS.cso", L"MetaBallVS.hlsl", "main", "vs_5_0", vsBlob))
         {
-            return;
+            return false;
         }
 
         ComPtr<ID3DBlob> psBlob;
         if (!LoadOrCompileShader(L"MetaBallPS.cso", L"MetaBallPS.hlsl", "main", "ps_5_0", psBlob))
         {
-            return;
+            return false;
         }
 
         // PSO 設定
@@ -168,7 +195,6 @@ namespace graphics {
         desc.RTVFormats[0] = rtvFormat;
         desc.SampleMask = UINT_MAX;
         desc.SampleDesc.Count = 1;
-        //desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
         auto rasterizerDesc = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
         rasterizerDesc.FrontCounterClockwise = TRUE; // 反時計回りを表面とする
         desc.RasterizerState = rasterizerDesc;
@@ -185,11 +211,15 @@ namespace graphics {
         desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
         desc.DepthStencilState.DepthEnable = FALSE; // スクリーンスペース合成なのでデプスは参照しない
 
-        HRESULT hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(&outPSO));
-        if (hr) {
-			printf("FluidSystem: メタボール用PSO生成に失敗しました (HRESULT=0x%08X)\n", hr);
+        HRESULT hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(outPSO.ReleaseAndGetAddressOf()));
+        if (FAILED(hr))
+        {
+            printf("FluidSystem: メタボール用PSO生成に失敗しました (HRESULT=0x%08X)\n", hr);
+            outPSO.Reset();
+            return false;
         }
-        
+
+        return true;
     }
 
 } // namespace graphics

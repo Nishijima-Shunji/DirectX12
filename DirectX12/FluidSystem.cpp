@@ -310,7 +310,8 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt)
 
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const XMFLOAT4X4& invViewProj, const XMFLOAT3& camPos, float isoLevel)
 {
-    if (!m_initialized || !cmd || m_particleCount == 0 || !m_activeMetaSRV)
+    if (!m_initialized || !cmd || m_particleCount == 0 || !m_activeMetaSRV ||
+        !m_metaRootSignature || !m_metaPipelineState)
     {
         return;
     }
@@ -800,8 +801,18 @@ void FluidSystem::UpdateParticleBuffer()
 
 void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat)
 {
-    graphics::MetaBallPipeline::CreateRootSignature(device, m_metaRootSignature);
-    graphics::MetaBallPipeline::CreatePipelineState(device, m_metaRootSignature.Get(), rtvFormat, m_metaPipelineState);
+    if (!graphics::MetaBallPipeline::CreateRootSignature(device, m_metaRootSignature))
+    {
+        printf("FluidSystem: メタボール描画用ルートシグネチャの初期化に失敗しました\n");
+        return;
+    }
+
+    if (!graphics::MetaBallPipeline::CreatePipelineState(device, m_metaRootSignature.Get(), rtvFormat, m_metaPipelineState))
+    {
+        printf("FluidSystem: メタボール描画用パイプラインの初期化に失敗しました\n");
+        m_metaRootSignature.Reset();
+        return;
+    }
 
     for (UINT i = 0; i < kFrameCount; ++i)
     {
@@ -821,6 +832,11 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
     }
 
     m_cpuMetaSRV = g_Engine->CbvSrvUavHeap()->RegisterBuffer(m_cpuMetaBuffer.Get(), m_maxParticles, sizeof(ParticleMetaGPU));
+    if (!m_cpuMetaSRV)
+    {
+        printf("FluidSystem: CPUメタデータSRVの登録に失敗しました\n");
+        return;
+    }
     m_activeMetaSRV = m_cpuMetaSRV;
 
     // GPU書き込み用バッファ
@@ -847,6 +863,11 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
         desc.Buffer.StructureByteStride = sizeof(ParticleMetaGPU);
         g_Engine->Device()->CreateShaderResourceView(m_gpuMetaBuffer.Get(), &desc, m_gpuMetaSRV->HandleCPU);
     }
+    if (!m_gpuMetaSRV)
+    {
+        printf("FluidSystem: GPUメタデータSRVの登録に失敗しました\n");
+        return;
+    }
 
     if (!m_gpuMetaUAV)
     {
@@ -860,6 +881,11 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
         desc.Buffer.NumElements = m_maxParticles;
         desc.Buffer.StructureByteStride = sizeof(ParticleMetaGPU);
         g_Engine->Device()->CreateUnorderedAccessView(m_gpuMetaBuffer.Get(), nullptr, &desc, m_gpuMetaUAV->HandleCPU);
+    }
+    if (!m_gpuMetaUAV)
+    {
+        printf("FluidSystem: GPUメタデータUAVの登録に失敗しました\n");
+        return;
     }
 }
 
@@ -907,6 +933,12 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
             descSrv.Buffer.StructureByteStride = particleStride;
             g_Engine->Device()->CreateShaderResourceView(m_gpuParticleBuffers[i].resource.Get(), &descSrv, m_gpuParticleBuffers[i].srv->HandleCPU);
         }
+        if (!m_gpuParticleBuffers[i].srv)
+        {
+            printf("FluidSystem: GPU粒子SRVの登録に失敗しました (%d)\n", i);
+            m_gpuAvailable = false;
+            return;
+        }
 
         if (!m_gpuParticleBuffers[i].uav)
         {
@@ -920,6 +952,12 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
             descUAV.Buffer.NumElements = m_maxParticles;
             descUAV.Buffer.StructureByteStride = particleStride;
             g_Engine->Device()->CreateUnorderedAccessView(m_gpuParticleBuffers[i].resource.Get(), nullptr, &descUAV, m_gpuParticleBuffers[i].uav->HandleCPU);
+        }
+        if (!m_gpuParticleBuffers[i].uav)
+        {
+            printf("FluidSystem: GPU粒子UAVの登録に失敗しました (%d)\n", i);
+            m_gpuAvailable = false;
+            return;
         }
     }
 
@@ -946,6 +984,12 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         desc.Buffer.StructureByteStride = sizeof(UINT);
         g_Engine->Device()->CreateUnorderedAccessView(m_gpuGridCount.Get(), nullptr, &desc, m_gpuGridCountUAV->HandleCPU);
     }
+    if (!m_gpuGridCountUAV)
+    {
+        printf("FluidSystem: グリッドカウントUAVの登録に失敗しました\n");
+        m_gpuAvailable = false;
+        return;
+    }
 
     auto tableDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(UINT) * cellCount * 64, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
     HRESULT hrTable = device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &tableDesc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr,
@@ -968,6 +1012,12 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         desc.Buffer.NumElements = cellCount * 64;
         desc.Buffer.StructureByteStride = sizeof(UINT);
         g_Engine->Device()->CreateUnorderedAccessView(m_gpuGridTable.Get(), nullptr, &desc, m_gpuGridTableUAV->HandleCPU);
+    }
+    if (!m_gpuGridTableUAV)
+    {
+        printf("FluidSystem: グリッドテーブルUAVの登録に失敗しました\n");
+        m_gpuAvailable = false;
+        return;
     }
 
     // アップロード・リードバック
