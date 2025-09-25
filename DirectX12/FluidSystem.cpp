@@ -1170,6 +1170,35 @@ ID3D12GraphicsCommandList* FluidSystem::BeginComputeCommandList()
         return nullptr;
     }
 
+    // 直前に送信したコンピュートキューの処理が完了していない場合は、
+    // コマンドアロケーターをリセットする前にフェンスを待機して安全性を確保する。
+    if (m_computeFence && m_lastSubmittedComputeFence != 0)
+    {
+        UINT64 completed = m_computeFence->GetCompletedValue();
+        if (completed < m_lastSubmittedComputeFence)
+        {
+            // フェンスが未完了ならイベントを使ってGPU完了を待つ。
+            if (m_computeFenceEvent)
+            {
+                HRESULT hr = m_computeFence->SetEventOnCompletion(m_lastSubmittedComputeFence, m_computeFenceEvent);
+                if (SUCCEEDED(hr))
+                {
+                    WaitForSingleObject(m_computeFenceEvent, INFINITE);
+                    completed = m_lastSubmittedComputeFence;
+                }
+            }
+
+            // イベントが存在しない、あるいはイベント登録に失敗した場合はポーリングで安全を確認する。
+            while (completed < m_lastSubmittedComputeFence)
+            {
+                completed = m_computeFence->GetCompletedValue();
+            }
+        }
+
+        // ここまで来ればGPUは前回のコマンドを完了しているので、次回以降の無駄な待機を避けるためにリセットする。
+        m_lastSubmittedComputeFence = 0;
+    }
+
     // フレーム毎にアロケーターとコマンドリストをリセットして記録を開始
     HRESULT hrAlloc = m_computeAllocator->Reset();
     if (FAILED(hrAlloc))
