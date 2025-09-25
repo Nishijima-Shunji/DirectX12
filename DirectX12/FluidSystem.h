@@ -162,6 +162,7 @@ private:
     DescriptorHandle* m_gpuMetaSRV = nullptr;
     DescriptorHandle* m_gpuMetaUAV = nullptr;
     DescriptorHandle* m_activeMetaSRV = nullptr;
+    D3D12_RESOURCE_STATES m_gpuMetaState = D3D12_RESOURCE_STATE_COMMON; // GPUメタデータバッファの現在ステート
 
     // GPUシミュレーション関連
     bool m_useGPU = false;
@@ -175,6 +176,8 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuGridTable;
     DescriptorHandle* m_gpuGridCountUAV = nullptr;
     DescriptorHandle* m_gpuGridTableUAV = nullptr;
+    D3D12_RESOURCE_STATES m_gpuGridCountState = D3D12_RESOURCE_STATE_COMMON; // グリッドカウントバッファの現在ステート
+    D3D12_RESOURCE_STATES m_gpuGridTableState = D3D12_RESOURCE_STATE_COMMON; // グリッドテーブルバッファの現在ステート
     Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuUpload;
     Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuReadback;
     std::unique_ptr<ConstantBuffer> m_computeParamsCB;
