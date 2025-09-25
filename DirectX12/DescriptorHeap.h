@@ -18,8 +18,7 @@ class DescriptorHeap
 public:
 	DescriptorHeap(); // コンストラクタで生成する
 	ID3D12DescriptorHeap* GetHeap(); // ディスクリプタヒープを返す
-    DescriptorHandle* Register(Texture2D* texture); // テクスチャーをディスクリプタヒープに登録し、ハンドルを返す
-    DescriptorHandle* RegisterTexture2D(ID3D12Resource* resource, DXGI_FORMAT format);
+	DescriptorHandle* Register(Texture2D* texture); // テクスチャーをディスクリプタヒープに登録し、ハンドルを返す
     DescriptorHandle* RegisterBuffer(
             ID3D12Resource* resource,
             UINT            numElements,

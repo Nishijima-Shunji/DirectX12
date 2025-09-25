@@ -133,11 +133,7 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 
     UpdateGridSettings();
     CreateMetaPipeline(device, rtvFormat);
-    CreateUpscalePipeline(device, rtvFormat);
     CreateGPUResources(device);
-
-    // 描画解像度用の低解像度ターゲットを初期化
-    UpdateLowResRenderTarget();
 
     // GPU・CPUリソースの生成が完了したタイミングで初期化済みフラグを立てる
     m_initialized = true;
@@ -340,8 +336,6 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const XMFLOAT4X4& invVi
         return;
     }
 
-    UpdateLowResRenderTarget();
-
     UINT frameIndex = g_Engine->CurrentBackBufferIndex();
     MetaConstants* cb = m_metaCB[frameIndex]->GetPtr<MetaConstants>();
 
@@ -353,76 +347,13 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const XMFLOAT4X4& invVi
     cb->IsoCount = XMFLOAT4(isoLevel * 0.6f, static_cast<float>(m_particleCount), m_rayStepScale, 0.0f);
 
     ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
-    bool useLowRes = (m_lowResColor && m_lowResSrv && m_upscaleRootSignature && m_upscalePipelineState);
-
-    if (useLowRes)
-    {
-        // 低解像度レンダーターゲットへ描画
-        TransitionResourceIfNeeded(cmd, m_lowResColor.Get(), m_lowResState, D3D12_RESOURCE_STATE_RENDER_TARGET);
-        cmd->OMSetRenderTargets(1, &m_lowResRtvHandle, FALSE, nullptr);
-        cmd->RSSetViewports(1, &m_lowResViewport);
-        cmd->RSSetScissorRects(1, &m_lowResScissor);
-        const float clearColor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-        cmd->ClearRenderTargetView(m_lowResRtvHandle, clearColor, 0, nullptr);
-
-        cmd->SetDescriptorHeaps(1, heaps);
-        cmd->SetGraphicsRootSignature(m_metaRootSignature.Get());
-        cmd->SetPipelineState(m_metaPipelineState.Get());
-        cmd->SetGraphicsRootDescriptorTable(0, m_activeMetaSRV->HandleGPU);
-        cmd->SetGraphicsRootConstantBufferView(1, m_metaCB[frameIndex]->GetAddress());
-        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmd->DrawInstanced(3, 1, 0, 0);
-
-        // サンプリング用にシェーダーリソースへ遷移
-        TransitionResourceIfNeeded(cmd, m_lowResColor.Get(), m_lowResState, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-
-        // 元のバックバッファへ戻してフル解像度にアップスケール
-        D3D12_CPU_DESCRIPTOR_HANDLE backBuffer = g_Engine->CurrentBackBufferView();
-        cmd->OMSetRenderTargets(1, &backBuffer, FALSE, nullptr);
-
-        D3D12_VIEWPORT fullViewport{};
-        fullViewport.TopLeftX = 0.0f;
-        fullViewport.TopLeftY = 0.0f;
-        fullViewport.Width = static_cast<float>(g_Engine->FrameBufferWidth());
-        fullViewport.Height = static_cast<float>(g_Engine->FrameBufferHeight());
-        fullViewport.MinDepth = 0.0f;
-        fullViewport.MaxDepth = 1.0f;
-        D3D12_RECT fullScissor{ 0, 0, static_cast<LONG>(g_Engine->FrameBufferWidth()), static_cast<LONG>(g_Engine->FrameBufferHeight()) };
-        cmd->RSSetViewports(1, &fullViewport);
-        cmd->RSSetScissorRects(1, &fullScissor);
-
-        cmd->SetDescriptorHeaps(1, heaps);
-        cmd->SetGraphicsRootSignature(m_upscaleRootSignature.Get());
-        cmd->SetPipelineState(m_upscalePipelineState.Get());
-        cmd->SetGraphicsRootDescriptorTable(0, m_lowResSrv->HandleGPU);
-        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmd->DrawInstanced(3, 1, 0, 0);
-    }
-    else
-    {
-        // 低解像度レンダリングが利用できない場合は従来通り直接描画
-        D3D12_CPU_DESCRIPTOR_HANDLE backBuffer = g_Engine->CurrentBackBufferView();
-        cmd->OMSetRenderTargets(1, &backBuffer, FALSE, nullptr);
-
-        D3D12_VIEWPORT fullViewport{};
-        fullViewport.TopLeftX = 0.0f;
-        fullViewport.TopLeftY = 0.0f;
-        fullViewport.Width = static_cast<float>(g_Engine->FrameBufferWidth());
-        fullViewport.Height = static_cast<float>(g_Engine->FrameBufferHeight());
-        fullViewport.MinDepth = 0.0f;
-        fullViewport.MaxDepth = 1.0f;
-        D3D12_RECT fullScissor{ 0, 0, static_cast<LONG>(g_Engine->FrameBufferWidth()), static_cast<LONG>(g_Engine->FrameBufferHeight()) };
-        cmd->RSSetViewports(1, &fullViewport);
-        cmd->RSSetScissorRects(1, &fullScissor);
-
-        cmd->SetDescriptorHeaps(1, heaps);
-        cmd->SetGraphicsRootSignature(m_metaRootSignature.Get());
-        cmd->SetPipelineState(m_metaPipelineState.Get());
-        cmd->SetGraphicsRootDescriptorTable(0, m_activeMetaSRV->HandleGPU);
-        cmd->SetGraphicsRootConstantBufferView(1, m_metaCB[frameIndex]->GetAddress());
-        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmd->DrawInstanced(3, 1, 0, 0);
-    }
+    cmd->SetDescriptorHeaps(1, heaps);
+    cmd->SetGraphicsRootSignature(m_metaRootSignature.Get());
+    cmd->SetPipelineState(m_metaPipelineState.Get());
+    cmd->SetGraphicsRootDescriptorTable(0, m_activeMetaSRV->HandleGPU);
+    cmd->SetGraphicsRootConstantBufferView(1, m_metaCB[frameIndex]->GetAddress());
+    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cmd->DrawInstanced(3, 1, 0, 0);
 }
 
 void FluidSystem::ApplyExternalOperationsCPU(float dt)
@@ -959,208 +890,6 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
         printf("FluidSystem: GPUメタデータUAVの登録に失敗しました\n");
         return;
     }
-}
-
-void FluidSystem::CreateUpscalePipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat)
-{
-    if (!device)
-    {
-        m_upscaleRootSignature.Reset();
-        m_upscalePipelineState.Reset();
-        return;
-    }
-
-    // SRV(t0) と線形サンプラを固定で持つシンプルなルートシグネチャを構築
-    CD3DX12_DESCRIPTOR_RANGE range;
-    range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-
-    CD3DX12_ROOT_PARAMETER param;
-    param.InitAsDescriptorTable(1, &range, D3D12_SHADER_VISIBILITY_PIXEL);
-
-    auto sampler = CD3DX12_STATIC_SAMPLER_DESC(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
-    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-
-    CD3DX12_ROOT_SIGNATURE_DESC rsDesc(1, &param, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-    Microsoft::WRL::ComPtr<ID3DBlob> blob;
-    Microsoft::WRL::ComPtr<ID3DBlob> error;
-    HRESULT hr = D3D12SerializeRootSignature(&rsDesc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error);
-    if (FAILED(hr))
-    {
-        if (error)
-        {
-            printf("FluidSystem: アップスケール用ルートシグネチャのシリアライズに失敗しました -> %s\n", static_cast<const char*>(error->GetBufferPointer()));
-        }
-        m_upscaleRootSignature.Reset();
-        m_upscalePipelineState.Reset();
-        return;
-    }
-
-    hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(m_upscaleRootSignature.ReleaseAndGetAddressOf()));
-    if (FAILED(hr))
-    {
-        printf("FluidSystem: アップスケール用ルートシグネチャの生成に失敗しました (HRESULT=0x%08X)\n", hr);
-        m_upscaleRootSignature.Reset();
-        m_upscalePipelineState.Reset();
-        return;
-    }
-
-    // フルスクリーン三角形用のシェーダーを読み込み
-    Microsoft::WRL::ComPtr<ID3DBlob> vsBlob;
-    if (!LoadOrCompileShader(L"FullscreenVS.cso", L"FullscreenVS.hlsl", "main", "vs_5_0", vsBlob))
-    {
-        m_upscaleRootSignature.Reset();
-        m_upscalePipelineState.Reset();
-        return;
-    }
-
-    Microsoft::WRL::ComPtr<ID3DBlob> psBlob;
-    if (!LoadOrCompileShader(L"FluidUpscalePS.cso", L"FluidUpscalePS.hlsl", "main", "ps_5_0", psBlob))
-    {
-        m_upscaleRootSignature.Reset();
-        m_upscalePipelineState.Reset();
-        return;
-    }
-
-    D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
-    desc.pRootSignature = m_upscaleRootSignature.Get();
-    desc.VS = { vsBlob->GetBufferPointer(), vsBlob->GetBufferSize() };
-    desc.PS = { psBlob->GetBufferPointer(), psBlob->GetBufferSize() };
-    desc.InputLayout = { nullptr, 0 };
-    desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    desc.NumRenderTargets = 1;
-    desc.RTVFormats[0] = rtvFormat;
-    desc.SampleMask = UINT_MAX;
-    desc.SampleDesc.Count = 1;
-    desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    desc.RasterizerState.FrontCounterClockwise = FALSE;
-    desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    desc.DepthStencilState.DepthEnable = FALSE;
-    desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-    desc.BlendState.RenderTarget[0].BlendEnable = TRUE;
-    desc.BlendState.RenderTarget[0].SrcBlend = D3D12_BLEND_SRC_ALPHA;
-    desc.BlendState.RenderTarget[0].DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-    desc.BlendState.RenderTarget[0].BlendOp = D3D12_BLEND_OP_ADD;
-    desc.BlendState.RenderTarget[0].SrcBlendAlpha = D3D12_BLEND_ONE;
-    desc.BlendState.RenderTarget[0].DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
-    desc.BlendState.RenderTarget[0].BlendOpAlpha = D3D12_BLEND_OP_ADD;
-    desc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-
-    hr = device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(m_upscalePipelineState.ReleaseAndGetAddressOf()));
-    if (FAILED(hr))
-    {
-        printf("FluidSystem: アップスケール用PSOの生成に失敗しました (HRESULT=0x%08X)\n", hr);
-        m_upscalePipelineState.Reset();
-    }
-}
-
-void FluidSystem::UpdateLowResRenderTarget()
-{
-    if (!m_device || !g_Engine)
-    {
-        return;
-    }
-
-    UINT fbWidth = g_Engine->FrameBufferWidth();
-    UINT fbHeight = g_Engine->FrameBufferHeight();
-    if (fbWidth == 0 || fbHeight == 0)
-    {
-        return;
-    }
-
-    float clampedScale = std::clamp(m_renderScale, 0.1f, 1.0f);
-    UINT targetWidth = std::max<UINT>(1u, static_cast<UINT>(fbWidth * clampedScale));
-    UINT targetHeight = std::max<UINT>(1u, static_cast<UINT>(fbHeight * clampedScale));
-
-    bool needCreate = (!m_lowResColor || targetWidth != m_lowResWidth || targetHeight != m_lowResHeight);
-    if (needCreate)
-    {
-        m_lowResColor.Reset();
-        m_lowResWidth = 0;
-        m_lowResHeight = 0;
-
-        auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-        auto texDesc = CD3DX12_RESOURCE_DESC::Tex2D(m_rtvFormat, targetWidth, targetHeight);
-        texDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
-
-        D3D12_CLEAR_VALUE clear{};
-        clear.Format = m_rtvFormat;
-        clear.Color[0] = 0.0f;
-        clear.Color[1] = 0.0f;
-        clear.Color[2] = 0.0f;
-        clear.Color[3] = 0.0f;
-
-        HRESULT hr = m_device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &texDesc, D3D12_RESOURCE_STATE_RENDER_TARGET,
-            &clear, IID_PPV_ARGS(m_lowResColor.ReleaseAndGetAddressOf()));
-        if (FAILED(hr))
-        {
-            printf("FluidSystem: 低解像度レンダーターゲットの生成に失敗しました (HRESULT=0x%08X)\n", hr);
-            m_lowResColor.Reset();
-            return;
-        }
-
-        m_lowResWidth = targetWidth;
-        m_lowResHeight = targetHeight;
-        m_lowResState = D3D12_RESOURCE_STATE_RENDER_TARGET;
-
-        if (!m_lowResRtvHeap)
-        {
-            D3D12_DESCRIPTOR_HEAP_DESC heapDesc{};
-            heapDesc.NumDescriptors = 1;
-            heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-            heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-            hr = m_device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_lowResRtvHeap.ReleaseAndGetAddressOf()));
-            if (FAILED(hr))
-            {
-                printf("FluidSystem: 低解像度RTVヒープの生成に失敗しました (HRESULT=0x%08X)\n", hr);
-                m_lowResColor.Reset();
-                m_lowResWidth = 0;
-                m_lowResHeight = 0;
-                return;
-            }
-        }
-
-        m_lowResRtvHandle = m_lowResRtvHeap->GetCPUDescriptorHandleForHeapStart();
-        m_device->CreateRenderTargetView(m_lowResColor.Get(), nullptr, m_lowResRtvHandle);
-
-        if (!m_lowResSrv)
-        {
-            m_lowResSrv = g_Engine->CbvSrvUavHeap()->RegisterTexture2D(m_lowResColor.Get(), m_rtvFormat);
-            if (!m_lowResSrv)
-            {
-                printf("FluidSystem: 低解像度テクスチャのSRV登録に失敗しました\n");
-            }
-        }
-        else
-        {
-            D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
-            srv.Format = m_rtvFormat;
-            srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-            srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-            srv.Texture2D.MipLevels = 1;
-            m_device->CreateShaderResourceView(m_lowResColor.Get(), &srv, m_lowResSrv->HandleCPU);
-        }
-    }
-
-    if (m_lowResWidth == 0 || m_lowResHeight == 0)
-    {
-        return;
-    }
-
-    // ビューポートとシザーを常に最新のサイズに更新
-    m_lowResViewport.TopLeftX = 0.0f;
-    m_lowResViewport.TopLeftY = 0.0f;
-    m_lowResViewport.Width = static_cast<float>(m_lowResWidth);
-    m_lowResViewport.Height = static_cast<float>(m_lowResHeight);
-    m_lowResViewport.MinDepth = 0.0f;
-    m_lowResViewport.MaxDepth = 1.0f;
-
-    m_lowResScissor.left = 0;
-    m_lowResScissor.top = 0;
-    m_lowResScissor.right = static_cast<LONG>(m_lowResWidth);
-    m_lowResScissor.bottom = static_cast<LONG>(m_lowResHeight);
 }
 
 void FluidSystem::CreateGPUResources(ID3D12Device* device)
