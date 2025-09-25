@@ -91,6 +91,16 @@ FluidSystem::FluidSystem()
     m_gridDim = XMUINT3(1, 1, 1);
 }
 
+FluidSystem::~FluidSystem()
+{
+    // GPU用フェンスイベントを確実にクローズしてリークを防ぐ
+    if (m_computeFenceEvent)
+    {
+        CloseHandle(m_computeFenceEvent);
+        m_computeFenceEvent = nullptr;
+    }
+}
+
 void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxParticles, UINT threadGroupCount)
 {
     (void)threadGroupCount;
@@ -105,12 +115,13 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
     CreateMetaPipeline(device, rtvFormat);
     CreateGPUResources(device);
 
+    // GPU・CPUリソースの生成が完了したタイミングで初期化済みフラグを立てる
+    m_initialized = true;
+
     // ひとまず初期状態として軽く粒子を生成しておく
     SpawnParticlesSphere(XMFLOAT3(0.0f, 1.0f, 0.0f), 0.6f, m_maxParticles / 2);
 
     UpdateParticleBuffer();
-
-    m_initialized = true;
 }
 
 void FluidSystem::UseGPU(bool enable)
@@ -270,9 +281,22 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt)
         }
 
         ApplyExternalOperationsCPU(step);
-        UploadCPUToGPU(cmd);
         UpdateComputeParams(step);
-        StepGPU(cmd, step);
+
+        // GPU用コマンドリストをリセットして記録を開始
+        ID3D12GraphicsCommandList* computeCmd = BeginComputeCommandList();
+        if (!computeCmd)
+        {
+            // 取得に失敗した場合はGPUモードを諦めてCPUシミュレーションにフォールバック
+            StepCPU(step);
+            UpdateParticleBuffer();
+            m_activeMetaSRV = m_cpuMetaSRV;
+            return;
+        }
+
+        UploadCPUToGPU(computeCmd);
+        StepGPU(computeCmd, step);
+        SubmitComputeCommandList();
         m_activeMetaSRV = m_gpuMetaSRV;
     }
     else
@@ -719,6 +743,17 @@ void FluidSystem::ReadbackGPUToCPU()
         return;
     }
 
+    // フェンスが完了していなければイベントで待機して安全に読み出す
+    if (m_computeFence && m_lastSubmittedComputeFence != 0)
+    {
+        UINT64 completed = m_computeFence->GetCompletedValue();
+        if (completed < m_lastSubmittedComputeFence && m_computeFenceEvent)
+        {
+            m_computeFence->SetEventOnCompletion(m_lastSubmittedComputeFence, m_computeFenceEvent);
+            WaitForSingleObject(m_computeFenceEvent, INFINITE);
+        }
+    }
+
     GPUFluidParticle* mapped = nullptr;
     if (SUCCEEDED(m_gpuReadback->Map(0, nullptr, reinterpret_cast<void**>(&mapped))) && mapped)
     {
@@ -1018,10 +1053,132 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         return;
     }
 
+    // コンピュート用のコマンドアロケーター／リスト／フェンスを準備
+    if (!m_computeAllocator)
+    {
+        HRESULT hrAlloc = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE, IID_PPV_ARGS(m_computeAllocator.ReleaseAndGetAddressOf()));
+        if (FAILED(hrAlloc))
+        {
+            printf("FluidSystem: コンピュート用アロケーター生成に失敗しました\n");
+            m_gpuAvailable = false;
+            return;
+        }
+    }
+
+    if (!m_computeCommandList)
+    {
+        HRESULT hrList = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, m_computeAllocator.Get(), nullptr, IID_PPV_ARGS(m_computeCommandList.ReleaseAndGetAddressOf()));
+        if (FAILED(hrList))
+        {
+            printf("FluidSystem: コンピュート用コマンドリスト生成に失敗しました\n");
+            m_gpuAvailable = false;
+            return;
+        }
+        // 生成直後は開いているので一度閉じておく
+        m_computeCommandList->Close();
+    }
+
+    if (!m_computeFence)
+    {
+        HRESULT hrFence = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_computeFence.ReleaseAndGetAddressOf()));
+        if (FAILED(hrFence))
+        {
+            printf("FluidSystem: コンピュート用フェンス生成に失敗しました\n");
+            m_gpuAvailable = false;
+            return;
+        }
+        m_computeFenceValue = 0;
+        m_lastSubmittedComputeFence = 0;
+    }
+
+    if (!m_computeFenceEvent)
+    {
+        m_computeFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+        if (!m_computeFenceEvent)
+        {
+            printf("FluidSystem: フェンスイベント生成に失敗しました\n");
+            m_gpuAvailable = false;
+            return;
+        }
+    }
+
     m_gpuReadIndex = 0;
     m_pendingReadback = false;
     m_gpuAvailable = true;
     m_gpuDirty = true;
+}
+
+ID3D12GraphicsCommandList* FluidSystem::BeginComputeCommandList()
+{
+    if (!m_computeAllocator || !m_computeCommandList)
+    {
+        return nullptr;
+    }
+
+    // フレーム毎にアロケーターとコマンドリストをリセットして記録を開始
+    HRESULT hrAlloc = m_computeAllocator->Reset();
+    if (FAILED(hrAlloc))
+    {
+        printf("FluidSystem: コンピュートアロケーターのリセットに失敗しました\n");
+        return nullptr;
+    }
+
+    HRESULT hrCmd = m_computeCommandList->Reset(m_computeAllocator.Get(), nullptr);
+    if (FAILED(hrCmd))
+    {
+        printf("FluidSystem: コンピュートコマンドリストのリセットに失敗しました\n");
+        return nullptr;
+    }
+
+    return m_computeCommandList.Get();
+}
+
+void FluidSystem::SubmitComputeCommandList()
+{
+    if (!m_computeCommandList)
+    {
+        return;
+    }
+
+    HRESULT hrClose = m_computeCommandList->Close();
+    if (FAILED(hrClose))
+    {
+        printf("FluidSystem: コンピュートコマンドリストのクローズに失敗しました\n");
+        return;
+    }
+
+    ID3D12CommandList* lists[] = { m_computeCommandList.Get() };
+    ID3D12CommandQueue* queue = g_Engine->ComputeCommandQueue();
+    if (!queue)
+    {
+        // コンピュートキューが無ければ描画キューで代用
+        queue = g_Engine->CommandQueue();
+    }
+
+    if (!queue)
+    {
+        return;
+    }
+
+    queue->ExecuteCommandLists(1, lists);
+
+    if (m_computeFence)
+    {
+        ++m_computeFenceValue;
+        if (SUCCEEDED(queue->Signal(m_computeFence.Get(), m_computeFenceValue)))
+        {
+            m_lastSubmittedComputeFence = m_computeFenceValue;
+
+            // グラフィックスキューはコンピュート結果を待ってから描画を継続
+            if (ID3D12CommandQueue* graphicsQueue = g_Engine->CommandQueue())
+            {
+                if (graphicsQueue != queue)
+                {
+                    graphicsQueue->Wait(m_computeFence.Get(), m_computeFenceValue);
+                }
+            }
+        }
+    }
 }
 
 void FluidSystem::UpdateGridSettings()

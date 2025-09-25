@@ -11,6 +11,7 @@
 #include <array>
 #include <memory>
 #include <vector>
+#include <Windows.h>
 
 // ================================
 //  流体マテリアルの設定パラメータ
@@ -56,6 +57,7 @@ class FluidSystem
 {
 public:
     FluidSystem();
+    ~FluidSystem();
 
     void Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxParticles, UINT threadGroupCount);
 
@@ -140,6 +142,8 @@ private:
     void CreateGPUResources(ID3D12Device* device);
     void UpdateComputeParams(float dt);
     void ResolveBounds(FluidParticle& p) const;
+    ID3D12GraphicsCommandList* BeginComputeCommandList();
+    void SubmitComputeCommandList();
 
     float EffectiveTimeStep(float dt) const;
 
@@ -178,6 +182,12 @@ private:
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_computeRootSignature;
     std::unique_ptr<ComputePipelineState> m_buildGridPipeline;
     std::unique_ptr<ComputePipelineState> m_particlePipeline;
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_computeAllocator;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_computeCommandList;
+    Microsoft::WRL::ComPtr<ID3D12Fence> m_computeFence;
+    HANDLE m_computeFenceEvent = nullptr;
+    UINT64 m_computeFenceValue = 0;
+    UINT64 m_lastSubmittedComputeFence = 0;
 
     // 共通設定
     FluidMaterial m_material;
