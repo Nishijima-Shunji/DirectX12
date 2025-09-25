@@ -296,6 +296,9 @@
     <FxCompile Include="FullscreenVS.hlsl">
       <Filter>リソース ファイル\VertexShader</Filter>
     </FxCompile>
+    <FxCompile Include="FluidUpscalePS.hlsl">
+      <Filter>リソース ファイル\PixelShader</Filter>
+    </FxCompile>
     <FxCompile Include="BlurPS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>

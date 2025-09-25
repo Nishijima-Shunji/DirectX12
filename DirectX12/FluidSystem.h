@@ -139,8 +139,10 @@ private:
     void ReadbackGPUToCPU();
     void UpdateParticleBuffer();
     void CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat);
+    void CreateUpscalePipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat);
     void CreateGPUResources(ID3D12Device* device);
     void UpdateComputeParams(float dt);
+    void UpdateLowResRenderTarget();
     void ResolveBounds(FluidParticle& p) const;
     ID3D12GraphicsCommandList* BeginComputeCommandList();
     void SubmitComputeCommandList();
@@ -163,6 +165,18 @@ private:
     DescriptorHandle* m_gpuMetaUAV = nullptr;
     DescriptorHandle* m_activeMetaSRV = nullptr;
     D3D12_RESOURCE_STATES m_gpuMetaState = D3D12_RESOURCE_STATE_COMMON; // GPUメタデータバッファの現在ステート
+    float m_renderScale = 0.5f;                                         // レイマーチ用の描画解像度スケール（0.0-1.0）
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_lowResColor;              // 低解像度レンダーターゲット
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_lowResRtvHeap;      // RTV用ディスクリプタヒープ
+    D3D12_CPU_DESCRIPTOR_HANDLE m_lowResRtvHandle{};                   // RTVハンドル
+    DescriptorHandle* m_lowResSrv = nullptr;                           // シェーダーで参照するためのSRV
+    D3D12_VIEWPORT m_lowResViewport{};                                 // 低解像度描画用ビューポート
+    D3D12_RECT m_lowResScissor{};                                      // 低解像度描画用シザー矩形
+    UINT m_lowResWidth = 0;                                            // 低解像度ターゲットの幅
+    UINT m_lowResHeight = 0;                                           // 低解像度ターゲットの高さ
+    D3D12_RESOURCE_STATES m_lowResState = D3D12_RESOURCE_STATE_COMMON; // 低解像度ターゲットの現在ステート
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_upscaleRootSignature; // アップスケール描画用ルートシグネチャ
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_upscalePipelineState; // アップスケール描画用PSO
 
     // GPUシミュレーション関連
     bool m_useGPU = false;

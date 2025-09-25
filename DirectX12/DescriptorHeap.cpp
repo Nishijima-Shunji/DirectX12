@@ -40,11 +40,11 @@ ID3D12DescriptorHeap* DescriptorHeap::GetHeap()
 
 DescriptorHandle* DescriptorHeap::Register(Texture2D* texture)
 {
-	auto count = m_pHandles.size();
-	if (HANDLE_MAX <= count)
-	{
-		return nullptr;
-	}
+        auto count = m_pHandles.size();
+        if (HANDLE_MAX <= count)
+        {
+                return nullptr;
+        }
 
 	DescriptorHandle* pHandle = new DescriptorHandle();
 
@@ -62,8 +62,40 @@ DescriptorHandle* DescriptorHeap::Register(Texture2D* texture)
 	auto desc = texture->ViewDesc();
 	device->CreateShaderResourceView(resource, &desc, pHandle->HandleCPU); // シェーダーリソースビュー作成
 
-	m_pHandles.push_back(pHandle);
-	return pHandle; // ハンドルを返す
+        m_pHandles.push_back(pHandle);
+        return pHandle; // ハンドルを返す
+}
+
+DescriptorHandle* DescriptorHeap::RegisterTexture2D(ID3D12Resource* resource, DXGI_FORMAT format)
+{
+        auto count = m_pHandles.size();
+        if (HANDLE_MAX <= count || !resource)
+        {
+                return nullptr;
+        }
+
+        auto handle = new DescriptorHandle();
+
+        // ディスクリプタの書き込み先を計算（SRV/UAVヒープは常に連番で確保する）
+        auto cpu = m_pHeap->GetCPUDescriptorHandleForHeapStart();
+        cpu.ptr += m_IncrementSize * count;
+        auto gpu = m_pHeap->GetGPUDescriptorHandleForHeapStart();
+        gpu.ptr += m_IncrementSize * count;
+
+        handle->HandleCPU = cpu;
+        handle->HandleGPU = gpu;
+
+        // 2Dテクスチャ用のSRVを生成（ミップは未使用なので1枚だけ）
+        D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+        desc.Format = format;
+        desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        desc.Texture2D.MipLevels = 1;
+
+        g_Engine->Device()->CreateShaderResourceView(resource, &desc, cpu);
+
+        m_pHandles.push_back(handle);
+        return handle;
 }
 
 DescriptorHandle* DescriptorHeap::RegisterBuffer(
