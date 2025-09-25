@@ -4,115 +4,15 @@
 #include "RandomUtil.h"
 #include "ComputePipelineState.h"
 #include <d3dx12.h>
-#include <d3dcompiler.h>
-#include <Windows.h>
 #include <cstdio>
 #include <algorithm>
 #include <cmath>
-#include <filesystem>
 #include <random>
-#include <vector>
 
 using namespace DirectX;
 
 namespace
 {
-    // シェーダーファイルを探索するときに基準とするディレクトリを列挙する
-    std::vector<std::filesystem::path> BuildShaderSearchDirectories()
-    {
-        std::vector<std::filesystem::path> searchDirectories;
-
-        // まずは現在の作業ディレクトリを優先する
-        searchDirectories.push_back(std::filesystem::current_path());
-
-        // 実行ファイルのディレクトリから親方向へ数階層たどる
-        wchar_t pathBuffer[MAX_PATH] = {};
-        DWORD length = GetModuleFileNameW(nullptr, pathBuffer, MAX_PATH);
-        if (length > 0 && length < MAX_PATH)
-        {
-            std::filesystem::path exePath(pathBuffer);
-            for (int i = 0; !exePath.empty() && i < 5; ++i)
-            {
-                searchDirectories.push_back(exePath);
-                exePath = exePath.parent_path();
-            }
-        }
-
-        return searchDirectories;
-    }
-
-    // 指定したファイル名のシェーダーを探索して最初に見つかったフルパスを返す
-    std::wstring ResolveShaderPath(const std::wstring& fileName)
-    {
-        for (const auto& baseDir : BuildShaderSearchDirectories())
-        {
-            std::filesystem::path candidate = baseDir / fileName;
-            if (std::filesystem::exists(candidate))
-            {
-                return candidate.wstring();
-            }
-        }
-        return L"";
-    }
-
-    // CSO 読み込みに失敗した場合は HLSL をコンパイルしてシェーダーを確保する
-    bool LoadOrCompileShader(
-        const std::wstring& csoName,
-        const std::wstring& hlslName,
-        const char* entryPoint,
-        const char* shaderModel,
-        Microsoft::WRL::ComPtr<ID3DBlob>& outBlob)
-    {
-        std::wstring csoPath = ResolveShaderPath(csoName);
-        if (!csoPath.empty())
-        {
-            HRESULT hr = D3DReadFileToBlob(csoPath.c_str(), &outBlob);
-            if (SUCCEEDED(hr))
-            {
-                return true;
-            }
-        }
-
-        std::wstring hlslPath = ResolveShaderPath(hlslName);
-        if (hlslPath.empty())
-        {
-            wprintf(L"FluidSystem: シェーダーファイル %ls が見つかりません\n", hlslName.c_str());
-            return false;
-        }
-
-        UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
-#ifdef _DEBUG
-        flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#endif
-
-        Microsoft::WRL::ComPtr<ID3DBlob> error;
-        HRESULT hr = D3DCompileFromFile(
-            hlslPath.c_str(),
-            nullptr,
-            nullptr,
-            entryPoint,
-            shaderModel,
-            flags,
-            0,
-            &outBlob,
-            &error);
-
-        if (FAILED(hr))
-        {
-            if (error)
-            {
-                printf("FluidSystem: シェーダーコンパイルに失敗しました -> %s\n", static_cast<const char*>(error->GetBufferPointer()));
-            }
-            else
-            {
-                wprintf(L"FluidSystem: シェーダー %ls のコンパイルに失敗しました (HRESULT=0x%08X)\n", hlslPath.c_str(), hr);
-            }
-            return false;
-        }
-
-        return true;
-    }
-
     // GPUバッファ用の粒子構造体
     struct GPUFluidParticle
     {
