@@ -1,65 +1,79 @@
 #pragma once
 #include "ComPtr.h"
-#include <d3d12.h>
-#include <wrl.h>
-#include <DirectXMath.h>
 #include "ConstantBuffer.h"
 #include "DescriptorHeap.h"
 #include "SharedStruct.h"
+#include "SpatialGrid.h"
+#include "ComputePipelineState.h"
+#include <d3d12.h>
+#include <wrl.h>
+#include <DirectXMath.h>
 #include <array>
 #include <memory>
 #include <vector>
 
-struct FluidParticle {
-    DirectX::XMFLOAT3 position; // 現在位置
-    DirectX::XMFLOAT3 velocity; // 速度
-    DirectX::XMFLOAT3 x_pred;   // 予測位置
-    float             lambda = 0.0f; // PBF用ラグランジュ乗数
-    float             density = 0.0f; // 推定密度
+// ================================
+//  流体マテリアルの設定パラメータ
+// ================================
+struct FluidMaterial
+{
+    float restDensity = 1000.0f;      // 静止密度
+    float particleMass = 1.0f;        // 粒子質量
+    float smoothingRadius = 0.12f;    // カーネル半径
+    float viscosity = 0.02f;          // 粘性係数
+    float stiffness = 200.0f;         // 圧力係数（GPU用）
+    float renderRadius = 0.10f;       // メタボール描画半径
+    float lambdaEpsilon = 100.0f;     // PBF安定化係数
+    float xsphC = 0.05f;              // XSPH粘性（CPU）
+    int   solverIterations = 4;       // PBF反復回数
 };
 
-class FluidSystem {
-private:
-    static constexpr UINT kFrameCount = 2; // ダブルバッファ分のCB
+// プリセットマテリアル
+enum class FluidMaterialPreset
+{
+    Water,
+    Magma,
+};
 
-    struct MetaConstants
-    {
-        DirectX::XMFLOAT4X4 InvViewProj; // ビュー射影逆行列
-        DirectX::XMFLOAT4   CamRadius;   // xyz: カメラ座標 / w: 粒子半径
-        DirectX::XMFLOAT4   IsoCount;    // x: 等値面しきい値 / y: 粒子数 / z: レイステップ係数 / w: 予約
-    };
+// シミュレーションモード
+enum class FluidSimulationMode
+{
+    CPU,
+    GPU,
+};
 
-    std::vector<FluidParticle>          m_cpuParticles;   // CPU上の粒子データ
-    ComPtr<ID3D12RootSignature>         m_metaRootSignature; // メタボール描画用ルートシグネチャ
-    ComPtr<ID3D12PipelineState>         m_metaPipelineState; // メタボール描画用PSO
-    std::array<std::unique_ptr<ConstantBuffer>, kFrameCount> m_metaCB; // メタボール用定数バッファ
-    ComPtr<ID3D12Resource>              m_particleMetaBuffer; // 粒子メタデータ（位置＋半径）
-    DescriptorHandle*                   m_particleSRV = nullptr; // 粒子メタデータ用SRVハンドル
-    UINT                                m_particleCount = 0; // 実際に描画する粒子数
+// CPU シミュレーション用の粒子情報
+struct FluidParticle
+{
+    DirectX::XMFLOAT3 position;   // 現在位置
+    DirectX::XMFLOAT3 velocity;   // 速度
+    DirectX::XMFLOAT3 predicted;  // 予測位置
+    float lambda = 0.0f;          // PBFラグランジュ乗数
+    float density = 0.0f;         // 計算密度
+};
 
-    UINT        m_maxParticles = 0; // 粒子数
-    float       m_timeStep = 1.0f / 60.0f; // 1フレームの時間
-    bool        m_initialized = false;     // 初期化済みかどうか
-
-    float       m_renderRadius = 0.10f; // メタボール半径（描画用）
-    float       m_rayStepScale = 0.4f;  // レイマーチの移動係数
-
-    // PBFパラメータ（CPU版の簡易実装）
-    float                      m_restDensity = 1000.0f;   // 基準密度
-    float                      m_particleMass = 1.0f;     // 粒子質量
-    float                      m_smoothingRadius = 0.12f; // カーネル半径
-    float                      m_epsilon = 100.0f;        // 安定化項
-    int                        m_solverIterations = 3;    // ソルバ反復回数
-    DirectX::XMFLOAT3          m_gravity = { 0.0f, -9.8f, 0.0f }; // 重力
-
-    void StepCPU(float dt);             // CPUでPBF計算を行う
-    void UpdateParticleBuffer();        // GPUへ粒子メタデータを転送
-
+class FluidSystem
+{
 public:
-    void Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxParticles, UINT threadGroupCount);
-    void UseGPU(bool enable) { /* GPU実装は未対応なのでダミー */ }
+    FluidSystem();
 
-    void Simulate(ID3D12GraphicsCommandList* cmd, float dt); // PBF更新
+    void Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxParticles, UINT threadGroupCount);
+
+    void UseGPU(bool enable);
+    FluidSimulationMode Mode() const;
+
+    void SetMaterialPreset(FluidMaterialPreset preset);
+    void SetMaterial(const FluidMaterial& material);
+    const FluidMaterial& Material() const { return m_material; }
+
+    void SpawnParticlesSphere(const DirectX::XMFLOAT3& center, float radius, UINT count);
+    void RemoveParticlesSphere(const DirectX::XMFLOAT3& center, float radius);
+
+    void QueueGather(const DirectX::XMFLOAT3& target, float radius, float strength);
+    void QueueSplash(const DirectX::XMFLOAT3& position, float radius, float impulse);
+    void ClearDynamicOperations();
+
+    void Simulate(ID3D12GraphicsCommandList* cmd, float dt);
     void Render(ID3D12GraphicsCommandList* cmd,
         const DirectX::XMFLOAT4X4& invViewProj,
         const DirectX::XMFLOAT3& camPos,
@@ -68,4 +82,120 @@ public:
     void StartDrag(int, int, class Camera*) {}
     void Drag(int, int, class Camera*) {}
     void EndDrag() {}
+
+private:
+    struct MetaConstants
+    {
+        DirectX::XMFLOAT4X4 InvViewProj; // ビュー射影逆行列（転置済み）
+        DirectX::XMFLOAT4   CamRadius;   // カメラ座標と粒子半径
+        DirectX::XMFLOAT4   IsoCount;    // 等値面しきい値 / 粒子数 / レイマーチ係数
+    };
+
+    struct GPUParams
+    {
+        float restDensity;
+        float particleMass;
+        float viscosity;
+        float stiffness;
+        float radius;
+        float timeStep;
+        UINT  particleCount;
+        UINT  pad0;
+        DirectX::XMFLOAT3 gridMin;
+        float pad1;
+        DirectX::XMUINT3  gridDim;
+        UINT  pad2;
+    };
+
+    struct GatherOperation
+    {
+        DirectX::XMFLOAT3 target;
+        float radius;
+        float strength;
+    };
+
+    struct SplashOperation
+    {
+        DirectX::XMFLOAT3 origin;
+        float radius;
+        float impulse;
+    };
+
+    struct GPUBufferHandle
+    {
+        Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+        DescriptorHandle* srv = nullptr;
+        DescriptorHandle* uav = nullptr;
+        D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
+    };
+
+    void UpdateGridSettings();
+    void ApplyExternalOperationsCPU(float dt);
+    void StepCPU(float dt);
+    void StepGPU(ID3D12GraphicsCommandList* cmd, float dt);
+    void UploadCPUToGPU(ID3D12GraphicsCommandList* cmd);
+    void ReadbackGPUToCPU();
+    void UpdateParticleBuffer();
+    void CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat);
+    void CreateGPUResources(ID3D12Device* device);
+    void UpdateComputeParams(float dt);
+    void ResolveBounds(FluidParticle& p) const;
+
+    float EffectiveTimeStep(float dt) const;
+
+    // CPU管理
+    std::vector<FluidParticle> m_cpuParticles;
+    SpatialGrid                m_spatialGrid;
+
+    // 描画関連
+    static constexpr UINT kFrameCount = 2;
+    std::array<std::unique_ptr<ConstantBuffer>, kFrameCount> m_metaCB{};
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_metaRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_metaPipelineState;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_cpuMetaBuffer;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuMetaBuffer;
+    DescriptorHandle* m_cpuMetaSRV = nullptr;
+    DescriptorHandle* m_gpuMetaSRV = nullptr;
+    DescriptorHandle* m_gpuMetaUAV = nullptr;
+    DescriptorHandle* m_activeMetaSRV = nullptr;
+
+    // GPUシミュレーション関連
+    bool m_useGPU = false;
+    bool m_gpuAvailable = false;
+    bool m_cpuDirty = true;
+    bool m_gpuDirty = true;
+    bool m_pendingReadback = false;
+    UINT m_gpuReadIndex = 0;
+    GPUBufferHandle m_gpuParticleBuffers[2];
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuGridCount;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuGridTable;
+    DescriptorHandle* m_gpuGridCountUAV = nullptr;
+    DescriptorHandle* m_gpuGridTableUAV = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuUpload;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuReadback;
+    std::unique_ptr<ConstantBuffer> m_computeParamsCB;
+    std::unique_ptr<ConstantBuffer> m_dummyViewCB;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_computeRootSignature;
+    std::unique_ptr<ComputePipelineState> m_buildGridPipeline;
+    std::unique_ptr<ComputePipelineState> m_particlePipeline;
+
+    // 共通設定
+    FluidMaterial m_material;
+    DirectX::XMFLOAT3 m_boundsMin;
+    DirectX::XMFLOAT3 m_boundsMax;
+    DirectX::XMUINT3  m_gridDim;
+    UINT              m_particleCount = 0;
+    UINT              m_maxParticles = 0;
+    bool              m_initialized = false;
+
+    std::vector<GatherOperation> m_gatherOps;
+    std::vector<SplashOperation> m_splashOps;
+
+    ID3D12Device* m_device = nullptr;
+    DXGI_FORMAT   m_rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+    float m_rayStepScale = 0.4f;
 };
+
+// プリセットマテリアルの生成ヘルパー
+FluidMaterial CreateFluidMaterial(FluidMaterialPreset preset);
