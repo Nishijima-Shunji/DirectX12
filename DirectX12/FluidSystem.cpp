@@ -67,6 +67,16 @@ namespace
     };
 }
 
+FluidSystem::~FluidSystem()
+{
+    if (m_particleMetaBuffer && m_particleMetaMapped)
+    {
+        // 終了時に Unmap しておかないとデバッグレイヤーで警告が出るため明示的に解放する
+        m_particleMetaBuffer->Unmap(0, nullptr);
+        m_particleMetaMapped = nullptr;
+    }
+}
+
 void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxParticles, UINT threadGroupCount)
 {
     (void)device;
@@ -100,6 +110,15 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
         printf("FluidSystem: 粒子メタデータ用バッファ生成に失敗しました\n");
         return;
     }
+
+    // Map を毎フレーム呼ぶと失敗しやすいので、初期化時に一度だけマップしてポインタを保持しておく
+    void* mapped = nullptr;
+    if (FAILED(m_particleMetaBuffer->Map(0, nullptr, &mapped)) || !mapped)
+    {
+        printf("FluidSystem: 粒子メタデータのマップに失敗しました (初期化段階)\n");
+        return;
+    }
+    m_particleMetaMapped = mapped;
 
     // SRVをディスクリプタヒープへ登録（シェーダーから粒子配列を参照するため）
     m_particleSRV = g_Engine->CbvSrvUavHeap()->RegisterBuffer(
@@ -269,12 +288,13 @@ void FluidSystem::UpdateParticleBuffer()
     const UINT count = (std::min)(cpuCount, m_maxParticles);
     m_particleCount = count;
 
-    ParticleMetaGPU* mapped = nullptr;
-    if (FAILED(m_particleMetaBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped))) || !mapped)
+    if (!m_particleMetaMapped)
     {
-        printf("FluidSystem: 粒子メタデータのマップに失敗しました\n");
+        printf("FluidSystem: 粒子メタデータのマップポインタが無効です\n");
         return;
     }
+
+    auto* mapped = static_cast<ParticleMetaGPU*>(m_particleMetaMapped);
 
     // 使用している粒子をGPUバッファへ書き戻す
     for (UINT i = 0; i < count; ++i)
@@ -290,7 +310,7 @@ void FluidSystem::UpdateParticleBuffer()
         mapped[i].radius = 0.0f;
     }
 
-    m_particleMetaBuffer->Unmap(0, nullptr);
+    // 初期化時にマップしたままのため、ここでの Unmap は不要
 }
 
 void FluidSystem::Simulate(ID3D12GraphicsCommandList*, float dt)

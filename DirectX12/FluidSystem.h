@@ -34,6 +34,7 @@ private:
     ComPtr<ID3D12PipelineState>         m_metaPipelineState; // メタボール描画用PSO
     std::array<std::unique_ptr<ConstantBuffer>, kFrameCount> m_metaCB; // メタボール用定数バッファ
     ComPtr<ID3D12Resource>              m_particleMetaBuffer; // 粒子メタデータ（位置＋半径）
+    void*                               m_particleMetaMapped = nullptr; // Map したバッファへのCPUポインタ
     DescriptorHandle*                   m_particleSRV = nullptr; // 粒子メタデータ用SRVハンドル
     UINT                                m_particleCount = 0; // 実際に描画する粒子数
 
@@ -56,6 +57,7 @@ private:
     void UpdateParticleBuffer();        // GPUへ粒子メタデータを転送
 
 public:
+    ~FluidSystem();
     void Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxParticles, UINT threadGroupCount);
     void UseGPU(bool enable) { /* GPU実装は未対応なのでダミー */ }
 
