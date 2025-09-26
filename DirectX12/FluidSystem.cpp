@@ -684,13 +684,6 @@ void FluidSystem::StepGPU(ID3D12GraphicsCommandList* cmd, float dt)
     auto gridTableToUAV = CD3DX12_RESOURCE_BARRIER::Transition(m_gpuGridTable.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     cmd->ResourceBarrier(1, &gridTableToUAV);
 
-    // グリッドの粒子数カウントを毎フレーム確実にリセットしておく（クリア漏れによる異常なループを防ぐ）
-    if (m_gpuGridCountUAV)
-    {
-        const UINT clearValues[4] = { 0, 0, 0, 0 };
-        cmd->ClearUnorderedAccessViewUint(m_gpuGridCountUAV->HandleGPU, m_gpuGridCountUAV->HandleCPU, m_gpuGridCount.Get(), clearValues, 0, nullptr);
-    }
-
     ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
     cmd->SetDescriptorHeaps(1, heaps);
     cmd->SetComputeRootSignature(m_computeRootSignature.Get());
@@ -810,13 +803,13 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
 {
     if (!graphics::MetaBallPipeline::CreateRootSignature(device, m_metaRootSignature))
     {
-        printf("FluidSystem: メタボール描画用ルートシグネチャの初期化に失敗しました\n");
+        printf("FluidSystem: Meta RootSignature failed\n");
         return;
     }
 
     if (!graphics::MetaBallPipeline::CreatePipelineState(device, m_metaRootSignature.Get(), rtvFormat, m_metaPipelineState))
     {
-        printf("FluidSystem: メタボール描画用パイプラインの初期化に失敗しました\n");
+        printf("FluidSystem: MetaBall PSO Create failed\n");
         m_metaRootSignature.Reset();
         return;
     }
@@ -834,14 +827,14 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
     if (FAILED(device->CreateCommittedResource(&cpuHeap, D3D12_HEAP_FLAG_NONE, &cpuDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
         IID_PPV_ARGS(m_cpuMetaBuffer.ReleaseAndGetAddressOf()))))
     {
-        printf("FluidSystem: CPUメタデータバッファ生成に失敗しました\n");
+        printf("FluidSystem 1 : CPU Meta Buffer Create failed\n");
         return;
     }
 
     m_cpuMetaSRV = g_Engine->CbvSrvUavHeap()->RegisterBuffer(m_cpuMetaBuffer.Get(), m_maxParticles, sizeof(ParticleMetaGPU));
     if (!m_cpuMetaSRV)
     {
-        printf("FluidSystem: CPUメタデータSRVの登録に失敗しました\n");
+        printf("FluidSystem 2 : CPU MetaDate SRV Create failed\n");
         return;
     }
     m_activeMetaSRV = m_cpuMetaSRV;
@@ -852,7 +845,7 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
     if (FAILED(device->CreateCommittedResource(&gpuHeap, D3D12_HEAP_FLAG_NONE, &gpuDesc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr,
         IID_PPV_ARGS(m_gpuMetaBuffer.ReleaseAndGetAddressOf()))))
     {
-        printf("FluidSystem: GPUメタデータバッファ生成に失敗しました\n");
+        printf("FluidSystem 3 : GPU MetaDate Buffer Create failed\n");
         return;
     }
 
@@ -872,7 +865,7 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
     }
     if (!m_gpuMetaSRV)
     {
-        printf("FluidSystem: GPUメタデータSRVの登録に失敗しました\n");
+        printf("FluidSystem 4 : GPU Meta Data Buffer Resister failed\n");
         return;
     }
 
@@ -891,7 +884,7 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
     }
     if (!m_gpuMetaUAV)
     {
-        printf("FluidSystem: GPUメタデータUAVの登録に失敗しました\n");
+        printf("FluidSystem 5 : GPUメタデータUAVの登録に失敗しました\n");
         return;
     }
 }
@@ -920,7 +913,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
             IID_PPV_ARGS(m_gpuParticleBuffers[i].resource.ReleaseAndGetAddressOf()));
         if (FAILED(hr))
         {
-            printf("FluidSystem: GPU粒子バッファ生成に失敗しました (%d)\n", i);
+            printf("FluidSystem 6 : GPU粒子バッファ生成に失敗しました (%d)\n", i);
             m_gpuAvailable = false;
             return;
         }
@@ -942,7 +935,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         }
         if (!m_gpuParticleBuffers[i].srv)
         {
-            printf("FluidSystem: GPU粒子SRVの登録に失敗しました (%d)\n", i);
+            printf("FluidSystem 7 : GPU粒子SRVの登録に失敗しました (%d)\n", i);
             m_gpuAvailable = false;
             return;
         }
@@ -962,7 +955,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         }
         if (!m_gpuParticleBuffers[i].uav)
         {
-            printf("FluidSystem: GPU粒子UAVの登録に失敗しました (%d)\n", i);
+            printf("FluidSystem 8 : GPU粒子UAVの登録に失敗しました (%d)\n", i);
             m_gpuAvailable = false;
             return;
         }
@@ -974,7 +967,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         IID_PPV_ARGS(m_gpuGridCount.ReleaseAndGetAddressOf()));
     if (FAILED(hrGrid))
     {
-        printf("FluidSystem: グリッドカウントバッファ生成に失敗しました\n");
+        printf("FluidSystem 9 : グリッドカウントバッファ生成に失敗しました\n");
         m_gpuAvailable = false;
         return;
     }
@@ -993,7 +986,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
     }
     if (!m_gpuGridCountUAV)
     {
-        printf("FluidSystem: グリッドカウントUAVの登録に失敗しました\n");
+        printf("FluidSystem 10 : グリッドカウントUAVの登録に失敗しました\n");
         m_gpuAvailable = false;
         return;
     }
@@ -1003,7 +996,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         IID_PPV_ARGS(m_gpuGridTable.ReleaseAndGetAddressOf()));
     if (FAILED(hrTable))
     {
-        printf("FluidSystem: グリッドテーブル生成に失敗しました\n");
+        printf("FluidSystem 11 : グリッドテーブル生成に失敗しました\n");
         m_gpuAvailable = false;
         return;
     }
@@ -1022,7 +1015,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
     }
     if (!m_gpuGridTableUAV)
     {
-        printf("FluidSystem: グリッドテーブルUAVの登録に失敗しました\n");
+        printf("FluidSystem 12 : グリッドテーブルUAVの登録に失敗しました\n");
         m_gpuAvailable = false;
         return;
     }
@@ -1034,7 +1027,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         IID_PPV_ARGS(m_gpuUpload.ReleaseAndGetAddressOf()));
     if (FAILED(hrUpload))
     {
-        printf("FluidSystem: GPUアップロードバッファ生成に失敗しました\n");
+        printf("FluidSystem 13 : GPUアップロードバッファ生成に失敗しました\n");
         m_gpuAvailable = false;
         return;
     }
@@ -1045,7 +1038,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         IID_PPV_ARGS(m_gpuReadback.ReleaseAndGetAddressOf()));
     if (FAILED(hrReadback))
     {
-        printf("FluidSystem: GPUリードバックバッファ生成に失敗しました\n");
+        printf("FluidSystem 14 : GPUリードバックバッファ生成に失敗しました\n");
         m_gpuAvailable = false;
         return;
     }
@@ -1082,7 +1075,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
     HRESULT hrRoot = device->CreateRootSignature(0, serialized->GetBufferPointer(), serialized->GetBufferSize(), IID_PPV_ARGS(m_computeRootSignature.ReleaseAndGetAddressOf()));
     if (FAILED(hrRoot))
     {
-        printf("FluidSystem: コンピュート用ルートシグネチャ生成に失敗しました\n");
+        printf("FluidSystem 15 : コンピュート用ルートシグネチャ生成に失敗しました\n");
         m_gpuAvailable = false;
         return;
     }
@@ -1116,7 +1109,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         HRESULT hrAlloc = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE, IID_PPV_ARGS(m_computeAllocator.ReleaseAndGetAddressOf()));
         if (FAILED(hrAlloc))
         {
-            printf("FluidSystem: コンピュート用アロケーター生成に失敗しました\n");
+            printf("FluidSystem 16 : コンピュート用アロケーター生成に失敗しました\n");
             m_gpuAvailable = false;
             return;
         }
@@ -1127,7 +1120,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         HRESULT hrList = device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE, m_computeAllocator.Get(), nullptr, IID_PPV_ARGS(m_computeCommandList.ReleaseAndGetAddressOf()));
         if (FAILED(hrList))
         {
-            printf("FluidSystem: コンピュート用コマンドリスト生成に失敗しました\n");
+            printf("FluidSystem 17 : コンピュート用コマンドリスト生成に失敗しました\n");
             m_gpuAvailable = false;
             return;
         }
@@ -1140,7 +1133,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         HRESULT hrFence = device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_computeFence.ReleaseAndGetAddressOf()));
         if (FAILED(hrFence))
         {
-            printf("FluidSystem: コンピュート用フェンス生成に失敗しました\n");
+            printf("FluidSystem 18 : コンピュート用フェンス生成に失敗しました\n");
             m_gpuAvailable = false;
             return;
         }
@@ -1153,7 +1146,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         m_computeFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
         if (!m_computeFenceEvent)
         {
-            printf("FluidSystem: フェンスイベント生成に失敗しました\n");
+            printf("FluidSystem 19 : フェンスイベント生成に失敗しました\n");
             m_gpuAvailable = false;
             return;
         }
@@ -1176,14 +1169,14 @@ ID3D12GraphicsCommandList* FluidSystem::BeginComputeCommandList()
     HRESULT hrAlloc = m_computeAllocator->Reset();
     if (FAILED(hrAlloc))
     {
-        printf("FluidSystem: コンピュートアロケーターのリセットに失敗しました\n");
+        printf("FluidSystem 20 : コンピュートアロケーターのリセットに失敗しました\n");
         return nullptr;
     }
 
     HRESULT hrCmd = m_computeCommandList->Reset(m_computeAllocator.Get(), nullptr);
     if (FAILED(hrCmd))
     {
-        printf("FluidSystem: コンピュートコマンドリストのリセットに失敗しました\n");
+        printf("FluidSystem 21 : compute コマンドリストのリセットに失敗\n");
         return nullptr;
     }
 
@@ -1200,7 +1193,7 @@ void FluidSystem::SubmitComputeCommandList()
     HRESULT hrClose = m_computeCommandList->Close();
     if (FAILED(hrClose))
     {
-        printf("FluidSystem: コンピュートコマンドリストのクローズに失敗しました\n");
+        printf("FluidSystem 22 : compute command list failed\n");
         return;
     }
 

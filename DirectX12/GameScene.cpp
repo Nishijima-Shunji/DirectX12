@@ -41,7 +41,7 @@ bool GameScene::Init() {
 	auto device = g_Engine->Device();
 	const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-	const UINT maxParticles = 5000;
+	const UINT maxParticles = 5;
 	m_fluid.Init(device, rtvFormat, maxParticles, 0);
 	m_fluid.SpawnParticlesSphere(XMFLOAT3(0.0f,0.0f,0.0f),10.0f,50);
 	m_fluid.UseGPU(true);
