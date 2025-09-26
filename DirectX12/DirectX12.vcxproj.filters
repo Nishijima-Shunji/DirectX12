@@ -323,6 +323,9 @@
     <FxCompile Include="SSFRNormalCS.hlsl">
       <Filter>リソース ファイル\ComputeShader</Filter>
     </FxCompile>
+    <FxCompile Include="metacomposite.hlsl">
+      <Filter>リソース ファイル\PixelShader</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FullscreenPSO.h">

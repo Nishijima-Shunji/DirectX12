@@ -440,27 +440,20 @@ void Engine::BeginRender()
 // 描画待機
 void Engine::WaitRender()
 {
-	//描画終了待ち
-	const UINT64 fenceValue = m_fenceValue[m_CurrentBackBufferIndex];
-	m_pQueue->Signal(m_pFence.Get(), fenceValue);
-	m_fenceValue[m_CurrentBackBufferIndex]++;
+	// コマンドキューに Signal コマンドを投入
+	m_pQueue->Signal(m_pFence.Get(), m_fenceValue[m_CurrentBackBufferIndex]);
 
-	// 次のフレームの描画準備がまだであれば待機する.
-	if (m_pFence->GetCompletedValue() < fenceValue)
+	// GPU が Signal に到達するまで待機
+	if (m_pFence->GetCompletedValue() < m_fenceValue[m_CurrentBackBufferIndex])
 	{
-		// 完了時にイベントを設定.
-		auto hr = m_pFence->SetEventOnCompletion(fenceValue, m_fenceEvent);
-		if (FAILED(hr))
-		{
-			return;
-		}
-
-		// 待機処理.
-		if (WAIT_OBJECT_0 != WaitForSingleObjectEx(m_fenceEvent, INFINITE, FALSE))
-		{
-			return;
-		}
+		// イベントを設定
+		m_pFence->SetEventOnCompletion(m_fenceValue[m_CurrentBackBufferIndex], m_fenceEvent);
+		// イベント待機
+		WaitForSingleObject(m_fenceEvent, INFINITE);
 	}
+
+	// 次のフレームのフェンス値をインクリメント
+	m_fenceValue[m_CurrentBackBufferIndex]++;
 }
 
 // 描画終了
@@ -480,11 +473,11 @@ void Engine::EndRender()
 	// スワップチェーンを切り替え
 	m_pSwapChain->Present(1, 0);
 
-	// 描画完了を待つ
-	WaitRender();
-
 	// バックバッファ番号更新
 	m_CurrentBackBufferIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+
+	// GPU の処理完了を待つ (次のフレームの描画コマンドを発行する前に待つ)
+	WaitRender();
 }
 
 // GPU完了まで待機

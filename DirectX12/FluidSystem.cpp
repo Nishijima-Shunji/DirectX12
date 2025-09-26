@@ -1158,55 +1158,65 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
     m_gpuDirty = true;
 }
 
+// FluidSystem.cpp: BeginComputeCommandList
 ID3D12GraphicsCommandList* FluidSystem::BeginComputeCommandList()
 {
-    if (!m_computeAllocator || !m_computeCommandList)
+    if (!m_computeAllocator || !m_computeCommandList || !m_computeFence || !m_computeFenceEvent)
     {
         return nullptr;
     }
 
-    // 直前に投げたコンピュートコマンドの実行が終わっていない場合は待機してからリセットする
-    if (m_computeFence && m_lastSubmittedComputeFence != 0)
+    // 直前に発行したコンピュートコマンドの実行が終わるまで待機する
+    if (m_computeFence->GetCompletedValue() < m_lastSubmittedComputeFence)
     {
-        UINT64 completed = m_computeFence->GetCompletedValue();
-        if (completed < m_lastSubmittedComputeFence)
+        // GPUが完了したときにイベントが発火するように設定し、待機する
+        HRESULT hr = m_computeFence->SetEventOnCompletion(m_lastSubmittedComputeFence, m_computeFenceEvent);
+        if (FAILED(hr))
         {
-            if (!m_computeFenceEvent)
-            {
-                m_computeFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-            }
-
-            if (m_computeFenceEvent)
-            {
-                m_computeFence->SetEventOnCompletion(m_lastSubmittedComputeFence, m_computeFenceEvent);
-                WaitForSingleObject(m_computeFenceEvent, INFINITE);
-            }
-            else
-            {
-                printf("FluidSystem: コンピュートフェンスイベントの生成に失敗しました\n");
-                return nullptr;
-            }
+            printf("FluidSystem ERROR: Failed to set event on completion. Disabling GPU simulation.\n");
+            m_gpuAvailable = false;
+            return nullptr;
         }
+        WaitForSingleObject(m_computeFenceEvent, INFINITE);
     }
 
-    // フレーム毎にアロケーターとコマンドリストをリセットして記録を開始
+    // GPUの処理が完了したので、アロケーターとコマンドリストを安全にリセットできる
     HRESULT hrAlloc = m_computeAllocator->Reset();
     if (FAILED(hrAlloc))
     {
-        printf("FluidSystem 20 : コンピュートアロケーターのリセットに失敗しました\n");
+        // HRESULT をログに出力して詳細な原因を追跡しやすくする
+        printf("FluidSystem 20 : Compute allocator reset failed (HRESULT: 0x%08X).\n", hrAlloc);
+        if (hrAlloc == DXGI_ERROR_DEVICE_REMOVED)
+        {
+            HRESULT reason = m_device->GetDeviceRemovedReason();
+            printf("    Reason: Device Removed (0x%08X)\n", reason);
+        }
+        // 回復不能なエラーとみなし、GPUシミュレーションを無効化してCPUにフォールバックさせる
+        printf("    Disabling GPU simulation due to an unrecoverable error.\n");
+        m_gpuAvailable = false;
         return nullptr;
     }
 
     HRESULT hrCmd = m_computeCommandList->Reset(m_computeAllocator.Get(), nullptr);
     if (FAILED(hrCmd))
     {
-        printf("FluidSystem 21 : Compute Commandlist Reset failed\n");
+        // HRESULT をログに出力
+        printf("FluidSystem 21 : Compute Commandlist Reset failed (HRESULT: 0x%08X).\n", hrCmd);
+        if (hrCmd == DXGI_ERROR_DEVICE_REMOVED)
+        {
+            HRESULT reason = m_device->GetDeviceRemovedReason();
+            printf("    Reason: Device Removed (0x%08X)\n", reason);
+        }
+        // こちらも同様に、エラー発生時はGPUシミュレーションを無効化
+        printf("    Disabling GPU simulation due to an unrecoverable error.\n");
+        m_gpuAvailable = false;
         return nullptr;
     }
 
     return m_computeCommandList.Get();
 }
 
+// FluidSystem.cpp: SubmitComputeCommandList (修正後)
 void FluidSystem::SubmitComputeCommandList()
 {
     if (!m_computeCommandList)
@@ -1217,7 +1227,7 @@ void FluidSystem::SubmitComputeCommandList()
     HRESULT hrClose = m_computeCommandList->Close();
     if (FAILED(hrClose))
     {
-        printf("FluidSystem 22 : compute command list failed\n");
+        printf("FluidSystem 22 : compute command list close failed\n");
         return;
     }
 
@@ -1238,18 +1248,24 @@ void FluidSystem::SubmitComputeCommandList()
 
     if (m_computeFence)
     {
-        ++m_computeFenceValue;
-        if (SUCCEEDED(queue->Signal(m_computeFence.Get(), m_computeFenceValue)))
-        {
-            m_lastSubmittedComputeFence = m_computeFenceValue;
+        // 待つべき目標値を先に更新する
+        m_computeFenceValue++;
+        m_lastSubmittedComputeFence = m_computeFenceValue;
 
-            // グラフィックスキューはコンピュート結果を待ってから描画を継続
-            if (ID3D12CommandQueue* graphicsQueue = g_Engine->CommandQueue())
+        if (FAILED(queue->Signal(m_computeFence.Get(), m_lastSubmittedComputeFence)))
+        {
+            // Signalの失敗は致命的なので、GPUシミュレーションを無効にする
+            printf("FluidSystem ERROR: Failed to signal the compute fence. Disabling GPU simulation.\n");
+            m_gpuAvailable = false;
+            return; // これ以上続行しない
+        }
+
+        // グラフィックスキューはコンピュート結果を待ってから描画を継続
+        if (ID3D12CommandQueue* graphicsQueue = g_Engine->CommandQueue())
+        {
+            if (graphicsQueue != queue)
             {
-                if (graphicsQueue != queue)
-                {
-                    graphicsQueue->Wait(m_computeFence.Get(), m_computeFenceValue);
-                }
+                graphicsQueue->Wait(m_computeFence.Get(), m_lastSubmittedComputeFence);
             }
         }
     }
