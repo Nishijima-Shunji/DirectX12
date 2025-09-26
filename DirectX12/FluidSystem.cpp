@@ -1165,6 +1165,30 @@ ID3D12GraphicsCommandList* FluidSystem::BeginComputeCommandList()
         return nullptr;
     }
 
+    // 直前に投げたコンピュートコマンドの実行が終わっていない場合は待機してからリセットする
+    if (m_computeFence && m_lastSubmittedComputeFence != 0)
+    {
+        UINT64 completed = m_computeFence->GetCompletedValue();
+        if (completed < m_lastSubmittedComputeFence)
+        {
+            if (!m_computeFenceEvent)
+            {
+                m_computeFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+            }
+
+            if (m_computeFenceEvent)
+            {
+                m_computeFence->SetEventOnCompletion(m_lastSubmittedComputeFence, m_computeFenceEvent);
+                WaitForSingleObject(m_computeFenceEvent, INFINITE);
+            }
+            else
+            {
+                printf("FluidSystem: コンピュートフェンスイベントの生成に失敗しました\n");
+                return nullptr;
+            }
+        }
+    }
+
     // フレーム毎にアロケーターとコマンドリストをリセットして記録を開始
     HRESULT hrAlloc = m_computeAllocator->Reset();
     if (FAILED(hrAlloc))
