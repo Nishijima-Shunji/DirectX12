@@ -90,6 +90,13 @@ void FadeController::Render()
 
     auto cmd = g_Engine->CommandList();
     UINT idx = g_Engine->CurrentBackBufferIndex();
+
+    // 2フレーム目以降で未初期化バッファを触って落ちるのを防ぐため、念のため存在を確認
+    if (!m_constantBuffers[idx] || !m_constantBuffers[idx]->IsValid())
+    {
+        return;
+    }
+
     auto colorPtr = m_constantBuffers[idx]->GetPtr<XMFLOAT4>();
     *colorPtr = XMFLOAT4(0.f, 0.f, 0.f, m_alpha);
 
