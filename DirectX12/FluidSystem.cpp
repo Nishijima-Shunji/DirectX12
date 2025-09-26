@@ -1200,7 +1200,7 @@ ID3D12GraphicsCommandList* FluidSystem::BeginComputeCommandList()
     HRESULT hrCmd = m_computeCommandList->Reset(m_computeAllocator.Get(), nullptr);
     if (FAILED(hrCmd))
     {
-        printf("FluidSystem 21 : compute コマンドリストのリセットに失敗\n");
+        printf("FluidSystem 21 : Compute Commandlist Reset failed\n");
         return nullptr;
     }
 
