@@ -684,6 +684,13 @@ void FluidSystem::StepGPU(ID3D12GraphicsCommandList* cmd, float dt)
     auto gridTableToUAV = CD3DX12_RESOURCE_BARRIER::Transition(m_gpuGridTable.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     cmd->ResourceBarrier(1, &gridTableToUAV);
 
+    // グリッドの粒子数カウントを毎フレーム確実にリセットしておく（クリア漏れによる異常なループを防ぐ）
+    if (m_gpuGridCountUAV)
+    {
+        const UINT clearValues[4] = { 0, 0, 0, 0 };
+        cmd->ClearUnorderedAccessViewUint(m_gpuGridCountUAV->HandleGPU, m_gpuGridCountUAV->HandleCPU, m_gpuGridCount.Get(), clearValues, 0, nullptr);
+    }
+
     ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
     cmd->SetDescriptorHeaps(1, heaps);
     cmd->SetComputeRootSignature(m_computeRootSignature.Get());
