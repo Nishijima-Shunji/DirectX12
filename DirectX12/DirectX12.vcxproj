@@ -226,7 +226,8 @@
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Vertex</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Vertex</ShaderType>
-      <ShaderModel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">5.0</ShaderModel>
+      <!-- DirectX 10 Level 9 ターゲットでは SV_VertexID/SV_InstanceID が利用できないため、常に Shader Model 5.0 でコンパイルして機能レベル 10 相当のシェーダーを生成する -->
+      <ShaderModel>5.0</ShaderModel>
     </FxCompile>
     <FxCompile Include="BlurPS.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>

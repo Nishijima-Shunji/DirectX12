@@ -35,7 +35,7 @@ VSOut main(uint vid : SV_VertexID, uint iid : SV_InstanceID)
     float3 wp = Particles[iid].pos;
     float ra = Particles[iid].r;
 
-    // ���[���h��Ԃ̃r���{�[�h
+    // ビルボードの向きを決めるためにカメラの右方向ベクトルと上方向ベクトルを正規化する
     float3 right = normalize(CameraRight);
     float3 up = normalize(CameraUp);
 
@@ -44,7 +44,7 @@ VSOut main(uint vid : SV_VertexID, uint iid : SV_InstanceID)
     float4 v = mul(float4(cornerWS, 1), View);
     o.pos = mul(v, Proj);
 
-    // 0..1 ��
-    o.uv = l * 0.5f + 0.5f; // �����������ɏ㉺�����]����Ȃ� o.uv.y = 1 - o.uv.y;
+    // UV 座標を 0〜1 の範囲に正規化し、後段で扱いやすい形にする
+    o.uv = l * 0.5f + 0.5f; // 必要であれば o.uv.y = 1 - o.uv.y; で上下を反転できる
     return o;
 }
