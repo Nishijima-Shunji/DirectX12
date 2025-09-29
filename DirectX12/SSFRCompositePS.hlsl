@@ -1,6 +1,13 @@
 #define PASS_COMPOSITE_PS
 #include "SharedStruct.hlsli"
 
+// フルスクリーン描画時の頂点シェーダー出力と整合する構造体
+struct FullscreenTriangleOutput
+{
+    float4 pos : SV_POSITION;
+    float2 uv  : TEXCOORD0;
+};
+
 Texture2D<float> g_DepthTexture : register(t0);
 Texture2D<float4> g_NormalTexture : register(t1);
 Texture2D<float4> g_ParticleColorTexture : register(t2);
@@ -19,8 +26,11 @@ cbuffer SceneConstantBuffer : register(b0)
 float4 main(FullscreenTriangleOutput input) : SV_TARGET
 {
     float2 uv = input.uv;
-    uint2 screen_pos = uint2(uv.x * ScreenWidth, uv.y * ScreenHeight);
-    
+    // テクスチャサイズからスクリーン座標を計算（定数バッファ依存を避ける）
+    uint screenWidth, screenHeight;
+    g_DepthTexture.GetDimensions(screenWidth, screenHeight);
+    uint2 screen_pos = uint2(uv.x * screenWidth, uv.y * screenHeight);
+
     float depth = g_DepthTexture.Load(int3(screen_pos, 0));
 
     // 背景ピクセルはそのまま出力

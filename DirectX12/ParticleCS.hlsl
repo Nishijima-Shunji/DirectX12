@@ -89,16 +89,17 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     //  力計算
     // ========================================
     float3 force = float3(0, -9.8f * density, 0);
-    for (int cx = baseCell.x - 1; cx <= baseCell.x + 1; ++cx) {
-        if (cx < 0 || cx >= (int)gridDim.x) continue;
-        for (int cy = baseCell.y - 1; cy <= baseCell.y + 1; ++cy) {
-            if (cy < 0 || cy >= (int)gridDim.y) continue;
-            for (int cz = baseCell.z - 1; cz <= baseCell.z + 1; ++cz) {
-                if (cz < 0 || cz >= (int)gridDim.z) continue;
-                uint cId = cx + gridDim.x * (cy + gridDim.y * cz);
-                uint cnt = gridCount[cId];
-                for (uint n = 0; n < cnt; ++n) {
-                    uint j = gridTable[cId * MAX_PARTICLES_PER_CELL + n];
+    // ループ変数を分けて記述し、HLSL側でのスコープ衝突を避ける
+    for (int nx = baseCell.x - 1; nx <= baseCell.x + 1; ++nx) {
+        if (nx < 0 || nx >= (int)gridDim.x) continue;
+        for (int ny = baseCell.y - 1; ny <= baseCell.y + 1; ++ny) {
+            if (ny < 0 || ny >= (int)gridDim.y) continue;
+            for (int nz = baseCell.z - 1; nz <= baseCell.z + 1; ++nz) {
+                if (nz < 0 || nz >= (int)gridDim.z) continue;
+                uint neighborCellId = nx + gridDim.x * (ny + gridDim.y * nz);
+                uint neighborCount = gridCount[neighborCellId];
+                for (uint n = 0; n < neighborCount; ++n) {
+                    uint j = gridTable[neighborCellId * MAX_PARTICLES_PER_CELL + n];
                     if (j == i) continue;
                     float3 rij = inParticles[i].position - inParticles[j].position;
                     float r2 = dot(rij, rij);
@@ -109,7 +110,8 @@ void CSMain(uint3 id : SV_DispatchThreadID)
                         float pTerm = (pressure + stiffness * ( (density - restDensity) )) / (2*density);
                         force += -particleMass * pTerm * grad;
                         float lap = 45.0/(PI * radius6) * (radius - r);
-                        force += viscosity * particleMass * (inParticles[j].velocity - inParticles[i].velocity) * (lap / density);
+                        float3 velocityDiff = inParticles[j].velocity - inParticles[i].velocity;
+                        force += viscosity * particleMass * velocityDiff * (lap / density);
                     }
                 }
             }
