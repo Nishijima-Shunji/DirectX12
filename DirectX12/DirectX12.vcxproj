@@ -178,6 +178,8 @@
     <ClCompile Include="Texture2D.cpp" />
     <ClCompile Include="TitleScene.cpp" />
     <ClCompile Include="VertexBuffer.cpp" />
+    <ClCompile Include="Source\Rendering\FluidWaterRenderer.cpp" />
+    <ClCompile Include="Source\Rendering\SSRRenderer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="App.h" />
@@ -210,6 +212,8 @@
     <ClInclude Include="SphereMeshGenerator.h" />
     <ClInclude Include="SpatialGrid.h" />
     <ClInclude Include="Texture2D.h" />
+    <ClInclude Include="Source\Rendering\FluidWaterRenderer.h" />
+    <ClInclude Include="Source\Rendering\SSRRenderer.h" />
     <ClInclude Include="TitleScene.h" />
     <ClInclude Include="VertexBuffer.h" />
   </ItemGroup>

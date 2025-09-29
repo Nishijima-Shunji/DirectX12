@@ -45,6 +45,10 @@ bool GameScene::Init() {
 	m_fluid.Init(device, rtvFormat, maxParticles, 0);
 	m_fluid.SpawnParticlesSphere(XMFLOAT3(0.0f,0.0f,0.0f),10.0f,50);
 	m_fluid.UseGPU(true);
+        m_fluidRenderer = std::make_unique<FluidWaterRenderer>();
+        m_fluidRenderer->Init(device, g_Engine->FrameBufferWidth(), g_Engine->FrameBufferHeight());
+        m_ssrRenderer = std::make_unique<SSRRenderer>();
+        m_ssrRenderer->Init(device, *m_fluidRenderer, g_Engine->FrameBufferWidth(), g_Engine->FrameBufferHeight());
 
 
 	// 描画確認用のキューブを生成
@@ -58,6 +62,23 @@ void GameScene::Update(float deltaTime) {
 	//particle->Update(deltaTime);
 	auto cmd = g_Engine->CommandList();
 	m_fluid.Simulate(cmd, deltaTime);
+
+        if (m_fluidRenderer) {
+                if (GetAsyncKeyState(VK_F1) & 0x0001) { m_currentDebug = FluidDebugView::Depth; }
+                if (GetAsyncKeyState(VK_F2) & 0x0001) { m_currentDebug = FluidDebugView::Thickness; }
+                if (GetAsyncKeyState(VK_F3) & 0x0001) { m_currentDebug = FluidDebugView::Normal; }
+                if (GetAsyncKeyState(VK_F4) & 0x0001) { m_currentDebug = FluidDebugView::Composite; }
+                if (GetAsyncKeyState(VK_F5) & 0x0001) { m_ssrQuality = (m_ssrQuality % 3) + 1; }
+                if (GetAsyncKeyState(VK_F6) & 0x0001) { m_usePlanarReflection = !m_usePlanarReflection; }
+                if (GetAsyncKeyState(VK_F7) & 0x0001) { m_downsampleStep = (m_downsampleStep == 4) ? 1 : (m_downsampleStep == 2 ? 4 : 2); }
+                if (GetAsyncKeyState(VK_F8) & 0x0001) { m_gridDebug = !m_gridDebug; }
+
+                m_fluidRenderer->SetDebugView(m_currentDebug);
+                m_fluidRenderer->SetSSRQuality(static_cast<uint32_t>(m_ssrQuality));
+                m_fluidRenderer->TogglePlanarReflection(m_usePlanarReflection);
+                m_fluidRenderer->EnableGridDebug(m_gridDebug);
+                m_fluidRenderer->SetDownsample(m_downsampleStep);
+        }
 
 	// 全体のupdate
 	for (auto& obj : m_objects) {
@@ -81,17 +102,30 @@ void GameScene::Update(float deltaTime) {
 }
 
 void GameScene::Draw() {
-	commandList = g_Engine->CommandList(); // コマンドリストを取得
-	auto cmd = g_Engine->CommandList();
-	auto camObj = g_Engine->GetObj<Camera>("Camera");
-	auto invViewProj = camObj->GetInvViewProj();
-	auto cameraPos = camObj->GetPosition();
+        commandList = g_Engine->CommandList();
+        auto cmd = g_Engine->CommandList();
+        auto camObj = g_Engine->GetObj<Camera>("Camera");
+        if (!camObj) {
+                return;
+        }
 
-	//particle->Draw();
+        if (m_fluidRenderer) {
+                m_fluidRenderer->BeginSceneRender(cmd);
+        }
 
-	for (auto& actor : m_objects) {
-		if (actor->IsAlive)
-			actor->Render(commandList);
-	}
-	m_fluid.Render(cmd, invViewProj, cameraPos, 1.0f);
+        for (auto& actor : m_objects) {
+                if (actor->IsAlive) {
+                        actor->Render(cmd);
+                }
+        }
+
+        if (m_fluidRenderer) {
+                m_fluidRenderer->EndSceneRender(cmd);
+                m_fluidRenderer->RenderDepthThickness(cmd, *camObj, m_fluid);
+                m_fluidRenderer->BlurAndNormal(cmd);
+                if (m_ssrRenderer) {
+                        m_ssrRenderer->RenderSSR(cmd, *m_fluidRenderer, *camObj);
+                }
+                m_fluidRenderer->Composite(cmd);
+        }
 }

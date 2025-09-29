@@ -81,6 +81,10 @@ public:
         const DirectX::XMFLOAT3& camPos,
         float isoLevel);
 
+    DescriptorHandle* ActiveMetaSRV() const { return m_activeMetaSRV; }
+    UINT ActiveParticleCount() const { return m_particleCount; }
+    float RenderParticleRadius() const { return m_material.renderRadius; }
+
     void StartDrag(int, int, class Camera*) {}
     void Drag(int, int, class Camera*) {}
     void EndDrag() {}

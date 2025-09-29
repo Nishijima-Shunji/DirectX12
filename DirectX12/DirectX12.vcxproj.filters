@@ -61,6 +61,12 @@
     <Filter Include="ヘッダー ファイル\System\DescriptorHeap">
       <UniqueIdentifier>{2f229c0a-2929-458c-b0f9-f271e89040ba}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ソース ファイル\System\Rendering">
+      <UniqueIdentifier>{6d4db51b-2e3b-4e08-95a0-9fa2890edb8f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\System\Rendering">
+      <UniqueIdentifier>{d1f09706-2b9f-45f5-8d86-5d926d6f2a8d}</UniqueIdentifier>
+    </Filter>
     <Filter Include="リソース ファイル\PixelShader">
       <UniqueIdentifier>{8117fc0b-0b3b-4795-81f3-66d4d1710778}</UniqueIdentifier>
     </Filter>
@@ -173,6 +179,12 @@
     </ClInclude>
     <ClInclude Include="VertexBuffer.h">
       <Filter>ヘッダー ファイル\System\Buffer</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Rendering\FluidWaterRenderer.h">
+      <Filter>ヘッダー ファイル\System\Rendering</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Rendering\SSRRenderer.h">
+      <Filter>ヘッダー ファイル\System\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="ConstantBuffer.h">
       <Filter>ヘッダー ファイル\System\Buffer</Filter>
