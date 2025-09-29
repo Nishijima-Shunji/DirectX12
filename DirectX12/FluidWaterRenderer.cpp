@@ -644,9 +644,10 @@ void FluidWaterRenderer::CreatePipelineStates(ID3D12Device* device)
     ComPtr<ID3DBlob> ps;
     ComPtr<ID3DBlob> cs;
 
+    // シェーダーファイルはプロジェクト直下に配置しているため、ファイル名のみで指定する
     // DepthThickness PSO
-    CompileShader(L"Shaders/Fluid/FluidDepthThicknessVS.hlsl", "VSMain", "vs_5_1", vs);
-    CompileShader(L"Shaders/Fluid/FluidDepthThicknessPS.hlsl", "PSMain", "ps_5_1", ps);
+    CompileShader(L"FluidDepthThicknessVS.hlsl", "VSMain", "vs_5_1", vs);
+    CompileShader(L"FluidDepthThicknessPS.hlsl", "PSMain", "ps_5_1", ps);
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
     desc.pRootSignature = m_depthThicknessRS.Get();
@@ -672,26 +673,26 @@ void FluidWaterRenderer::CreatePipelineStates(ID3D12Device* device)
     device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(m_depthThicknessPSO.ReleaseAndGetAddressOf()));
 
     // Blur X
-    CompileShader(L"Shaders/Fluid/BilateralBlurX.hlsl", "CSMain", "cs_5_1", cs);
+    CompileShader(L"BilateralBlurX.hlsl", "CSMain", "cs_5_1", cs);
     D3D12_COMPUTE_PIPELINE_STATE_DESC cdesc{};
     cdesc.pRootSignature = m_blurRS.Get();
     cdesc.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
     device->CreateComputePipelineState(&cdesc, IID_PPV_ARGS(m_blurXPSO.ReleaseAndGetAddressOf()));
 
     // Blur Y
-    CompileShader(L"Shaders/Fluid/BilateralBlurY.hlsl", "CSMain", "cs_5_1", cs);
+    CompileShader(L"BilateralBlurY.hlsl", "CSMain", "cs_5_1", cs);
     cdesc.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
     device->CreateComputePipelineState(&cdesc, IID_PPV_ARGS(m_blurYPSO.ReleaseAndGetAddressOf()));
 
     // Normal reconstruct
-    CompileShader(L"Shaders/Fluid/ReconstructNormalCS.hlsl", "CSMain", "cs_5_1", cs);
+    CompileShader(L"ReconstructNormalCS.hlsl", "CSMain", "cs_5_1", cs);
     cdesc.pRootSignature = m_normalRS.Get();
     cdesc.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
     device->CreateComputePipelineState(&cdesc, IID_PPV_ARGS(m_normalPSO.ReleaseAndGetAddressOf()));
 
     // Composite
     CompileShader(L"FullscreenVS.hlsl", "main", "vs_5_1", vs);
-    CompileShader(L"Shaders/Fluid/CompositeWaterPS.hlsl", "PSMain", "ps_5_1", ps);
+    CompileShader(L"CompositeWaterPS.hlsl", "PSMain", "ps_5_1", ps);
     desc = {};
     desc.pRootSignature = m_compositeRS.Get();
     desc.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };

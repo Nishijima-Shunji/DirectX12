@@ -9,8 +9,8 @@
 #include "Particle.h"
 #include "FluidSystem.h"
 
-#include "Source/Rendering/FluidWaterRenderer.h"
-#include "Source/Rendering/SSRRenderer.h"
+#include "FluidWaterRenderer.h"
+#include "SSRRenderer.h"
 class GameScene : public BaseScene
 {
 private:

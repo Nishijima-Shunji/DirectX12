@@ -131,7 +131,8 @@ void SSRRenderer::CreatePipeline(ID3D12Device* device)
     ComPtr<ID3DBlob> ps;
     D3DCompileFromFile(L"FullscreenVS.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
         "main", "vs_5_1", 0, 0, vs.GetAddressOf(), nullptr);
-    D3DCompileFromFile(L"Shaders/SSR/SSR_PS.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
+    // シェーダーも直下に移動したのでファイル名だけで読み込む
+    D3DCompileFromFile(L"SSR_PS.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
         "PSMain", "ps_5_1", 0, 0, ps.GetAddressOf(), nullptr);
 
     D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};

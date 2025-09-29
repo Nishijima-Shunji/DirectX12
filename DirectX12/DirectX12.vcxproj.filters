@@ -165,6 +165,12 @@
     <ClCompile Include="SpatialGrid.cpp">
       <Filter>ソース ファイル\Game</Filter>
     </ClCompile>
+    <ClCompile Include="FluidWaterRenderer.cpp">
+      <Filter>ソース ファイル\System\Rendering</Filter>
+    </ClCompile>
+    <ClCompile Include="SSRRenderer.cpp">
+      <Filter>ソース ファイル\System\Rendering</Filter>
+    </ClCompile>
     <ClInclude Include="App.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
@@ -180,10 +186,10 @@
     <ClInclude Include="VertexBuffer.h">
       <Filter>ヘッダー ファイル\System\Buffer</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Rendering\FluidWaterRenderer.h">
+    <ClInclude Include="FluidWaterRenderer.h">
       <Filter>ヘッダー ファイル\System\Rendering</Filter>
     </ClInclude>
-    <ClInclude Include="Source\Rendering\SSRRenderer.h">
+    <ClInclude Include="SSRRenderer.h">
       <Filter>ヘッダー ファイル\System\Rendering</Filter>
     </ClInclude>
     <ClInclude Include="ConstantBuffer.h">
