@@ -143,6 +143,8 @@ private:
         D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
     };
 
+    static constexpr UINT kMaxParticlesPerCell = 64; // グリッド1セルが保持できる粒子数の上限
+
     void UpdateGridSettings();
     void ApplyExternalOperationsCPU(float dt);
     void StepCPU(float dt);
@@ -195,6 +197,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_computeRootSignature;
     std::unique_ptr<ComputePipelineState> m_buildGridPipeline;
     std::unique_ptr<ComputePipelineState> m_particlePipeline;
+    std::unique_ptr<ComputePipelineState> m_clearGridPipeline;
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_computeAllocator;
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_computeCommandList;
     Microsoft::WRL::ComPtr<ID3D12Fence> m_computeFence;

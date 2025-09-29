@@ -720,7 +720,7 @@ void FluidSystem::UpdateComputeParams(float dt)
 
 void FluidSystem::StepGPU(ID3D12GraphicsCommandList* cmd, float dt)
 {
-    if (!m_gpuAvailable || !cmd || !m_buildGridPipeline || !m_particlePipeline)
+    if (!m_gpuAvailable || !cmd || !m_buildGridPipeline || !m_particlePipeline || !m_clearGridPipeline)
     {
         return;
     }
@@ -759,7 +759,8 @@ void FluidSystem::StepGPU(ID3D12GraphicsCommandList* cmd, float dt)
     cmd->SetComputeRootSignature(m_computeRootSignature.Get());
 
     // グリッド構築
-    cmd->SetPipelineState(m_buildGridPipeline->Get());
+    // 毎フレームグリッド情報をゼロ初期化して、古いデータによる不正な粒子カウントを防ぐ
+    cmd->SetPipelineState(m_clearGridPipeline->Get());
     cmd->SetComputeRootConstantBufferView(0, m_computeParamsCB->GetAddress());
     cmd->SetComputeRootConstantBufferView(1, m_dummyViewCB->GetAddress());
     cmd->SetComputeRootDescriptorTable(2, readBuffer.srv->HandleGPU);
@@ -769,6 +770,20 @@ void FluidSystem::StepGPU(ID3D12GraphicsCommandList* cmd, float dt)
     cmd->SetComputeRootDescriptorTable(6, m_gpuGridTableUAV->HandleGPU);
 
     UINT cellCount = m_gridDim.x * m_gridDim.y * m_gridDim.z;
+    UINT64 tableCount64 = static_cast<UINT64>(cellCount) * static_cast<UINT64>(kMaxParticlesPerCell);
+    UINT clearThreads = static_cast<UINT>(std::min<UINT64>(UINT_MAX, std::max<UINT64>(tableCount64, static_cast<UINT64>(cellCount))));
+    UINT clearGroups = (clearThreads + 255) / 256;
+    cmd->Dispatch(clearGroups, 1, 1);
+
+    cmd->SetPipelineState(m_buildGridPipeline->Get());
+    cmd->SetComputeRootConstantBufferView(0, m_computeParamsCB->GetAddress());
+    cmd->SetComputeRootConstantBufferView(1, m_dummyViewCB->GetAddress());
+    cmd->SetComputeRootDescriptorTable(2, readBuffer.srv->HandleGPU);
+    cmd->SetComputeRootDescriptorTable(3, writeBuffer.uav->HandleGPU);
+    cmd->SetComputeRootDescriptorTable(4, m_gpuMetaUAV->HandleGPU);
+    cmd->SetComputeRootDescriptorTable(5, m_gpuGridCountUAV->HandleGPU);
+    cmd->SetComputeRootDescriptorTable(6, m_gpuGridTableUAV->HandleGPU);
+
     UINT totalThreads = std::max(m_particleCount, cellCount);
     UINT groups = (totalThreads + 255) / 256;
     cmd->Dispatch(groups, 1, 1);
@@ -1097,7 +1112,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         return;
     }
 
-    auto tableDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(UINT) * cellCount * 64, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    auto tableDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(UINT) * cellCount * kMaxParticlesPerCell, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
     HRESULT hrTable = device->CreateCommittedResource(&defaultHeap, D3D12_HEAP_FLAG_NONE, &tableDesc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr,
         IID_PPV_ARGS(m_gpuGridTable.ReleaseAndGetAddressOf()));
     if (FAILED(hrTable))
@@ -1108,14 +1123,14 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
     }
     if (!m_gpuGridTableUAV)
     {
-        m_gpuGridTableUAV = g_Engine->CbvSrvUavHeap()->RegisterBufferUAV(m_gpuGridTable.Get(), cellCount * 64, sizeof(UINT));
+        m_gpuGridTableUAV = g_Engine->CbvSrvUavHeap()->RegisterBufferUAV(m_gpuGridTable.Get(), cellCount * kMaxParticlesPerCell, sizeof(UINT));
     }
     else
     {
         D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
         desc.Format = DXGI_FORMAT_UNKNOWN;
         desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-        desc.Buffer.NumElements = cellCount * 64;
+        desc.Buffer.NumElements = cellCount * kMaxParticlesPerCell;
         desc.Buffer.StructureByteStride = sizeof(UINT);
         g_Engine->Device()->CreateUnorderedAccessView(m_gpuGridTable.Get(), nullptr, &desc, m_gpuGridTableUAV->HandleCPU);
     }
@@ -1186,6 +1201,19 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         return;
     }
 
+    m_clearGridPipeline = std::make_unique<ComputePipelineState>();
+    m_clearGridPipeline->SetDevice(device);
+    m_clearGridPipeline->SetRootSignature(m_computeRootSignature.Get());
+    m_clearGridPipeline->SetCS(L"ClearGridCS.cso");
+    if (!m_clearGridPipeline->Create())
+    {
+        m_clearGridPipeline.reset();
+        m_buildGridPipeline.reset();
+        m_particlePipeline.reset();
+        m_gpuAvailable = false;
+        return;
+    }
+
     m_buildGridPipeline = std::make_unique<ComputePipelineState>();
     m_buildGridPipeline->SetDevice(device);
     m_buildGridPipeline->SetRootSignature(m_computeRootSignature.Get());
@@ -1194,6 +1222,7 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
     {
         m_buildGridPipeline.reset();
         m_particlePipeline.reset();
+        m_clearGridPipeline.reset();
         m_gpuAvailable = false;
         return;
     }
@@ -1205,6 +1234,8 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
     if (!m_particlePipeline->Create())
     {
         m_particlePipeline.reset();
+        m_buildGridPipeline.reset();
+        m_clearGridPipeline.reset();
         m_gpuAvailable = false;
         return;
     }
@@ -1422,7 +1453,7 @@ bool FluidSystem::HasValidGPUResources() const
         return false;
     }
 
-    if (!m_buildGridPipeline || !m_particlePipeline || !m_computeRootSignature)
+    if (!m_buildGridPipeline || !m_particlePipeline || !m_clearGridPipeline || !m_computeRootSignature)
     {
         return false;
     }
