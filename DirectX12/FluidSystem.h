@@ -81,6 +81,15 @@ public:
         const DirectX::XMFLOAT3& camPos,
         float isoLevel);
 
+    // 水面のカラーや泡の強さを外部から調整できるようにする
+    void SetWaterAppearance(const DirectX::XMFLOAT3& shallowColor,
+        const DirectX::XMFLOAT3& deepColor,
+        float absorption,
+        float foamThreshold,
+        float foamStrength,
+        float reflectionStrength,
+        float specularPower);
+
     void StartDrag(int, int, class Camera*) {}
     void Drag(int, int, class Camera*) {}
     void EndDrag() {}
@@ -90,7 +99,10 @@ private:
     {
         DirectX::XMFLOAT4X4 InvViewProj; // ビュー射影逆行列（転置済み）
         DirectX::XMFLOAT4   CamRadius;   // カメラ座標と粒子半径
-        DirectX::XMFLOAT4   IsoCount;    // 等値面しきい値 / 粒子数 / レイマーチ係数
+        DirectX::XMFLOAT4   IsoCount;    // 等値面しきい値 / 粒子数 / レイマーチ係数 / 未使用
+        DirectX::XMFLOAT4   WaterDeep;   // 深い水の色 / w=吸収係数
+        DirectX::XMFLOAT4   WaterShallow;// 浅い水の色 / w=泡検出のしきい値
+        DirectX::XMFLOAT4   ShadingParams;// x=泡強度 y=反射割合 z=スペキュラ強度 w=時間
     };
 
     struct GPUParams
@@ -204,7 +216,14 @@ private:
     ID3D12Device* m_device = nullptr;
     DXGI_FORMAT   m_rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-    float m_rayStepScale = 0.4f;
+    DirectX::XMFLOAT3 m_waterColorDeep;
+    DirectX::XMFLOAT3 m_waterColorShallow;
+    float m_waterAbsorption = 0.35f;
+    float m_foamCurvatureThreshold = 0.45f;
+    float m_foamStrength = 0.35f;
+    float m_reflectionStrength = 0.6f;
+    float m_specularPower = 64.0f;
+    float m_totalSimulatedTime = 0.0f;
 };
 
 // プリセットマテリアルの生成ヘルパー

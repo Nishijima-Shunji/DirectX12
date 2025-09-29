@@ -41,10 +41,18 @@ bool GameScene::Init() {
 	auto device = g_Engine->Device();
 	const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-	const UINT maxParticles = 5;
-	m_fluid.Init(device, rtvFormat, maxParticles, 0);
-	m_fluid.SpawnParticlesSphere(XMFLOAT3(0.0f,0.0f,0.0f),10.0f,50);
-	m_fluid.UseGPU(true);
+        const UINT maxParticles = 1024; // 60fpsを維持できるよう上限を適度に抑える
+        m_fluid.Init(device, rtvFormat, maxParticles, 0);
+        m_fluid.SetWaterAppearance(
+                XMFLOAT3(0.32f, 0.7f, 0.95f),  // 浅瀬カラー
+                XMFLOAT3(0.04f, 0.18f, 0.32f), // 深場カラー
+                0.28f,                         // 吸収係数
+                0.42f,                         // 泡しきい値
+                0.55f,                         // 泡強度
+                0.65f,                         // 反射割合
+                96.0f);                        // ハイライトの鋭さ
+        m_fluid.SpawnParticlesSphere(XMFLOAT3(0.0f, 0.6f, 0.0f), 1.1f, maxParticles);
+        m_fluid.UseGPU(true);
 
 
 	// 描画確認用のキューブを生成

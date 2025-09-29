@@ -89,6 +89,9 @@ FluidSystem::FluidSystem()
     m_boundsMin = XMFLOAT3(-2.0f, 0.0f, -2.0f);
     m_boundsMax = XMFLOAT3(2.0f, 4.0f, 2.0f);
     m_gridDim = XMUINT3(1, 1, 1);
+    // 見た目系のデフォルト値を設定
+    m_waterColorDeep = XMFLOAT3(0.07f, 0.22f, 0.38f);
+    m_waterColorShallow = XMFLOAT3(0.25f, 0.55f, 0.95f);
 }
 
 FluidSystem::~FluidSystem()
@@ -306,6 +309,13 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt)
         UpdateParticleBuffer();
         m_activeMetaSRV = m_cpuMetaSRV;
     }
+
+    // 累積時間はシェーダー側のアニメーションに利用する
+    m_totalSimulatedTime += step;
+    if (m_totalSimulatedTime > 10000.0f)
+    {
+        m_totalSimulatedTime = std::fmod(m_totalSimulatedTime, 10000.0f);
+    }
 }
 
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const XMFLOAT4X4& invViewProj, const XMFLOAT3& camPos, float isoLevel)
@@ -324,7 +334,15 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const XMFLOAT4X4& invVi
     XMStoreFloat4x4(&cb->InvViewProj, invVP);
 
     cb->CamRadius = XMFLOAT4(camPos.x, camPos.y, camPos.z, m_material.renderRadius);
-    cb->IsoCount = XMFLOAT4(isoLevel * 0.6f, static_cast<float>(m_particleCount), m_rayStepScale, 0.0f);
+
+    // 粒子数に応じてレイマーチのステップ幅を動的に調整して描画負荷を抑える
+    float particleRatio = (m_maxParticles > 0) ? static_cast<float>(m_particleCount) / static_cast<float>(m_maxParticles) : 0.0f;
+    float adaptiveStep = std::clamp(std::lerp(0.55f, 0.22f, std::clamp(particleRatio * 1.5f, 0.0f, 1.0f)), 0.18f, 0.6f);
+    cb->IsoCount = XMFLOAT4(isoLevel * 0.6f, static_cast<float>(m_particleCount), adaptiveStep, 0.0f);
+
+    cb->WaterDeep = XMFLOAT4(m_waterColorDeep.x, m_waterColorDeep.y, m_waterColorDeep.z, m_waterAbsorption);
+    cb->WaterShallow = XMFLOAT4(m_waterColorShallow.x, m_waterColorShallow.y, m_waterColorShallow.z, m_foamCurvatureThreshold);
+    cb->ShadingParams = XMFLOAT4(m_foamStrength, m_reflectionStrength, m_specularPower, m_totalSimulatedTime);
 
     ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
     cmd->SetDescriptorHeaps(1, heaps);
@@ -334,6 +352,24 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const XMFLOAT4X4& invVi
     cmd->SetGraphicsRootConstantBufferView(1, m_metaCB[frameIndex]->GetAddress());
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmd->DrawInstanced(3, 1, 0, 0);
+}
+
+void FluidSystem::SetWaterAppearance(const XMFLOAT3& shallowColor,
+    const XMFLOAT3& deepColor,
+    float absorption,
+    float foamThreshold,
+    float foamStrength,
+    float reflectionStrength,
+    float specularPower)
+{
+    // ゲーム側で水の雰囲気をコントロールしやすいようにクランプしてから採用
+    m_waterColorShallow = shallowColor;
+    m_waterColorDeep = deepColor;
+    m_waterAbsorption = std::max(absorption, 0.0f);
+    m_foamCurvatureThreshold = std::clamp(foamThreshold, 0.05f, 1.5f);
+    m_foamStrength = std::clamp(foamStrength, 0.0f, 1.0f);
+    m_reflectionStrength = std::clamp(reflectionStrength, 0.0f, 1.0f);
+    m_specularPower = std::max(specularPower, 1.0f);
 }
 
 void FluidSystem::ApplyExternalOperationsCPU(float dt)
