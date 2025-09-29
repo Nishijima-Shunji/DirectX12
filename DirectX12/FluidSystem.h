@@ -150,12 +150,13 @@ private:
     void UploadCPUToGPU(ID3D12GraphicsCommandList* cmd);
     void ReadbackGPUToCPU();
     void UpdateParticleBuffer();
-    void CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat);
+    bool CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat);
     void CreateGPUResources(ID3D12Device* device);
     void UpdateComputeParams(float dt);
     void ResolveBounds(FluidParticle& p) const;
     ID3D12GraphicsCommandList* BeginComputeCommandList();
     void SubmitComputeCommandList();
+    bool HasValidGPUResources() const;
 
     float EffectiveTimeStep(float dt) const;
 

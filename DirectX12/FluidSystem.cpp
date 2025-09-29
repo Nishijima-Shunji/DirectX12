@@ -115,7 +115,15 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
     m_particleCount = 0;
 
     UpdateGridSettings();
-    CreateMetaPipeline(device, rtvFormat);
+
+    // メタボール描画用のGPUリソース生成に失敗した場合はGPUシミュレーションを封印する
+    if (!CreateMetaPipeline(device, rtvFormat))
+    {
+        printf("FluidSystem ERROR: メタボール描画パイプラインの初期化に失敗したためGPU機能を無効化します\n");
+        m_gpuAvailable = false;
+        m_useGPU = false;
+    }
+
     CreateGPUResources(device);
 
     // GPU・CPUリソースの生成が完了したタイミングで初期化済みフラグを立てる
@@ -277,6 +285,19 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt)
 
     if (Mode() == FluidSimulationMode::GPU)
     {
+        if (!HasValidGPUResources())
+        {
+            // GPU用リソースが欠けている場合は安全のためCPUシミュレーションへ切り替える
+            printf("FluidSystem ERROR: 必要なGPUリソースが未初期化のためCPUシミュレーションにフォールバックします\n");
+            m_gpuAvailable = false;
+
+            ApplyExternalOperationsCPU(step);
+            StepCPU(step);
+            UpdateParticleBuffer();
+            m_activeMetaSRV = m_cpuMetaSRV;
+            return;
+        }
+
         // 前フレームの結果を読み戻してCPU側と同期
         if (m_pendingReadback)
         {
@@ -835,19 +856,42 @@ void FluidSystem::UpdateParticleBuffer()
     m_activeMetaSRV = m_cpuMetaSRV;
 }
 
-void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat)
+bool FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat)
 {
+    if (!device)
+    {
+        return false;
+    }
+
+    // 初期化途中で失敗したときに安全にクリーンアップするためのラムダ
+    auto cleanupMetaResources = [this]()
+    {
+        m_metaRootSignature.Reset();
+        m_metaPipelineState.Reset();
+        m_cpuMetaBuffer.Reset();
+        m_gpuMetaBuffer.Reset();
+        m_cpuMetaSRV = nullptr;
+        m_gpuMetaSRV = nullptr;
+        m_gpuMetaUAV = nullptr;
+        m_activeMetaSRV = nullptr;
+        for (auto& cb : m_metaCB)
+        {
+            cb.reset();
+        }
+    };
+
     if (!graphics::MetaBallPipeline::CreateRootSignature(device, m_metaRootSignature))
     {
         printf("FluidSystem: Meta RootSignature failed\n");
-        return;
+        cleanupMetaResources();
+        return false;
     }
 
     if (!graphics::MetaBallPipeline::CreatePipelineState(device, m_metaRootSignature.Get(), rtvFormat, m_metaPipelineState))
     {
         printf("FluidSystem: MetaBall PSO Create failed\n");
-        m_metaRootSignature.Reset();
-        return;
+        cleanupMetaResources();
+        return false;
     }
 
     for (UINT i = 0; i < kFrameCount; ++i)
@@ -864,14 +908,16 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
         IID_PPV_ARGS(m_cpuMetaBuffer.ReleaseAndGetAddressOf()))))
     {
         printf("FluidSystem 1 : CPU Meta Buffer Create failed\n");
-        return;
+        cleanupMetaResources();
+        return false;
     }
 
     m_cpuMetaSRV = g_Engine->CbvSrvUavHeap()->RegisterBuffer(m_cpuMetaBuffer.Get(), m_maxParticles, sizeof(ParticleMetaGPU));
     if (!m_cpuMetaSRV)
     {
         printf("FluidSystem 2 : CPU MetaDate SRV Create failed\n");
-        return;
+        cleanupMetaResources();
+        return false;
     }
     m_activeMetaSRV = m_cpuMetaSRV;
 
@@ -882,7 +928,8 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
         IID_PPV_ARGS(m_gpuMetaBuffer.ReleaseAndGetAddressOf()))))
     {
         printf("FluidSystem 3 : GPU MetaDate Buffer Create failed\n");
-        return;
+        cleanupMetaResources();
+        return false;
     }
 
     if (!m_gpuMetaSRV)
@@ -902,7 +949,8 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
     if (!m_gpuMetaSRV)
     {
         printf("FluidSystem 4 : GPU Meta Data Buffer Resister failed\n");
-        return;
+        cleanupMetaResources();
+        return false;
     }
 
     if (!m_gpuMetaUAV)
@@ -921,8 +969,11 @@ void FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
     if (!m_gpuMetaUAV)
     {
         printf("FluidSystem 5 : GPUメタデータUAVの登録に失敗しました\n");
-        return;
+        cleanupMetaResources();
+        return false;
     }
+
+    return true;
 }
 
 void FluidSystem::CreateGPUResources(ID3D12Device* device)
@@ -1190,8 +1241,15 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
 
     m_gpuReadIndex = 0;
     m_pendingReadback = false;
-    m_gpuAvailable = true;
     m_gpuDirty = true;
+
+    // 必須リソースが揃ったか最終チェックし、足りない場合はGPUモードを無効化する
+    m_gpuAvailable = HasValidGPUResources();
+    if (!m_gpuAvailable)
+    {
+        printf("FluidSystem ERROR: GPUリソースの作成が不完全なためGPUシミュレーションを無効化しました\n");
+        m_useGPU = false;
+    }
 }
 
 // FluidSystem.cpp: BeginComputeCommandList
@@ -1264,6 +1322,8 @@ void FluidSystem::SubmitComputeCommandList()
     if (FAILED(hrClose))
     {
         printf("FluidSystem 22 : compute command list close failed\n");
+        m_gpuAvailable = false;
+        m_useGPU = false;
         return;
     }
 
@@ -1305,6 +1365,50 @@ void FluidSystem::SubmitComputeCommandList()
             }
         }
     }
+}
+
+bool FluidSystem::HasValidGPUResources() const
+{
+    // ディスクリプタハンドルが有効かを確認するラムダ
+    auto isValidHandle = [](const DescriptorHandle* handle)
+    {
+        return handle && handle->HandleCPU.ptr != 0 && handle->HandleGPU.ptr != 0;
+    };
+
+    if (!m_gpuMetaBuffer || !isValidHandle(m_gpuMetaSRV) || !isValidHandle(m_gpuMetaUAV))
+    {
+        return false;
+    }
+
+    for (const auto& buffer : m_gpuParticleBuffers)
+    {
+        if (!buffer.resource || !isValidHandle(buffer.srv) || !isValidHandle(buffer.uav))
+        {
+            return false;
+        }
+    }
+
+    if (!m_gpuGridCount || !isValidHandle(m_gpuGridCountUAV))
+    {
+        return false;
+    }
+
+    if (!m_gpuGridTable || !isValidHandle(m_gpuGridTableUAV))
+    {
+        return false;
+    }
+
+    if (!m_gpuUpload || !m_gpuReadback)
+    {
+        return false;
+    }
+
+    if (!m_buildGridPipeline || !m_particlePipeline || !m_computeRootSignature)
+    {
+        return false;
+    }
+
+    return true;
 }
 
 void FluidSystem::UpdateGridSettings()
