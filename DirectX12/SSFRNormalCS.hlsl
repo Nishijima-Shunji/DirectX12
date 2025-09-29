@@ -1,5 +1,5 @@
 #define PASS_NORMAL_CS
-#include "SharedStruct.h"
+#include "SharedStruct.hlsli"
 
 Texture2D<float> g_DepthTexture : register(t0);
 RWTexture2D<float4> g_NormalTexture : register(u0);

@@ -1,4 +1,3 @@
-// FullscreenVS.hlsl
 struct VSOut
 {
     float4 pos : SV_POSITION;

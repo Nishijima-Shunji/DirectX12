@@ -1,4 +1,4 @@
-#include "SharedStruct.h"
+#include "SharedStruct.hlsli"
 
 Texture2D<float> g_DepthTexture : register(t0);
 Texture2D<float4> g_NormalTexture : register(t1);

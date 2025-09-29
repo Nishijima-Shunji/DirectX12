@@ -39,10 +39,6 @@ struct ParticleVertex {
 	static const D3D12_INPUT_LAYOUT_DESC InputLayout;
 	static constexpr UINT InputElementCount = _countof(InputElements);
 };
-//struct ParticleParam {
-//        DirectX::XMFLOAT3 position;
-//        DirectX::XMFLOAT3 velocity;
-//};
 
 // メタボール用の粒子情報
 struct ParticleMeta
