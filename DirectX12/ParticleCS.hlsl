@@ -69,6 +69,9 @@ void CSMain(uint3 id : SV_DispatchThreadID)
                 if (cz < 0 || cz >= (int)gridDim.z) continue;
                 uint cId = cx + gridDim.x * (cy + gridDim.y * cz);
                 uint cnt = gridCount[cId];
+                // gridCountはMAX_PARTICLES_PER_CELLを超える可能性があるため、
+                // ここで飽和させて配列外アクセスを防ぐ。
+                cnt = min(cnt, (uint)MAX_PARTICLES_PER_CELL);
                 for (uint n = 0; n < cnt; ++n) {
                     uint j = gridTable[cId * MAX_PARTICLES_PER_CELL + n];
                     float3 rij = inParticles[i].position - inParticles[j].position;
@@ -98,6 +101,8 @@ void CSMain(uint3 id : SV_DispatchThreadID)
                 if (nz < 0 || nz >= (int)gridDim.z) continue;
                 uint neighborCellId = nx + gridDim.x * (ny + gridDim.y * nz);
                 uint neighborCount = gridCount[neighborCellId];
+                // 近傍セルについても同様に上限を守る。
+                neighborCount = min(neighborCount, (uint)MAX_PARTICLES_PER_CELL);
                 for (uint n = 0; n < neighborCount; ++n) {
                     uint j = gridTable[neighborCellId * MAX_PARTICLES_PER_CELL + n];
                     if (j == i) continue;

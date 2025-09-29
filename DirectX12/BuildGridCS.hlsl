@@ -50,8 +50,14 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     uint cellId = cell.x + gridDim.x * (cell.y + gridDim.y * cell.z);
     uint writeIdx;
     InterlockedAdd(outGridCount[cellId], 1, writeIdx);
-    if (writeIdx < MAX_PARTICLES_PER_CELL)
+
+    // 1セルが保持できる粒子数の上限を超えた場合は、
+    // gridCountを飽和させて以降のアクセスが配列境界を越えないようにする。
+    if (writeIdx >= MAX_PARTICLES_PER_CELL)
     {
-        outGridTable[cellId * MAX_PARTICLES_PER_CELL + writeIdx] = index;
+        InterlockedExchange(outGridCount[cellId], MAX_PARTICLES_PER_CELL);
+        return;
     }
+
+    outGridTable[cellId * MAX_PARTICLES_PER_CELL + writeIdx] = index;
 }
