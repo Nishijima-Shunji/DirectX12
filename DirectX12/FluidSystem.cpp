@@ -668,13 +668,20 @@ void FluidSystem::UploadCPUToGPU(ID3D12GraphicsCommandList* cmd)
         {
             continue;
         }
-        auto toCopy = CD3DX12_RESOURCE_BARRIER::Transition(buffer.resource.Get(), buffer.state, D3D12_RESOURCE_STATE_COPY_DEST);
-        cmd->ResourceBarrier(1, &toCopy);
-        buffer.state = D3D12_RESOURCE_STATE_COPY_DEST;
+        // すでに目的の状態と同じならバリアを張らずにスキップする
+        if (buffer.state != D3D12_RESOURCE_STATE_COPY_DEST)
+        {
+            auto toCopy = CD3DX12_RESOURCE_BARRIER::Transition(buffer.resource.Get(), buffer.state, D3D12_RESOURCE_STATE_COPY_DEST);
+            cmd->ResourceBarrier(1, &toCopy);
+            buffer.state = D3D12_RESOURCE_STATE_COPY_DEST;
+        }
         cmd->CopyBufferRegion(buffer.resource.Get(), 0, m_gpuUpload.Get(), 0, sizeof(GPUFluidParticle) * m_particleCount);
-        auto toSRV = CD3DX12_RESOURCE_BARRIER::Transition(buffer.resource.Get(), buffer.state, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        cmd->ResourceBarrier(1, &toSRV);
-        buffer.state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        if (buffer.state != D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+        {
+            auto toSRV = CD3DX12_RESOURCE_BARRIER::Transition(buffer.resource.Get(), buffer.state, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            cmd->ResourceBarrier(1, &toSRV);
+            buffer.state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        }
     }
 
     m_cpuDirty = false;
@@ -724,13 +731,19 @@ void FluidSystem::StepGPU(ID3D12GraphicsCommandList* cmd, float dt)
     auto& readBuffer = m_gpuParticleBuffers[readIndex];
     auto& writeBuffer = m_gpuParticleBuffers[writeIndex];
 
-    auto toSRV = CD3DX12_RESOURCE_BARRIER::Transition(readBuffer.resource.Get(), readBuffer.state, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    cmd->ResourceBarrier(1, &toSRV);
-    readBuffer.state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    if (readBuffer.state != D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+    {
+        auto toSRV = CD3DX12_RESOURCE_BARRIER::Transition(readBuffer.resource.Get(), readBuffer.state, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        cmd->ResourceBarrier(1, &toSRV);
+        readBuffer.state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    }
 
-    auto toUAV = CD3DX12_RESOURCE_BARRIER::Transition(writeBuffer.resource.Get(), writeBuffer.state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    cmd->ResourceBarrier(1, &toUAV);
-    writeBuffer.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    if (writeBuffer.state != D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+    {
+        auto toUAV = CD3DX12_RESOURCE_BARRIER::Transition(writeBuffer.resource.Get(), writeBuffer.state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        cmd->ResourceBarrier(1, &toUAV);
+        writeBuffer.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    }
 
     auto metaToUAV = CD3DX12_RESOURCE_BARRIER::Transition(m_gpuMetaBuffer.Get(), D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     cmd->ResourceBarrier(1, &metaToUAV);
@@ -782,13 +795,19 @@ void FluidSystem::StepGPU(ID3D12GraphicsCommandList* cmd, float dt)
     cmd->ResourceBarrier(1, &gridTableToSRV);
 
     // 新しい結果を読み戻し用にコピー
-    auto toCopySrc = CD3DX12_RESOURCE_BARRIER::Transition(writeBuffer.resource.Get(), writeBuffer.state, D3D12_RESOURCE_STATE_COPY_SOURCE);
-    cmd->ResourceBarrier(1, &toCopySrc);
-    writeBuffer.state = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    if (writeBuffer.state != D3D12_RESOURCE_STATE_COPY_SOURCE)
+    {
+        auto toCopySrc = CD3DX12_RESOURCE_BARRIER::Transition(writeBuffer.resource.Get(), writeBuffer.state, D3D12_RESOURCE_STATE_COPY_SOURCE);
+        cmd->ResourceBarrier(1, &toCopySrc);
+        writeBuffer.state = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    }
     cmd->CopyBufferRegion(m_gpuReadback.Get(), 0, writeBuffer.resource.Get(), 0, sizeof(GPUFluidParticle) * m_particleCount);
-    auto backToSRV = CD3DX12_RESOURCE_BARRIER::Transition(writeBuffer.resource.Get(), writeBuffer.state, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    cmd->ResourceBarrier(1, &backToSRV);
-    writeBuffer.state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    if (writeBuffer.state != D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+    {
+        auto backToSRV = CD3DX12_RESOURCE_BARRIER::Transition(writeBuffer.resource.Get(), writeBuffer.state, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        cmd->ResourceBarrier(1, &backToSRV);
+        writeBuffer.state = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    }
 
     m_gpuReadIndex = writeIndex;
     m_pendingReadback = true;
