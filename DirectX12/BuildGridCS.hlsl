@@ -55,7 +55,9 @@ void CSMain(uint3 id : SV_DispatchThreadID)
     // gridCountを飽和させて以降のアクセスが配列境界を越えないようにする。
     if (writeIdx >= MAX_PARTICLES_PER_CELL)
     {
-        InterlockedExchange(outGridCount[cellId], MAX_PARTICLES_PER_CELL);
+        uint originalCount;
+        // InterlockedExchangeは3つ目の引数に元の値を受け取る必要があるため、ダミーの変数を用意する。
+        InterlockedExchange(outGridCount[cellId], MAX_PARTICLES_PER_CELL, originalCount);
         return;
     }
 
