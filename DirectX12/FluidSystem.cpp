@@ -456,6 +456,12 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
         return;
     }
 
+    if (!m_activeMetaSRV)
+    {
+        // 粒子SRVが未設定の場合は描画できないため早期リターン
+        return;
+    }
+
     UINT frameIndex = g_Engine->CurrentBackBufferIndex();
     auto& cameraCB = m_cameraCB[frameIndex];
     if (!cameraCB)
@@ -518,9 +524,11 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
     cmd->SetGraphicsRootSignature(m_particleRootSignature.Get());
     cmd->SetPipelineState(m_particlePipelineState.Get());
     cmd->SetGraphicsRootConstantBufferView(0, cameraCB->GetAddress());
-    cmd->SetGraphicsRootDescriptorTable(1, m_particleDepthUAV->HandleGPU);
-    cmd->SetGraphicsRootDescriptorTable(2, m_smoothedDepthUAV->HandleGPU);
-    cmd->SetGraphicsRootDescriptorTable(3, m_thicknessUAV->HandleGPU);
+    // StructuredBuffer<ParticleData> を VS へ渡す
+    cmd->SetGraphicsRootDescriptorTable(1, m_activeMetaSRV->HandleGPU);
+    cmd->SetGraphicsRootDescriptorTable(2, m_particleDepthUAV->HandleGPU);
+    cmd->SetGraphicsRootDescriptorTable(3, m_smoothedDepthUAV->HandleGPU);
+    cmd->SetGraphicsRootDescriptorTable(4, m_thicknessUAV->HandleGPU);
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmd->DrawInstanced(3, 1, 0, 0);
 
@@ -1511,17 +1519,22 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
 
     // 粒子描画ルートシグネチャ
     {
+        CD3DX12_DESCRIPTOR_RANGE srvRange;
+        // 頂点シェーダーで StructuredBuffer<ParticleData> (t0) を読むための SRV テーブル
+        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
         CD3DX12_DESCRIPTOR_RANGE uavRanges[3];
         // ピクセルシェーダーの RTV0 と競合しないよう、UAV はレジスタ u1 以降へ配置
         uavRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
         uavRanges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2);
         uavRanges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 3);
 
-        CD3DX12_ROOT_PARAMETER params[4];
+        CD3DX12_ROOT_PARAMETER params[5];
         params[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_ALL);
-        params[1].InitAsDescriptorTable(1, &uavRanges[0], D3D12_SHADER_VISIBILITY_PIXEL);
-        params[2].InitAsDescriptorTable(1, &uavRanges[1], D3D12_SHADER_VISIBILITY_PIXEL);
-        params[3].InitAsDescriptorTable(1, &uavRanges[2], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[1].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_VERTEX);
+        params[2].InitAsDescriptorTable(1, &uavRanges[0], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[3].InitAsDescriptorTable(1, &uavRanges[1], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[4].InitAsDescriptorTable(1, &uavRanges[2], D3D12_SHADER_VISIBILITY_PIXEL);
 
         CD3DX12_ROOT_SIGNATURE_DESC desc(_countof(params), params, 0, nullptr,
             D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
