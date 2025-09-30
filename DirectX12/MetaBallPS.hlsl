@@ -1,295 +1,187 @@
-cbuffer MetaCB : register(b0)
-{
-    float4x4 invViewProj;   // ビュー射影逆行列
-    float4x4 viewProj;      // ビュー射影行列（深度計算用）
-    float4   camRadius;     // xyz: カメラ位置, w: 粒子半径（描画用）
-    float4   isoCount;      // x: しきい値, y: 粒子数, z: レイステップ係数, w: 未使用
-    float4   gridMinCell;   // xyz: グリッド最小座標, w: セルサイズ
-    uint4    gridDimInfo;   // xyz: グリッド寸法, w: セル総数
-    float4   waterDeep;     // xyz: 深い水の色, w: 吸収係数
-    float4   waterShallow;  // xyz: 浅い水の色, w: 泡検出のしきい値
-    float4   shadingParams; // x: 泡強度, y: 反射割合, z: スペキュラパワー, w: 経過時間
-};
+struct VSOut { float4 pos : SV_POSITION; float2 uv : TEXCOORD0; };
 
-struct ParticleMeta
-{
-    float3 pos;  // 粒子のワールド座標
-    float  r;    // 個別半径（今回は共通値）
-};
-
-struct VSOutput
-{
-    float4 pos : SV_POSITION;
-    float2 uv  : TEXCOORD;
-};
-
+struct ParticleMeta { float3 pos; float r; };
 StructuredBuffer<ParticleMeta> Particles : register(t0);
-StructuredBuffer<uint>        GridTable : register(t1);
-StructuredBuffer<uint>        GridCount : register(t2);
 
-static const uint MAX_PARTICLES_PER_CELL = 64;
-static const int  NEIGHBOR_SPAN = 1;
-
-// -----------------------------------------------------------------------------
-// グリッドを利用しない（フォールバック）密度評価
-// -----------------------------------------------------------------------------
-float EvaluateFieldBruteForce(float3 p, out float3 grad)
+cbuffer Meta : register(b0)
 {
-    grad = float3(0, 0, 0);
-    float sum = 0.0;
-    const uint count = (uint)isoCount.y;
-    const float iso = isoCount.x;
+    float4x4 invViewProj;
+    float4x4 viewProj;
+    float4 camRadius; // xyz: camera world, w: particle radius
+    float4 isoCount;  // x: iso, y: count, z: step, w:unused
+    float4 gridMinCell; // 未使用
+    uint gridDimX, gridDimY, gridDimZ, totalCells; // 未使用
+    float4 waterDeep;    // rgb, w=absorb係数
+    float4 waterShallow; // rgb, w=foam閾値
+    float4 shadingParams;// x:泡 y:反射係数 z:specPow w:time
+};
 
-    [loop]
-    for (uint i = 0; i < count; ++i)
-    {
-        ParticleMeta meta = Particles[i];
-        float3 d = p - meta.pos;
-        float  radius = max(meta.r, 1e-4);
-        float  r2 = radius * radius;
-        float  dist2 = dot(d, d);
-        float  cutoff2 = r2 * 6.25; // kernelMul=2.5f を二乗した値
-        if (dist2 > cutoff2)
-        {
-            continue;
-        }
+#ifndef MB_MAX_STEPS
+#define MB_MAX_STEPS 64
+#endif
 
-        float influence = exp(-dist2 / r2);
-        if (influence < 1e-4)
-        {
-            continue;
-        }
-
-        sum += influence;
-        grad += (-2.0 * influence / r2) * d;
-
-        if (sum > iso + 0.75)
-        {
-            break;
-        }
-    }
-
-    return sum - iso;
+float3 skyColor(float3 dir)
+{
+    float t = saturate(dir.y * 0.5 + 0.5);
+    float3 top = float3(0.45, 0.70, 1.00);
+    float3 bot = float3(0.10, 0.18, 0.35);
+    return lerp(bot, top, t);
 }
 
-// -----------------------------------------------------------------------------
-// 空間グリッドを用いた密度評価。総参照粒子数を返して空セルの判定に使う。
-// -----------------------------------------------------------------------------
-float EvaluateFieldGrid(float3 p, out float3 grad, out uint totalSamples)
+// C2連続なスムースステップ核（滑らかなメタボール曲面用）
+float kernelC2(float x)
 {
-    grad = float3(0, 0, 0);
-    totalSamples = 0;
+    float x2 = x * x;
+    float x3 = x2 * x;
+    return x3 * (x * (x * 6.0 - 15.0) + 10.0);
+}
+
+// 粒子群からスカラー場を評価
+float field(float3 p)
+{
     float sum = 0.0;
-
-    const uint particleCount = (uint)isoCount.y;
-    const float iso = isoCount.x;
-    const uint totalCells = gridDimInfo.w;
-    const float cellSize = gridMinCell.w;
-
-    if (particleCount == 0)
-    {
-        return -iso;
-    }
-
-    const bool gridUsable = (totalCells > 0) && (cellSize > 0.0f) &&
-        (gridDimInfo.x > 0) && (gridDimInfo.y > 0) && (gridDimInfo.z > 0);
-
-    if (!gridUsable)
-    {
-        float value = EvaluateFieldBruteForce(p, grad);
-        totalSamples = particleCount;
-        return value;
-    }
-
-    float3 gridMin = gridMinCell.xyz;
-    uint3  gridDim = uint3(gridDimInfo.xyz);
-    uint   maxTableIndex = totalCells * MAX_PARTICLES_PER_CELL;
-
-    int3 baseCell = int3(floor((p - gridMin) / cellSize));
-
+    uint n = (uint)isoCount.y;
     [loop]
-    for (int oz = -NEIGHBOR_SPAN; oz <= NEIGHBOR_SPAN; ++oz)
+    for (uint i = 0; i < n; ++i)
     {
-        for (int oy = -NEIGHBOR_SPAN; oy <= NEIGHBOR_SPAN; ++oy)
+        float3 d = p - Particles[i].pos;
+        float r = max(Particles[i].r, 1e-4);
+        float dist = length(d);
+        if (dist < r)
         {
-            for (int ox = -NEIGHBOR_SPAN; ox <= NEIGHBOR_SPAN; ++ox)
+            float t = saturate(1.0 - dist / r);
+            sum += kernelC2(t);
+        }
+    }
+    return sum;
+}
+
+// 有限差分で法線ベクトルを推定
+float3 gradient(float3 p, float eps)
+{
+    float3 ex = float3(eps, 0, 0);
+    float3 ey = float3(0, eps, 0);
+    float3 ez = float3(0, 0, eps);
+    float gx = field(p + ex) - field(p - ex);
+    float gy = field(p + ey) - field(p - ey);
+    float gz = field(p + ez) - field(p - ez);
+    return float3(gx, gy, gz) / (2.0 * eps);
+}
+
+// 色収差風の揺らぎで水らしいきらめきを付加
+float3 applyDispersion(float3 color, float thickness)
+{
+    float wave = sin(shadingParams.w * 2.0 + thickness * 6.0);
+    float3 tint = float3(0.015, 0.01, 0.03) * wave;
+    return saturate(color + tint);
+}
+
+float4 main(VSOut i) : SV_Target
+{
+    float2 ndc = i.uv * 2.0 - 1.0;
+    float4 p0 = mul(invViewProj, float4(ndc, 0.0, 1.0)); p0.xyz /= p0.w;
+    float4 p1 = mul(invViewProj, float4(ndc, 1.0, 1.0)); p1.xyz /= p1.w;
+    float3 ro = p0.xyz;
+    float3 rd = normalize(p1.xyz - p0.xyz);
+
+    float stepLen = max(0.02 * isoCount.z, 0.005);
+    float iso = max(isoCount.x, 1e-4);
+    float t = 0.0;
+    float prevT = 0.0;
+    float prevField = 0.0;
+    bool first = true;
+    const float tMax = 4.0;
+
+    // 早期終了付きレイマーチングループ
+    [loop]
+    for (int s = 0; s < MB_MAX_STEPS && t < tMax; ++s)
+    {
+        float3 pos = ro + rd * t;
+        float value = field(pos);
+
+        if (value >= iso)
+        {
+            float hitT = t;
+            if (!first)
             {
-                int3 cell = baseCell + int3(ox, oy, oz);
-                if (cell.x < 0 || cell.y < 0 || cell.z < 0)
+                float denom = max(value - prevField, 1e-4);
+                float ratio = saturate((iso - prevField) / denom);
+                hitT = lerp(prevT, t, ratio);
+            }
+
+            float3 hitPos = ro + rd * hitT;
+
+            float tExit = hitT;
+            // 透過厚の近似：ヒット位置から数ステップ進んで抜ける地点を探す
+            [loop]
+            for (int k = 0; k < MB_MAX_STEPS; ++k)
+            {
+                tExit += stepLen;
+                if (tExit >= tMax)
                 {
-                    continue;
+                    break;
                 }
-                if (cell.x >= int(gridDim.x) || cell.y >= int(gridDim.y) || cell.z >= int(gridDim.z))
+                float sample = field(ro + rd * tExit);
+                if (sample < iso)
                 {
-                    continue;
-                }
-
-                uint cellIndex = uint(cell.x) + gridDim.x * (uint(cell.y) + gridDim.y * uint(cell.z));
-                if (cellIndex >= totalCells)
-                {
-                    continue;
-                }
-
-                uint count = GridCount[cellIndex];
-                if (count == 0)
-                {
-                    continue;
-                }
-
-                count = min(count, MAX_PARTICLES_PER_CELL);
-                uint baseIndex = cellIndex * MAX_PARTICLES_PER_CELL;
-                totalSamples += count;
-
-                [loop]
-                for (uint i = 0; i < count; ++i)
-                {
-                    uint tableIndex = baseIndex + i;
-                    if (tableIndex >= maxTableIndex)
-                    {
-                        break;
-                    }
-
-                    uint particleIndex = GridTable[tableIndex];
-                    if (particleIndex >= particleCount)
-                    {
-                        continue;
-                    }
-
-                    ParticleMeta meta = Particles[particleIndex];
-                    float3 d = p - meta.pos;
-                    float  radius = max(meta.r, 1e-4);
-                    float  r2 = radius * radius;
-                    float  dist2 = dot(d, d);
-                    float  cutoff2 = r2 * 6.25; // kernelMul=2.5f の二乗
-                    if (dist2 > cutoff2)
-                    {
-                        continue;
-                    }
-
-                    float influence = exp(-dist2 / r2);
-                    if (influence < 1e-4)
-                    {
-                        continue;
-                    }
-
-                    sum += influence;
-                    grad += (-2.0 * influence / r2) * d;
-
-                    if (sum > iso + 0.75)
-                    {
-                        return sum - iso;
-                    }
+                    break;
                 }
             }
+
+            float thickness = max(tExit - hitT, stepLen);
+
+            float eps = max(stepLen * 0.5, 0.002);
+            // 法線は密度勾配から算出
+            float3 N = gradient(hitPos, eps);
+            float lenN = max(length(N), 1e-4);
+            N /= lenN;
+
+            float3 V = normalize(camRadius.xyz - hitPos);
+            float3 L = normalize(float3(0.4, 0.8, 0.3));
+
+            float F0 = 0.02;
+            float VoN = saturate(dot(V, N));
+            float Fschlick = F0 + (1.0 - F0) * pow(1.0 - VoN, 5.0);
+
+            float3 R = reflect(-V, N);
+            // 屈折が発生しない場合は反射色を流用して破綻を防ぐ
+            float eta = 1.0 / 1.33;
+            float3 T = refract(-V, N, eta);
+            float lenT = dot(T, T);
+            float3 colRefr = (lenT > 1e-4) ? skyColor(normalize(T)) : skyColor(R);
+            float3 colRefl = skyColor(normalize(R));
+
+            float att = exp(-waterDeep.w * thickness);
+            colRefr *= att;
+
+            float ndl = saturate(dot(N, L));
+            float3 base = lerp(waterShallow.rgb, waterDeep.rgb, saturate(thickness * 0.7));
+            float3 diffuse = base * (0.25 + 0.75 * ndl);
+
+            float specPow = max(shadingParams.z, 8.0);
+            float3 H = normalize(L + V);
+            float spec = pow(saturate(dot(N, H)), specPow);
+
+            float3 refrPart = lerp(diffuse, colRefr, 0.6);
+            float reflectFactor = saturate(Fschlick * shadingParams.y);
+            float3 color = lerp(refrPart, colRefl, reflectFactor);
+
+            float foamMask = saturate(1.0 - smoothstep(0.0, waterShallow.w, thickness));
+            // 薄い領域に泡色をブレンド
+            color = lerp(color, 1.0.xxx, foamMask * shadingParams.x);
+
+            color += spec * 0.12;
+            color = applyDispersion(color, thickness);
+
+            return float4(color, 1.0);
         }
+
+        first = false;
+        prevField = value;
+        prevT = t;
+        t += stepLen;
     }
 
-    return sum - iso;
+    return float4(0.0, 0.0, 0.0, 1.0);
 }
 
-struct PSOutput
-{
-    float4 color : SV_TARGET;
-    float  depth : SV_DEPTH;
-};
-
-PSOutput main(VSOutput IN)
-{
-    // フルスクリーン三角形のUVからレイを生成
-    float4 clip = float4(IN.uv * 2.0 - 1.0, 0.0, 1.0);
-    float4 wp = mul(invViewProj, clip);
-    wp /= wp.w;
-
-    float3 ro = camRadius.xyz;
-    float3 rd = normalize(wp.xyz - ro);
-
-    float3 p = ro;
-    float3 grad = float3(0, 0, 0);
-    float  field = -isoCount.x;
-    bool   hit = false;
-
-    float cellSize = max(gridMinCell.w, 0.01);
-    float3 gridExtent = float3(gridDimInfo.xyz) * cellSize;
-    float maxDistance = length(gridExtent) + cellSize * 4.0;
-    maxDistance = max(maxDistance, 50.0);
-
-    float travelled = 0.0;
-    const int MAX_STEP = 80;
-
-    [loop]
-    for (int i = 0; i < MAX_STEP && travelled < maxDistance; ++i)
-    {
-        float3 localGrad;
-        uint    sampleCount;
-        float   value = EvaluateFieldGrid(p, localGrad, sampleCount);
-
-        if (gridDimInfo.w > 0 && sampleCount == 0)
-        {
-            // 粒子が存在しないセルは大きくスキップして高速化
-            float skip = max(cellSize * 1.25, 0.1);
-            p += rd * skip;
-            travelled += skip;
-            continue;
-        }
-
-        grad = localGrad;
-        field = value;
-
-        if (abs(value) < 0.01)
-        {
-            hit = true;
-            break;
-        }
-
-        float stepLen = max(abs(value) * isoCount.z, 0.02);
-        p += rd * (-value) * isoCount.z;
-        travelled += stepLen;
-    }
-
-    if (!hit)
-    {
-        discard;
-    }
-
-    float3 n = (dot(grad, grad) > 1e-6) ? normalize(grad) : float3(0, 1, 0);
-    float3 viewDir = normalize(ro - p);
-    float3 lightDir = normalize(float3(-0.35, 0.9, -0.25));
-
-    float diff = saturate(dot(n, lightDir));
-
-    float viewDist = length(ro - p);
-    float absorption = exp(-viewDist * waterDeep.w);
-    float3 baseWater = lerp(waterDeep.xyz, waterShallow.xyz, absorption);
-
-    float3 envColor = float3(0.05, 0.16, 0.28);
-
-    float3 diffuse = baseWater * (0.25 + diff * 0.75);
-
-    float fresnel = pow(1.0 - saturate(dot(n, viewDir)), 5.0);
-    float3 reflection = lerp(baseWater, float3(0.75, 0.9, 1.0), shadingParams.y);
-
-    float curvature = saturate(1.0 - length(grad) * waterShallow.w);
-    float foamWave = 0.5 + 0.5 * sin(dot(p.xz, float2(0.8, 0.45)) * 2.2 + shadingParams.w * 1.4);
-    float foamMask = saturate((curvature - 0.25) * 2.0) * foamWave;
-
-    float specPower = max(shadingParams.z, 4.0);
-    float spec = pow(saturate(dot(reflect(-lightDir, n), viewDir)), specPower);
-
-    float3 color = diffuse;
-    color += reflection * fresnel;
-    color += spec * 0.35;
-    color = lerp(envColor, color, 0.65);
-    color += shadingParams.x * foamMask;
-
-    float alpha = saturate(0.35 + absorption * 0.45 + fresnel * 0.35);
-    color = lerp(envColor, color, alpha);
-
-    float4 clipPos = mul(viewProj, float4(p, 1.0));
-    float invW = (abs(clipPos.w) > 1e-6) ? rcp(clipPos.w) : 0.0;
-    float depth = saturate(clipPos.z * invW);
-
-    PSOutput OUT;
-    OUT.color = float4(saturate(color), alpha);
-    OUT.depth = depth;
-    return OUT;
-}
