@@ -2,58 +2,38 @@
 #include "ComPtr.h"
 #include "ConstantBuffer.h"
 #include "DescriptorHeap.h"
-#include "SharedStruct.h"
-#include "SpatialGrid.h"
-#include "ComputePipelineState.h"
-#include "Texture2D.h"
+#include "MetaBallPipelineState.h"
 #include <d3d12.h>
 #include <wrl.h>
 #include <DirectXMath.h>
-#include <array>
 #include <memory>
 #include <vector>
-#include <Windows.h>
 
 // ================================
-//  流体マテリアルの設定パラメータ
+//  シンプルな流体（メタボール）描画用の構造体
 // ================================
 struct FluidMaterial
 {
-    float restDensity = 1000.0f;      // 静止密度
-    float particleMass = 1.0f;        // 粒子質量
-    float smoothingRadius = 0.12f;    // カーネル半径
-    float viscosity = 0.02f;          // 粘性係数
-    float stiffness = 200.0f;         // 圧力係数（GPU用）
-    float renderRadius = 0.10f;       // メタボール描画半径
-    float lambdaEpsilon = 100.0f;     // PBF安定化係数
-    float xsphC = 0.05f;              // XSPH粘性（CPU）
-    int   solverIterations = 1;       // PBF反復回数（安定動作用に軽量化）
+    float renderRadius = 0.10f;   // メタボール半径
+    float restDensity = 0.0f;     // 旧機能との互換用（未使用）
+    float particleMass = 0.0f;    // 旧機能との互換用（未使用）
+    float smoothingRadius = 0.0f; // 旧機能との互換用（未使用）
+    float viscosity = 0.0f;       // 旧機能との互換用（未使用）
+    float stiffness = 0.0f;       // 旧機能との互換用（未使用）
+    float lambdaEpsilon = 0.0f;   // 旧機能との互換用（未使用）
+    float xsphC = 0.0f;           // 旧機能との互換用（未使用）
+    int   solverIterations = 1;   // 旧機能との互換用（未使用）
 };
 
-// プリセットマテリアル
 enum class FluidMaterialPreset
 {
     Water,
     Magma,
 };
 
-// シミュレーションモード
-enum class FluidSimulationMode
-{
-    CPU,
-    GPU,
-};
-
-// CPU シミュレーション用の粒子情報
-struct FluidParticle
-{
-    DirectX::XMFLOAT3 position;   // 現在位置
-    DirectX::XMFLOAT3 velocity;   // 速度
-    DirectX::XMFLOAT3 predicted;  // 予測位置
-    float lambda = 0.0f;          // PBFラグランジュ乗数
-    float density = 0.0f;         // 計算密度
-};
-
+// ================================
+//  シンプルなメタボール描画のための流体システム
+// ================================
 class FluidSystem
 {
 public:
@@ -62,8 +42,7 @@ public:
 
     void Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxParticles, UINT threadGroupCount);
 
-    void UseGPU(bool enable);
-    FluidSimulationMode Mode() const;
+    void UseGPU(bool /*enable*/) {} // GPU シミュレーションは無効化
 
     void SetMaterialPreset(FluidMaterialPreset preset);
     void SetMaterial(const FluidMaterial& material);
@@ -89,7 +68,6 @@ public:
         ID3D12Resource* sceneDepth,
         D3D12_CPU_DESCRIPTOR_HANDLE sceneRTV);
 
-    // 水面のカラーや泡の強さを外部から調整できるようにする
     void SetWaterAppearance(const DirectX::XMFLOAT3& shallowColor,
         const DirectX::XMFLOAT3& deepColor,
         float absorption,
@@ -103,41 +81,10 @@ public:
     void EndDrag() {}
 
 private:
-    struct SSFRCameraConstants
+    struct Particle
     {
-        DirectX::XMFLOAT4X4 View;        // ビュー行列（転置済み）
-        DirectX::XMFLOAT4X4 Proj;        // 射影行列（転置済み）
-        DirectX::XMFLOAT4X4 ViewProj;    // ビュー射影行列（転置済み）
-        DirectX::XMFLOAT2   ScreenSize;  // 画面解像度
-        DirectX::XMFLOAT2   InvScreen;   // 逆解像度
-        float               NearZ;       // ニア平面
-        float               FarZ;        // ファー平面
-        DirectX::XMFLOAT3   IorF0;       // フレネル用F0
-        float               Absorption;  // Beer-Lambert係数
-    };
-
-    struct SSFRBlurParams
-    {
-        float Sigma;  // 空間ガウス係数
-        float DepthK; // 深度差係数
-        float NormalK;// 法線差係数
-        float Padding;// 16byte揃え
-    };
-
-    struct GPUParams
-    {
-        float restDensity;
-        float particleMass;
-        float viscosity;
-        float stiffness;
-        float radius;
-        float timeStep;
-        UINT  particleCount;
-        UINT  pad0;
-        DirectX::XMFLOAT3 gridMin;
-        float pad1;
-        DirectX::XMUINT3  gridDim;
-        UINT  pad2;
+        DirectX::XMFLOAT3 position;
+        DirectX::XMFLOAT3 velocity;
     };
 
     struct GatherOperation
@@ -154,144 +101,63 @@ private:
         float impulse;
     };
 
-    struct GPUBufferHandle
+    struct MetaBallInstance
     {
-        Microsoft::WRL::ComPtr<ID3D12Resource> resource;
-        DescriptorHandle* srv = nullptr;
-        DescriptorHandle* uav = nullptr;
-        D3D12_RESOURCE_STATES state = D3D12_RESOURCE_STATE_COMMON;
+        DirectX::XMFLOAT3 position;
+        float radius;
     };
 
-    static constexpr UINT kMaxParticlesPerCell = 64; // グリッド1セルが保持できる粒子数の上限
+    struct MetaConstants
+    {
+        DirectX::XMFLOAT4X4 InvViewProj;
+        DirectX::XMFLOAT4X4 ViewProj;
+        DirectX::XMFLOAT4   CamRadius;
+        DirectX::XMFLOAT4   IsoCount;
+        DirectX::XMFLOAT4   GridMinCell;
+        DirectX::XMUINT4    GridDimInfo;
+        DirectX::XMFLOAT4   WaterDeep;
+        DirectX::XMFLOAT4   WaterShallow;
+        DirectX::XMFLOAT4   ShadingParams;
+    };
 
-    void UpdateGridSettings();
-    void ApplyExternalOperationsCPU(float dt);
-    void StepCPU(float dt);
-    void StepGPU(ID3D12GraphicsCommandList* cmd, float dt);
-    void UploadCPUToGPU(ID3D12GraphicsCommandList* cmd);
-    void ReadbackGPUToCPU();
+    bool CreateMetaResources(ID3D12Device* device, DXGI_FORMAT rtvFormat);
     void UpdateParticleBuffer();
-    bool CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvFormat);
-    void DestroySSFRResources();
-    void CreateGPUResources(ID3D12Device* device);
-    void UpdateComputeParams(float dt);
-    void ResolveBounds(FluidParticle& p) const;
-    ID3D12GraphicsCommandList* BeginComputeCommandList();
-    void SubmitComputeCommandList();
-    bool HasValidGPUResources() const;
 
-    float EffectiveTimeStep(float dt) const;
-
-    // CPU管理
-    std::vector<FluidParticle> m_cpuParticles;
-    SpatialGrid                m_spatialGrid;
-
-    // 描画関連
-    static constexpr UINT kFrameCount = 2;
-    std::array<std::unique_ptr<ConstantBuffer>, kFrameCount> m_cameraCB{}; // カメラ定数バッファ
-    std::unique_ptr<ConstantBuffer> m_blurParamsCB;                        // ブラー用定数
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_cpuMetaBuffer;                // 粒子インスタンスデータ（CPU側）
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuMetaBuffer;                // 粒子インスタンスデータ（GPU側）
-    DescriptorHandle* m_cpuMetaSRV = nullptr;                              // CPU粒子のSRV
-    DescriptorHandle* m_gpuMetaSRV = nullptr;                              // GPU粒子のSRV
-    DescriptorHandle* m_gpuMetaUAV = nullptr;                              // GPU粒子のUAV
-    DescriptorHandle* m_activeMetaSRV = nullptr;                           // 現在描画に利用する粒子SRV
-
-    // SSFR用テクスチャ
-    std::unique_ptr<Texture2D> m_particleDepthTexture;                     // 粒子の深度
-    std::unique_ptr<Texture2D> m_smoothedDepthTexture;                     // 平滑化後の深度
-    std::unique_ptr<Texture2D> m_normalTexture;                            // 法線
-    std::unique_ptr<Texture2D> m_thicknessTexture;                         // 厚み
-
-    DescriptorHandle* m_particleDepthSRV = nullptr;
-    DescriptorHandle* m_particleDepthUAV = nullptr;
-    DescriptorHandle* m_smoothedDepthSRV = nullptr;
-    DescriptorHandle* m_smoothedDepthUAV = nullptr;
-    DescriptorHandle* m_normalSRV = nullptr;
-    DescriptorHandle* m_normalUAV = nullptr;
-    DescriptorHandle* m_thicknessSRV = nullptr;
-    DescriptorHandle* m_thicknessUAV = nullptr;
-
-    DescriptorHandle* m_sceneColorSRV = nullptr;
-    DescriptorHandle* m_sceneDepthSRV = nullptr;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_sceneColorCopy;
-    D3D12_RESOURCE_STATES m_sceneColorCopyState = D3D12_RESOURCE_STATE_COMMON;
-    D3D12_RESOURCE_STATES m_sceneDepthState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-
-    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_ssfrRtvHeap;            // RTV専用ヒープ
-    UINT m_ssfrRtvDescriptorSize = 0;
-    D3D12_CPU_DESCRIPTOR_HANDLE m_particleDepthRTV = {};
-    D3D12_CPU_DESCRIPTOR_HANDLE m_smoothedDepthRTV = {};
-    D3D12_CPU_DESCRIPTOR_HANDLE m_thicknessRTV = {};
-
-    D3D12_RESOURCE_STATES m_particleDepthState = D3D12_RESOURCE_STATE_COMMON;
-    D3D12_RESOURCE_STATES m_smoothedDepthState = D3D12_RESOURCE_STATE_COMMON;
-    D3D12_RESOURCE_STATES m_normalState = D3D12_RESOURCE_STATE_COMMON;
-    D3D12_RESOURCE_STATES m_thicknessState = D3D12_RESOURCE_STATE_COMMON;
-
-    // SSFR用ルートシグネチャとPSO
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_particleRootSignature;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_particlePipelineState;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_blurRootSignature;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_blurPipelineState;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_normalRootSignature;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_normalPipelineState;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_compositeRootSignature;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_compositePipelineState;
-
-    // GPUシミュレーション関連
-    bool m_useGPU = false;
-    bool m_gpuAvailable = false;
-    bool m_cpuDirty = true;
-    bool m_gpuDirty = true;
-    bool m_pendingReadback = false;
-    UINT m_gpuReadIndex = 0;
-    GPUBufferHandle m_gpuParticleBuffers[2];
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuGridCount;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuGridTable;
-    DescriptorHandle* m_gpuGridCountSRV = nullptr;
-    DescriptorHandle* m_gpuGridTableSRV = nullptr;
-    DescriptorHandle* m_gpuGridCountUAV = nullptr;
-    DescriptorHandle* m_gpuGridTableUAV = nullptr;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuUpload;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuReadback;
-    std::unique_ptr<ConstantBuffer> m_computeParamsCB;
-    std::unique_ptr<ConstantBuffer> m_dummyViewCB;
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_computeRootSignature;
-    std::unique_ptr<ComputePipelineState> m_buildGridPipeline;
-    std::unique_ptr<ComputePipelineState> m_particlePipeline;
-    std::unique_ptr<ComputePipelineState> m_clearGridPipeline;
-    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_computeAllocator;
-    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_computeCommandList;
-    Microsoft::WRL::ComPtr<ID3D12Fence> m_computeFence;
-    HANDLE m_computeFenceEvent = nullptr;
-    UINT64 m_computeFenceValue = 0;
-    UINT64 m_lastSubmittedComputeFence = 0;
-
-    // 共通設定
-    FluidMaterial m_material;
+    // シミュレーション設定
+    FluidMaterial m_material{};
+    std::vector<Particle> m_particles;
+    std::vector<GatherOperation> m_gathers;
+    std::vector<SplashOperation> m_splashes;
     DirectX::XMFLOAT3 m_boundsMin;
     DirectX::XMFLOAT3 m_boundsMax;
-    DirectX::XMUINT3  m_gridDim;
-    UINT              m_particleCount = 0;
-    UINT              m_maxParticles = 0;
-    bool              m_initialized = false;
+    float m_elapsedTime = 0.0f;
 
-    std::vector<GatherOperation> m_gatherOps;
-    std::vector<SplashOperation> m_splashOps;
+    // GPU リソース
+    UINT m_maxParticles = 0;
+    UINT m_particleCount = 0;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_particleBuffer;
+    void* m_particleMapped = nullptr;
+    DescriptorHandle* m_particleSRV = nullptr;
 
-    ID3D12Device* m_device = nullptr;
-    DXGI_FORMAT   m_rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_dummyGridTable;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_dummyGridCount;
+    DescriptorHandle* m_dummyGridTableSRV = nullptr;
+    DescriptorHandle* m_dummyGridCountSRV = nullptr;
 
-    DirectX::XMFLOAT3 m_waterColorDeep;
+    std::unique_ptr<ConstantBuffer> m_constantBuffer;
+
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_rootSignature;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pipelineState;
+
+    // 描画パラメータ
     DirectX::XMFLOAT3 m_waterColorShallow;
-    float m_waterAbsorption = 0.35f;
-    float m_foamCurvatureThreshold = 0.45f;
-    float m_foamStrength = 0.35f;
+    DirectX::XMFLOAT3 m_waterColorDeep;
+    float m_waterAbsorption = 0.3f;
+    float m_foamThreshold = 0.4f;
+    float m_foamStrength = 0.5f;
     float m_reflectionStrength = 0.6f;
     float m_specularPower = 64.0f;
-    float m_totalSimulatedTime = 0.0f;
+    float m_isoLevel = 1.0f;
 };
 
-// プリセットマテリアルの生成ヘルパー
 FluidMaterial CreateFluidMaterial(FluidMaterialPreset preset);
