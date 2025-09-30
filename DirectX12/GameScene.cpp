@@ -41,7 +41,7 @@ bool GameScene::Init() {
 	auto device = g_Engine->Device();
 	const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-        const UINT maxParticles = 512; // 初期負荷を抑えて安定動作させるため控えめに設定
+        const UINT maxParticles = 5; // 初期負荷を抑えて安定動作させるため控えめに設定
         m_fluid.Init(device, rtvFormat, maxParticles, 0);
         m_fluid.SetWaterAppearance(
                 XMFLOAT3(0.32f, 0.7f, 0.95f),  // 浅瀬カラー
