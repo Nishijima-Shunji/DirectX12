@@ -5,6 +5,7 @@
 #include "SharedStruct.h"
 #include "SpatialGrid.h"
 #include "ComputePipelineState.h"
+#include "Texture2D.h"
 #include <d3d12.h>
 #include <wrl.h>
 #include <DirectXMath.h>
@@ -96,17 +97,25 @@ public:
     void EndDrag() {}
 
 private:
-    struct MetaConstants
+    struct SSFRCameraConstants
     {
-        DirectX::XMFLOAT4X4 InvViewProj; // ビュー射影逆行列（転置済み）
+        DirectX::XMFLOAT4X4 View;        // ビュー行列（転置済み）
+        DirectX::XMFLOAT4X4 Proj;        // 射影行列（転置済み）
         DirectX::XMFLOAT4X4 ViewProj;    // ビュー射影行列（転置済み）
-        DirectX::XMFLOAT4   CamRadius;   // カメラ座標と粒子半径
-        DirectX::XMFLOAT4   IsoCount;    // 等値面しきい値 / 粒子数 / レイマーチ係数 / 未使用
-        DirectX::XMFLOAT4   GridMinCell; // グリッドの最小座標 / セルサイズ
-        DirectX::XMUINT4    GridDimInfo; // グリッドの寸法 / 総セル数（w）
-        DirectX::XMFLOAT4   WaterDeep;   // 深い水の色 / w=吸収係数
-        DirectX::XMFLOAT4   WaterShallow;// 浅い水の色 / w=泡検出のしきい値
-        DirectX::XMFLOAT4   ShadingParams;// x=泡強度 y=反射割合 z=スペキュラ強度 w=時間
+        DirectX::XMFLOAT2   ScreenSize;  // 画面解像度
+        DirectX::XMFLOAT2   InvScreen;   // 逆解像度
+        float               NearZ;       // ニア平面
+        float               FarZ;        // ファー平面
+        DirectX::XMFLOAT3   IorF0;       // フレネル用F0
+        float               Absorption;  // Beer-Lambert係数
+    };
+
+    struct SSFRBlurParams
+    {
+        float Sigma;  // 空間ガウス係数
+        float DepthK; // 深度差係数
+        float NormalK;// 法線差係数
+        float Padding;// 16byte揃え
     };
 
     struct GPUParams
@@ -156,7 +165,8 @@ private:
     void UploadCPUToGPU(ID3D12GraphicsCommandList* cmd);
     void ReadbackGPUToCPU();
     void UpdateParticleBuffer();
-    bool CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat);
+    bool CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvFormat);
+    void DestroySSFRResources();
     void CreateGPUResources(ID3D12Device* device);
     void UpdateComputeParams(float dt);
     void ResolveBounds(FluidParticle& p) const;
@@ -172,15 +182,50 @@ private:
 
     // 描画関連
     static constexpr UINT kFrameCount = 2;
-    std::array<std::unique_ptr<ConstantBuffer>, kFrameCount> m_metaCB{};
-    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_metaRootSignature;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_metaPipelineState;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_cpuMetaBuffer;
-    Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuMetaBuffer;
-    DescriptorHandle* m_cpuMetaSRV = nullptr;
-    DescriptorHandle* m_gpuMetaSRV = nullptr;
-    DescriptorHandle* m_gpuMetaUAV = nullptr;
-    DescriptorHandle* m_activeMetaSRV = nullptr;
+    std::array<std::unique_ptr<ConstantBuffer>, kFrameCount> m_cameraCB{}; // カメラ定数バッファ
+    std::unique_ptr<ConstantBuffer> m_blurParamsCB;                        // ブラー用定数
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_cpuMetaBuffer;                // 粒子インスタンスデータ（CPU側）
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuMetaBuffer;                // 粒子インスタンスデータ（GPU側）
+    DescriptorHandle* m_cpuMetaSRV = nullptr;                              // CPU粒子のSRV
+    DescriptorHandle* m_gpuMetaSRV = nullptr;                              // GPU粒子のSRV
+    DescriptorHandle* m_gpuMetaUAV = nullptr;                              // GPU粒子のUAV
+    DescriptorHandle* m_activeMetaSRV = nullptr;                           // 現在描画に利用する粒子SRV
+
+    // SSFR用テクスチャ
+    std::unique_ptr<Texture2D> m_particleDepthTexture;                     // 粒子の深度
+    std::unique_ptr<Texture2D> m_smoothedDepthTexture;                     // 平滑化後の深度
+    std::unique_ptr<Texture2D> m_normalTexture;                            // 法線
+    std::unique_ptr<Texture2D> m_thicknessTexture;                         // 厚み
+
+    DescriptorHandle* m_particleDepthSRV = nullptr;
+    DescriptorHandle* m_particleDepthUAV = nullptr;
+    DescriptorHandle* m_smoothedDepthSRV = nullptr;
+    DescriptorHandle* m_smoothedDepthUAV = nullptr;
+    DescriptorHandle* m_normalSRV = nullptr;
+    DescriptorHandle* m_normalUAV = nullptr;
+    DescriptorHandle* m_thicknessSRV = nullptr;
+    DescriptorHandle* m_thicknessUAV = nullptr;
+
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_ssfrRtvHeap;            // RTV専用ヒープ
+    UINT m_ssfrRtvDescriptorSize = 0;
+    D3D12_CPU_DESCRIPTOR_HANDLE m_particleDepthRTV = {};
+    D3D12_CPU_DESCRIPTOR_HANDLE m_smoothedDepthRTV = {};
+    D3D12_CPU_DESCRIPTOR_HANDLE m_thicknessRTV = {};
+
+    D3D12_RESOURCE_STATES m_particleDepthState = D3D12_RESOURCE_STATE_COMMON;
+    D3D12_RESOURCE_STATES m_smoothedDepthState = D3D12_RESOURCE_STATE_COMMON;
+    D3D12_RESOURCE_STATES m_normalState = D3D12_RESOURCE_STATE_COMMON;
+    D3D12_RESOURCE_STATES m_thicknessState = D3D12_RESOURCE_STATE_COMMON;
+
+    // SSFR用ルートシグネチャとPSO
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_particleRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_particlePipelineState;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_blurRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_blurPipelineState;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_normalRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_normalPipelineState;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_compositeRootSignature;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_compositePipelineState;
 
     // GPUシミュレーション関連
     bool m_useGPU = false;

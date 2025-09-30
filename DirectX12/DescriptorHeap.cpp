@@ -18,7 +18,7 @@ DescriptorHeap::DescriptorHeap()
 
 	auto device = g_Engine->Device();
 
-	// ディスクリプタヒープを生成
+	// ィスクリプタヒプを生
 	auto hr = device->CreateDescriptorHeap(
 		&desc,
 		IID_PPV_ARGS(m_pHeap.ReleaseAndGetAddressOf()));
@@ -29,7 +29,7 @@ DescriptorHeap::DescriptorHeap()
 		return;
 	}
 
-	m_IncrementSize = device->GetDescriptorHandleIncrementSize(desc.Type); // ディスクリプタヒープ1個のメモリサイズを返す
+	m_IncrementSize = device->GetDescriptorHandleIncrementSize(desc.Type); // ィスクリプタヒ1個メモリサイズを返す
 	m_IsValid = true;
 }
 
@@ -48,11 +48,11 @@ DescriptorHandle* DescriptorHeap::Register(Texture2D* texture)
 
 	DescriptorHandle* pHandle = new DescriptorHandle();
 
-	auto handleCPU = m_pHeap->GetCPUDescriptorHandleForHeapStart(); // ディスクリプタヒープの最初のアドレス
-	handleCPU.ptr += m_IncrementSize * count; // 最初のアドレスからcount番目が今回追加されたリソースのハンドル
+	auto handleCPU = m_pHeap->GetCPUDescriptorHandleForHeapStart(); // ィスクリプタヒプ初アドレス
+	handleCPU.ptr += m_IncrementSize * count; // 初アドレスからcount番目が今回追されたリソースのハンドル
 
-	auto handleGPU = m_pHeap->GetGPUDescriptorHandleForHeapStart(); // ディスクリプタヒープの最初のアドレス
-	handleGPU.ptr += m_IncrementSize * count; // 最初のアドレスからcount番目が今回追加されたリソースのハンドル
+	auto handleGPU = m_pHeap->GetGPUDescriptorHandleForHeapStart(); // ィスクリプタヒプ初アドレス
+	handleGPU.ptr += m_IncrementSize * count; // 初アドレスからcount番目が今回追されたリソースのハンドル
 
 	pHandle->HandleCPU = handleCPU;
 	pHandle->HandleGPU = handleGPU;
@@ -60,7 +60,7 @@ DescriptorHandle* DescriptorHeap::Register(Texture2D* texture)
 	auto device = g_Engine->Device();
 	auto resource = texture->Resource();
 	auto desc = texture->ViewDesc();
-	device->CreateShaderResourceView(resource, &desc, pHandle->HandleCPU); // シェーダーリソースビュー作成
+	device->CreateShaderResourceView(resource, &desc, pHandle->HandleCPU); // シェーーリソースビュー作
 
 	m_pHandles.push_back(pHandle);
 	return pHandle; // ハンドルを返す
@@ -76,7 +76,7 @@ DescriptorHandle* DescriptorHeap::RegisterBuffer(
 
 	auto pHandle = new DescriptorHandle();
 
-	// CPU/GPU 両方のハンドルを取得
+	// CPU/GPU 両方のハンドルを取
 	auto cpu = m_pHeap->GetCPUDescriptorHandleForHeapStart();
 	cpu.ptr += m_IncrementSize * count;
 	auto gpu = m_pHeap->GetGPUDescriptorHandleForHeapStart();
@@ -85,7 +85,7 @@ DescriptorHandle* DescriptorHeap::RegisterBuffer(
 	pHandle->HandleCPU = cpu;
 	pHandle->HandleGPU = gpu;
 
-	// SRV デスクリプタを作成
+	// SRV スクリプタを作
 	D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
 	desc.Format = DXGI_FORMAT_UNKNOWN;
 	desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
@@ -94,7 +94,7 @@ DescriptorHandle* DescriptorHeap::RegisterBuffer(
 	desc.Buffer.StructureByteStride = stride;
 	desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
-	// 実際に GPU へビューを書き込む
+	// 実際に GPU へビューを書き込
 	g_Engine->Device()->CreateShaderResourceView(
 		resource, &desc, cpu);
 
@@ -126,6 +126,36 @@ DescriptorHandle* DescriptorHeap::RegisterBufferUAV(
         desc.Buffer.NumElements = numElements;
         desc.Buffer.StructureByteStride = stride;
         desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+
+        g_Engine->Device()->CreateUnorderedAccessView(
+                resource, nullptr, &desc, cpu);
+
+        m_pHandles.push_back(pHandle);
+        return pHandle;
+}
+
+DescriptorHandle* DescriptorHeap::RegisterTextureUAV(
+        ID3D12Resource* resource,
+        DXGI_FORMAT      format)
+{
+        auto count = m_pHandles.size();
+        if (HANDLE_MAX <= count) return nullptr;
+
+        auto pHandle = new DescriptorHandle();
+
+        auto cpu = m_pHeap->GetCPUDescriptorHandleForHeapStart();
+        cpu.ptr += m_IncrementSize * count;
+        auto gpu = m_pHeap->GetGPUDescriptorHandleForHeapStart();
+        gpu.ptr += m_IncrementSize * count;
+
+        pHandle->HandleCPU = cpu;
+        pHandle->HandleGPU = gpu;
+
+        D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
+        desc.Format = format;
+        desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        desc.Texture2D.MipSlice = 0;
+        desc.Texture2D.PlaneSlice = 0;
 
         g_Engine->Device()->CreateUnorderedAccessView(
                 resource, nullptr, &desc, cpu);

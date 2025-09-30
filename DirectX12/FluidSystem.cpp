@@ -1,18 +1,115 @@
 #include "FluidSystem.h"
 #include "Engine.h"
-#include "MetaBallPipelineState.h"
 #include "RandomUtil.h"
 #include "ComputePipelineState.h"
+#include <d3dcompiler.h>
 #include <d3dx12.h>
 #include <cstdio>
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <filesystem>
+
+#pragma comment(lib, "d3dcompiler.lib")
 
 using namespace DirectX;
 
 namespace
 {
+    std::wstring ResolveShaderPath(const std::wstring& fileName)
+    {
+        std::vector<std::filesystem::path> searchDirectories;
+        searchDirectories.push_back(std::filesystem::current_path());
+
+        std::filesystem::path exeDir;
+#ifdef _WIN32
+        wchar_t path[MAX_PATH] = {};
+        DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
+        if (length > 0 && length < MAX_PATH)
+        {
+            exeDir = std::filesystem::path(path).parent_path();
+        }
+#endif
+        if (!exeDir.empty())
+        {
+            auto iter = exeDir;
+            for (int i = 0; i < 4 && !iter.empty(); ++i)
+            {
+                searchDirectories.push_back(iter);
+                iter = iter.parent_path();
+            }
+        }
+
+        for (const auto& dir : searchDirectories)
+        {
+            std::filesystem::path candidate = dir / fileName;
+            if (std::filesystem::exists(candidate))
+            {
+                return candidate.wstring();
+            }
+        }
+        return fileName;
+    }
+
+    bool LoadOrCompileShader(const std::wstring& sourceName, const char* entryPoint, const char* target,
+        Microsoft::WRL::ComPtr<ID3DBlob>& outBlob)
+    {
+        std::filesystem::path sourcePath = ResolveShaderPath(sourceName);
+        std::filesystem::path csoPath = sourcePath;
+        csoPath.replace_extension(L".cso");
+
+        if (std::filesystem::exists(csoPath))
+        {
+            if (SUCCEEDED(D3DReadFileToBlob(csoPath.c_str(), &outBlob)))
+            {
+                return true;
+            }
+        }
+
+        if (!std::filesystem::exists(sourcePath))
+        {
+            wprintf(L"FluidSystem: シェーダーファイル %ls が見つかりません\n", sourceName.c_str());
+            return false;
+        }
+
+        UINT flags = D3DCOMPILE_ENABLE_STRICTNESS;
+#ifdef _DEBUG
+        flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#endif
+
+        Microsoft::WRL::ComPtr<ID3DBlob> error;
+        HRESULT hr = D3DCompileFromFile(
+            sourcePath.c_str(),
+            nullptr,
+            D3D_COMPILE_STANDARD_FILE_INCLUDE,
+            entryPoint,
+            target,
+            flags,
+            0,
+            &outBlob,
+            &error);
+
+        if (FAILED(hr))
+        {
+            if (error)
+            {
+                printf("FluidSystem: %s\n", static_cast<const char*>(error->GetBufferPointer()));
+            }
+            else
+            {
+                wprintf(L"FluidSystem: シェーダー %ls のコンパイルに失敗しました (0x%08X)\n", sourcePath.c_str(), hr);
+            }
+            return false;
+        }
+
+        if (!csoPath.empty())
+        {
+            D3DWriteBlobToFile(outBlob.Get(), csoPath.c_str(), TRUE);
+        }
+
+        return true;
+    }
+
     // GPUバッファ用の粒子構造体
     struct GPUFluidParticle
     {
@@ -116,15 +213,12 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
 
     UpdateGridSettings();
 
-    // メタボール描画用のGPUリソース生成に失敗した場合はGPUシミュレーションを封印する
-    if (!CreateMetaPipeline(device, rtvFormat))
-    {
-        printf("FluidSystem ERROR: メタボール描画パイプラインの初期化に失敗したためGPU機能を無効化します\n");
-        m_gpuAvailable = false;
-        m_useGPU = false;
-    }
-
     CreateGPUResources(device);
+
+    if (!CreateSSFRResources(device, rtvFormat))
+    {
+        printf("FluidSystem ERROR: SSFR用リソースの初期化に失敗したため描画品質を低下させます\n");
+    }
 
     // GPU・CPUリソースの生成が完了したタイミングで初期化済みフラグを立てる
     m_initialized = true;
@@ -175,6 +269,7 @@ void FluidSystem::SetMaterial(const FluidMaterial& material)
     if (m_device)
     {
         CreateGPUResources(m_device);
+        CreateSSFRResources(m_device, m_rtvFormat);
     }
 }
 
@@ -339,72 +434,142 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt)
     }
 }
 
+
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
     const XMFLOAT4X4& invViewProj,
     const XMFLOAT4X4& viewProj,
     const XMFLOAT3& camPos,
     float isoLevel)
 {
-    if (!m_initialized || !cmd || m_particleCount == 0 || !m_activeMetaSRV ||
-        !m_metaRootSignature || !m_metaPipelineState)
+    (void)isoLevel;
+    (void)camPos;
+
+    if (!m_initialized || !cmd || m_particleCount == 0 ||
+        !m_particleRootSignature || !m_particlePipelineState ||
+        !m_blurPipelineState || !m_normalPipelineState ||
+        !m_compositePipelineState || !m_particleDepthTexture ||
+        !m_smoothedDepthTexture || !m_normalTexture || !m_thicknessTexture ||
+        !m_particleDepthSRV || !m_particleDepthUAV || !m_smoothedDepthSRV || !m_smoothedDepthUAV ||
+        !m_normalSRV || !m_normalUAV || !m_thicknessSRV || !m_thicknessUAV)
     {
         return;
     }
 
     UINT frameIndex = g_Engine->CurrentBackBufferIndex();
-    MetaConstants* cb = m_metaCB[frameIndex]->GetPtr<MetaConstants>();
-
-    XMMATRIX invVP = XMLoadFloat4x4(&invViewProj);
-    invVP = XMMatrixTranspose(invVP);
-    XMStoreFloat4x4(&cb->InvViewProj, invVP);
-
-    XMMATRIX vp = XMLoadFloat4x4(&viewProj);
-    vp = XMMatrixTranspose(vp);
-    XMStoreFloat4x4(&cb->ViewProj, vp);
-
-    cb->CamRadius = XMFLOAT4(camPos.x, camPos.y, camPos.z, m_material.renderRadius);
-
-    // 粒子数に応じてレイマーチのステップ幅を動的に調整して描画負荷を抑える
-    float particleRatio = (m_maxParticles > 0) ? static_cast<float>(m_particleCount) / static_cast<float>(m_maxParticles) : 0.0f;
-    float adaptiveStep = std::clamp(std::lerp(0.55f, 0.22f, std::clamp(particleRatio * 1.5f, 0.0f, 1.0f)), 0.18f, 0.6f);
-    cb->IsoCount = XMFLOAT4(isoLevel * 0.6f, static_cast<float>(m_particleCount), adaptiveStep, 0.0f);
-
-    const bool gridHandlesValid = m_gpuGridCountSRV && m_gpuGridTableSRV &&
-        m_gpuGridCountSRV->HandleGPU.ptr != 0 && m_gpuGridTableSRV->HandleGPU.ptr != 0;
-    // GPUグリッドが利用できる場合のみセル情報を設定する
-    const bool gridReady = m_useGPU && HasValidGPUResources() && gridHandlesValid;
-
-    if (gridReady)
+    auto& cameraCB = m_cameraCB[frameIndex];
+    if (!cameraCB)
     {
-        const float cellSize = std::max(0.0f, m_spatialGrid.CellSize());
-        cb->GridMinCell = XMFLOAT4(m_boundsMin.x, m_boundsMin.y, m_boundsMin.z, cellSize);
-        const UINT totalCells = std::max<UINT>(1u, m_gridDim.x * m_gridDim.y * m_gridDim.z);
-        cb->GridDimInfo = XMUINT4(m_gridDim.x, m_gridDim.y, m_gridDim.z, totalCells);
-    }
-    else
-    {
-        // グリッドが無効なときはセルサイズを0にしてシェーダーにフォールバックさせる
-        cb->GridMinCell = XMFLOAT4(m_boundsMin.x, m_boundsMin.y, m_boundsMin.z, 0.0f);
-        cb->GridDimInfo = XMUINT4(0, 0, 0, 0);
+        return;
     }
 
-    cb->WaterDeep = XMFLOAT4(m_waterColorDeep.x, m_waterColorDeep.y, m_waterColorDeep.z, m_waterAbsorption);
-    cb->WaterShallow = XMFLOAT4(m_waterColorShallow.x, m_waterColorShallow.y, m_waterColorShallow.z, m_foamCurvatureThreshold);
-    cb->ShadingParams = XMFLOAT4(m_foamStrength, m_reflectionStrength, m_specularPower, m_totalSimulatedTime);
+    UINT width = std::max<UINT>(1u, g_Engine->FrameBufferWidth());
+    UINT height = std::max<UINT>(1u, g_Engine->FrameBufferHeight());
+
+    SSFRCameraConstants* camera = cameraCB->GetPtr<SSFRCameraConstants>();
+    XMMATRIX viewProjMatrix = XMLoadFloat4x4(&viewProj);
+    XMMATRIX viewMatrix = XMMatrixIdentity();
+    XMMATRIX projMatrix = XMMatrixIdentity();
+
+    XMStoreFloat4x4(&camera->ViewProj, XMMatrixTranspose(viewProjMatrix));
+    XMStoreFloat4x4(&camera->View, XMMatrixTranspose(viewMatrix));
+    XMStoreFloat4x4(&camera->Proj, XMMatrixTranspose(projMatrix));
+    camera->ScreenSize = XMFLOAT2(static_cast<float>(width), static_cast<float>(height));
+    camera->InvScreen = XMFLOAT2(1.0f / static_cast<float>(width), 1.0f / static_cast<float>(height));
+    camera->NearZ = 0.1f;
+    camera->FarZ = 1000.0f;
+    camera->IorF0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+    camera->Absorption = m_waterAbsorption;
+
+    // ブラー定数は1度だけ設定しておけばよいので、呼び出し毎に更新不要
+    if (m_blurParamsCB)
+    {
+        auto* blur = m_blurParamsCB->GetPtr<SSFRBlurParams>();
+        blur->Sigma = std::max(0.1f, blur->Sigma);
+        blur->DepthK = std::max(0.01f, blur->DepthK);
+        blur->NormalK = std::max(0.1f, blur->NormalK);
+    }
 
     ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
     cmd->SetDescriptorHeaps(1, heaps);
-    cmd->SetGraphicsRootSignature(m_metaRootSignature.Get());
-    cmd->SetPipelineState(m_metaPipelineState.Get());
-    cmd->SetGraphicsRootDescriptorTable(0, m_activeMetaSRV->HandleGPU);
-    cmd->SetGraphicsRootConstantBufferView(1, m_metaCB[frameIndex]->GetAddress());
 
-    if (gridHandlesValid)
+    auto transition = [&](std::unique_ptr<Texture2D>& texture, D3D12_RESOURCE_STATES targetState, D3D12_RESOURCE_STATES& currentState)
     {
-        // 空間グリッドのSRVをピクセルシェーダーへ渡す
-        cmd->SetGraphicsRootDescriptorTable(2, m_gpuGridTableSRV->HandleGPU);
-        cmd->SetGraphicsRootDescriptorTable(3, m_gpuGridCountSRV->HandleGPU);
+        if (texture && currentState != targetState)
+        {
+            auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(texture->Resource(), currentState, targetState);
+            cmd->ResourceBarrier(1, &barrier);
+            currentState = targetState;
+        }
+    };
+
+    // 粒子深度パス（UAVへ書き込み）
+    transition(m_particleDepthTexture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, m_particleDepthState);
+    transition(m_smoothedDepthTexture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, m_smoothedDepthState);
+    transition(m_thicknessTexture, D3D12_RESOURCE_STATE_RENDER_TARGET, m_thicknessState);
+
+    const float clearDepth[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    cmd->ClearUnorderedAccessViewFloat(m_particleDepthUAV->HandleGPU, m_particleDepthUAV->HandleCPU, m_particleDepthTexture->Resource(), clearDepth, 0, nullptr);
+    cmd->ClearUnorderedAccessViewFloat(m_smoothedDepthUAV->HandleGPU, m_smoothedDepthUAV->HandleCPU, m_smoothedDepthTexture->Resource(), clearDepth, 0, nullptr);
+    const float clearThickness[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    cmd->ClearRenderTargetView(m_thicknessRTV, clearThickness, 0, nullptr);
+
+    cmd->SetGraphicsRootSignature(m_particleRootSignature.Get());
+    cmd->SetPipelineState(m_particlePipelineState.Get());
+    cmd->SetGraphicsRootConstantBufferView(0, cameraCB->GetAddress());
+    cmd->SetGraphicsRootDescriptorTable(1, m_particleDepthUAV->HandleGPU);
+    cmd->SetGraphicsRootDescriptorTable(2, m_smoothedDepthUAV->HandleGPU);
+    cmd->SetGraphicsRootDescriptorTable(3, m_thicknessUAV->HandleGPU);
+    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cmd->DrawInstanced(3, 1, 0, 0);
+
+    // 深度平滑化（コンピュート）
+    transition(m_particleDepthTexture, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, m_particleDepthState);
+    transition(m_smoothedDepthTexture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, m_smoothedDepthState);
+
+    if (m_blurPipelineState)
+    {
+        cmd->SetComputeRootSignature(m_blurRootSignature.Get());
+        cmd->SetPipelineState(m_blurPipelineState.Get());
+        cmd->SetComputeRootDescriptorTable(0, m_particleDepthSRV->HandleGPU);
+        cmd->SetComputeRootDescriptorTable(1, m_particleDepthSRV->HandleGPU);
+        cmd->SetComputeRootDescriptorTable(2, m_smoothedDepthUAV->HandleGPU);
+        if (m_blurParamsCB)
+        {
+            cmd->SetComputeRootConstantBufferView(3, m_blurParamsCB->GetAddress());
+        }
+        UINT groupX = (width + 15) / 16;
+        UINT groupY = (height + 15) / 16;
+        cmd->Dispatch(groupX, groupY, 1);
     }
+
+    // 法線生成
+    transition(m_smoothedDepthTexture, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, m_smoothedDepthState);
+    transition(m_normalTexture, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, m_normalState);
+
+    if (m_normalPipelineState)
+    {
+        cmd->SetComputeRootSignature(m_normalRootSignature.Get());
+        cmd->SetPipelineState(m_normalPipelineState.Get());
+        cmd->SetComputeRootDescriptorTable(0, m_smoothedDepthSRV->HandleGPU);
+        cmd->SetComputeRootDescriptorTable(1, m_normalUAV->HandleGPU);
+        cmd->SetComputeRootConstantBufferView(2, cameraCB->GetAddress());
+        UINT groupX = (width + 31) / 32;
+        UINT groupY = (height + 31) / 32;
+        cmd->Dispatch(groupX, groupY, 1);
+    }
+
+    // 合成のために必要なリソース状態へ戻す
+    transition(m_particleDepthTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, m_particleDepthState);
+    transition(m_smoothedDepthTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, m_smoothedDepthState);
+    transition(m_normalTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, m_normalState);
+    transition(m_thicknessTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, m_thicknessState);
+
+    cmd->SetGraphicsRootSignature(m_compositeRootSignature.Get());
+    cmd->SetPipelineState(m_compositePipelineState.Get());
+    cmd->SetGraphicsRootDescriptorTable(0, m_smoothedDepthSRV->HandleGPU);
+    cmd->SetGraphicsRootDescriptorTable(1, m_normalSRV->HandleGPU);
+    cmd->SetGraphicsRootDescriptorTable(2, m_thicknessSRV->HandleGPU);
+    cmd->SetGraphicsRootConstantBufferView(3, cameraCB->GetAddress());
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmd->DrawInstanced(3, 1, 0, 0);
 }
@@ -933,81 +1098,90 @@ void FluidSystem::UpdateParticleBuffer()
     m_activeMetaSRV = m_cpuMetaSRV;
 }
 
-bool FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat)
+
+bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvFormat)
 {
     if (!device)
     {
         return false;
     }
 
-    // 初期化途中で失敗したときに安全にクリーンアップするためのラムダ
-    auto cleanupMetaResources = [this]()
-    {
-        m_metaRootSignature.Reset();
-        m_metaPipelineState.Reset();
-        m_cpuMetaBuffer.Reset();
-        m_gpuMetaBuffer.Reset();
-        m_cpuMetaSRV = nullptr;
-        m_gpuMetaSRV = nullptr;
-        m_gpuMetaUAV = nullptr;
-        m_activeMetaSRV = nullptr;
-        for (auto& cb : m_metaCB)
-        {
-            cb.reset();
-        }
-    };
+    DestroySSFRResources();
 
-    if (!graphics::MetaBallPipeline::CreateRootSignature(device, m_metaRootSignature))
+    UINT width = std::max<UINT>(1u, g_Engine->FrameBufferWidth());
+    UINT height = std::max<UINT>(1u, g_Engine->FrameBufferHeight());
+    if (width == 0 || height == 0)
     {
-        printf("FluidSystem: Meta RootSignature failed\n");
-        cleanupMetaResources();
-        return false;
-    }
-
-    // 深度ステンシルビューはD32形式なので、PSOにも同じフォーマットを渡しておく
-    if (!graphics::MetaBallPipeline::CreatePipelineState(device, m_metaRootSignature.Get(), rtvFormat, DXGI_FORMAT_D32_FLOAT, m_metaPipelineState))
-    {
-        printf("FluidSystem: MetaBall PSO Create failed\n");
-        cleanupMetaResources();
+        printf("FluidSystem: バックバッファの解像度が無効です
+");
         return false;
     }
 
     for (UINT i = 0; i < kFrameCount; ++i)
     {
-        m_metaCB[i] = std::make_unique<ConstantBuffer>(sizeof(MetaConstants));
+        if (!m_cameraCB[i])
+        {
+            m_cameraCB[i] = std::make_unique<ConstantBuffer>(sizeof(SSFRCameraConstants));
+        }
+    }
+
+    if (!m_blurParamsCB)
+    {
+        m_blurParamsCB = std::make_unique<ConstantBuffer>(sizeof(SSFRBlurParams));
+        auto params = m_blurParamsCB->GetPtr<SSFRBlurParams>();
+        params->Sigma = 2.5f;
+        params->DepthK = 1.0f;
+        params->NormalK = 8.0f;
+        params->Padding = 0.0f;
     }
 
     UINT64 bufferSize = sizeof(ParticleMetaGPU) * m_maxParticles;
 
-    // CPU更新用アップロードバッファ
-    auto cpuHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-    auto cpuDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
-    if (FAILED(device->CreateCommittedResource(&cpuHeap, D3D12_HEAP_FLAG_NONE, &cpuDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
-        IID_PPV_ARGS(m_cpuMetaBuffer.ReleaseAndGetAddressOf()))))
+    if (!m_cpuMetaBuffer || m_cpuMetaBuffer->GetDesc().Width < bufferSize)
     {
-        printf("FluidSystem 1 : CPU Meta Buffer Create failed\n");
-        cleanupMetaResources();
-        return false;
+        m_cpuMetaBuffer.Reset();
+        auto cpuHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        auto cpuDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize);
+        HRESULT hr = device->CreateCommittedResource(&cpuHeap, D3D12_HEAP_FLAG_NONE, &cpuDesc,
+            D3D12_RESOURCE_STATE_GENERIC_READ, nullptr,
+            IID_PPV_ARGS(m_cpuMetaBuffer.ReleaseAndGetAddressOf()));
+        if (FAILED(hr))
+        {
+            printf("FluidSystem: CPUメタデータバッファの生成に失敗しました (0x%08X)
+", hr);
+            return false;
+        }
+
+        if (!m_cpuMetaSRV)
+        {
+            m_cpuMetaSRV = g_Engine->CbvSrvUavHeap()->RegisterBuffer(m_cpuMetaBuffer.Get(), m_maxParticles, sizeof(ParticleMetaGPU));
+        }
+        else
+        {
+            D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+            desc.Format = DXGI_FORMAT_UNKNOWN;
+            desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+            desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            desc.Buffer.NumElements = m_maxParticles;
+            desc.Buffer.StructureByteStride = sizeof(ParticleMetaGPU);
+            g_Engine->Device()->CreateShaderResourceView(m_cpuMetaBuffer.Get(), &desc, m_cpuMetaSRV->HandleCPU);
+        }
     }
 
-    m_cpuMetaSRV = g_Engine->CbvSrvUavHeap()->RegisterBuffer(m_cpuMetaBuffer.Get(), m_maxParticles, sizeof(ParticleMetaGPU));
-    if (!m_cpuMetaSRV)
-    {
-        printf("FluidSystem 2 : CPU MetaDate SRV Create failed\n");
-        cleanupMetaResources();
-        return false;
-    }
-    m_activeMetaSRV = m_cpuMetaSRV;
-
-    // GPU書き込み用バッファ
     auto gpuHeap = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
     auto gpuDesc = CD3DX12_RESOURCE_DESC::Buffer(bufferSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-    if (FAILED(device->CreateCommittedResource(&gpuHeap, D3D12_HEAP_FLAG_NONE, &gpuDesc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr,
-        IID_PPV_ARGS(m_gpuMetaBuffer.ReleaseAndGetAddressOf()))))
+    if (!m_gpuMetaBuffer || m_gpuMetaBuffer->GetDesc().Width < bufferSize)
     {
-        printf("FluidSystem 3 : GPU MetaDate Buffer Create failed\n");
-        cleanupMetaResources();
-        return false;
+        m_gpuMetaBuffer.Reset();
+        HRESULT hr = device->CreateCommittedResource(&gpuHeap, D3D12_HEAP_FLAG_NONE, &gpuDesc,
+            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, nullptr,
+            IID_PPV_ARGS(m_gpuMetaBuffer.ReleaseAndGetAddressOf()));
+        if (FAILED(hr))
+        {
+            printf("FluidSystem: GPUメタデータバッファの生成に失敗しました (0x%08X)
+", hr);
+            return false;
+        }
     }
 
     if (!m_gpuMetaSRV)
@@ -1024,12 +1198,6 @@ bool FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
         desc.Buffer.StructureByteStride = sizeof(ParticleMetaGPU);
         g_Engine->Device()->CreateShaderResourceView(m_gpuMetaBuffer.Get(), &desc, m_gpuMetaSRV->HandleCPU);
     }
-    if (!m_gpuMetaSRV)
-    {
-        printf("FluidSystem 4 : GPU Meta Data Buffer Resister failed\n");
-        cleanupMetaResources();
-        return false;
-    }
 
     if (!m_gpuMetaUAV)
     {
@@ -1044,14 +1212,426 @@ bool FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
         desc.Buffer.StructureByteStride = sizeof(ParticleMetaGPU);
         g_Engine->Device()->CreateUnorderedAccessView(m_gpuMetaBuffer.Get(), nullptr, &desc, m_gpuMetaUAV->HandleCPU);
     }
-    if (!m_gpuMetaUAV)
+
+    m_activeMetaSRV = m_cpuMetaSRV;
+
+    if (!m_ssfrRtvHeap)
     {
-        printf("FluidSystem 5 : GPUメタデータUAVの登録に失敗しました\n");
-        cleanupMetaResources();
+        D3D12_DESCRIPTOR_HEAP_DESC heapDesc{};
+        heapDesc.NumDescriptors = 3;
+        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        HRESULT hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_ssfrRtvHeap.ReleaseAndGetAddressOf()));
+        if (FAILED(hr))
+        {
+            printf("FluidSystem: SSFR用RTVヒープの生成に失敗しました (0x%08X)
+", hr);
+            return false;
+        }
+        m_ssfrRtvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+    }
+
+    CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
+
+    auto rtvHandle = m_ssfrRtvHeap->GetCPUDescriptorHandleForHeapStart();
+    m_particleDepthRTV = rtvHandle;
+    rtvHandle.ptr += m_ssfrRtvDescriptorSize;
+    m_smoothedDepthRTV = rtvHandle;
+    rtvHandle.ptr += m_ssfrRtvDescriptorSize;
+    m_thicknessRTV = rtvHandle;
+
+    auto createTexture = [&](DXGI_FORMAT format,
+        const wchar_t* name,
+        std::unique_ptr<Texture2D>& texture,
+        DescriptorHandle*& srvHandle,
+        DescriptorHandle*& uavHandle,
+        D3D12_CPU_DESCRIPTOR_HANDLE rtv,
+        D3D12_RESOURCE_STATES& state,
+        bool createRTV)
+    {
+        D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        if (createRTV)
+        {
+            flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+        }
+
+        CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(format, width, height, 1, 1);
+        desc.Flags = flags;
+
+        D3D12_CLEAR_VALUE clear{};
+        clear.Format = format;
+        clear.Color[0] = 0.0f;
+        clear.Color[1] = 0.0f;
+        clear.Color[2] = 0.0f;
+        clear.Color[3] = (format == DXGI_FORMAT_R32_FLOAT) ? 1.0f : 0.0f;
+
+        Microsoft::WRL::ComPtr<ID3D12Resource> resource;
+        HRESULT hr = device->CreateCommittedResource(
+            &defaultHeap,
+            D3D12_HEAP_FLAG_NONE,
+            &desc,
+            D3D12_RESOURCE_STATE_COMMON,
+            createRTV ? &clear : nullptr,
+            IID_PPV_ARGS(resource.ReleaseAndGetAddressOf()));
+        if (FAILED(hr))
+        {
+            printf("FluidSystem: テクスチャ %ls の生成に失敗しました (0x%08X)
+", name, hr);
+            return false;
+        }
+        resource->SetName(name);
+
+        texture = std::unique_ptr<Texture2D>(new Texture2D(resource.Get()));
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = texture->ViewDesc();
+        if (!srvHandle)
+        {
+            srvHandle = g_Engine->CbvSrvUavHeap()->Register(texture.get());
+        }
+        else
+        {
+            g_Engine->Device()->CreateShaderResourceView(resource.Get(), &srvDesc, srvHandle->HandleCPU);
+        }
+        if (!srvHandle)
+        {
+            printf("FluidSystem: %ls のSRV登録に失敗しました
+", name);
+            return false;
+        }
+
+        if (!uavHandle)
+        {
+            uavHandle = g_Engine->CbvSrvUavHeap()->RegisterTextureUAV(resource.Get(), format);
+        }
+        else
+        {
+            D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
+            uavDesc.Format = format;
+            uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+            uavDesc.Texture2D.MipSlice = 0;
+            uavDesc.Texture2D.PlaneSlice = 0;
+            g_Engine->Device()->CreateUnorderedAccessView(resource.Get(), nullptr, &uavDesc, uavHandle->HandleCPU);
+        }
+        if (!uavHandle)
+        {
+            printf("FluidSystem: %ls のUAV登録に失敗しました
+", name);
+            return false;
+        }
+
+        if (createRTV)
+        {
+            device->CreateRenderTargetView(resource.Get(), nullptr, rtv);
+        }
+
+        state = D3D12_RESOURCE_STATE_COMMON;
+        return true;
+    };
+
+    if (!createTexture(DXGI_FORMAT_R32_FLOAT, L"FluidParticleDepth", m_particleDepthTexture, m_particleDepthSRV, m_particleDepthUAV, m_particleDepthRTV, m_particleDepthState, true))
+    {
         return false;
     }
 
+    if (!createTexture(DXGI_FORMAT_R32_FLOAT, L"FluidSmoothedDepth", m_smoothedDepthTexture, m_smoothedDepthSRV, m_smoothedDepthUAV, m_smoothedDepthRTV, m_smoothedDepthState, true))
+    {
+        return false;
+    }
+
+    if (!createTexture(DXGI_FORMAT_R8G8B8A8_UNORM, L"FluidNormal", m_normalTexture, m_normalSRV, m_normalUAV, {}, m_normalState, false))
+    {
+        return false;
+    }
+
+    if (!createTexture(DXGI_FORMAT_R16_FLOAT, L"FluidThickness", m_thicknessTexture, m_thicknessSRV, m_thicknessUAV, m_thicknessRTV, m_thicknessState, true))
+    {
+        return false;
+    }
+
+    // 粒子描画ルートシグネチャ
+    {
+        CD3DX12_DESCRIPTOR_RANGE uavRanges[3];
+        uavRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+        uavRanges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
+        uavRanges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2);
+
+        CD3DX12_ROOT_PARAMETER params[4];
+        params[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_ALL);
+        params[1].InitAsDescriptorTable(1, &uavRanges[0], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[2].InitAsDescriptorTable(1, &uavRanges[1], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[3].InitAsDescriptorTable(1, &uavRanges[2], D3D12_SHADER_VISIBILITY_PIXEL);
+
+        CD3DX12_ROOT_SIGNATURE_DESC desc(_countof(params), params, 0, nullptr,
+            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS);
+
+        Microsoft::WRL::ComPtr<ID3DBlob> blob, error;
+        HRESULT hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error);
+        if (FAILED(hr))
+        {
+            if (error)
+            {
+                printf("FluidSystem: 粒子用ルートシグネチャ生成失敗 -> %s
+", static_cast<const char*>(error->GetBufferPointer()));
+            }
+            return false;
+        }
+        hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(m_particleRootSignature.ReleaseAndGetAddressOf()));
+        if (FAILED(hr))
+        {
+            printf("FluidSystem: 粒子用ルートシグネチャ作成に失敗しました (0x%08X)
+", hr);
+            return false;
+        }
+
+        Microsoft::WRL::ComPtr<ID3DBlob> vs, ps;
+        if (!LoadOrCompileShader(L"SSFRParticleVS.hlsl", "main", "vs_5_0", vs))
+        {
+            return false;
+        }
+        if (!LoadOrCompileShader(L"SSFRParticlePS.hlsl", "main", "ps_5_0", ps))
+        {
+            return false;
+        }
+
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
+        pso.pRootSignature = m_particleRootSignature.Get();
+        pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+        pso.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+        pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        pso.SampleMask = UINT_MAX;
+        pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+        pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+        pso.DepthStencilState.DepthEnable = FALSE;
+        pso.DepthStencilState.StencilEnable = FALSE;
+        pso.InputLayout = { nullptr, 0 };
+        pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        pso.NumRenderTargets = 1;
+        pso.RTVFormats[0] = rtvFormat;
+        pso.SampleDesc.Count = 1;
+        pso.SampleDesc.Quality = 0;
+
+        hr = device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_particlePipelineState.ReleaseAndGetAddressOf()));
+        if (FAILED(hr))
+        {
+            printf("FluidSystem: 粒子描画PSOの生成に失敗しました (0x%08X)
+", hr);
+            return false;
+        }
+    }
+
+    // バイラテラルブラー
+    {
+        CD3DX12_DESCRIPTOR_RANGE srvRanges[2];
+        srvRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+        srvRanges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+        CD3DX12_DESCRIPTOR_RANGE uavRange(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+        CD3DX12_ROOT_PARAMETER params[4];
+        params[0].InitAsDescriptorTable(1, &srvRanges[0]);
+        params[1].InitAsDescriptorTable(1, &srvRanges[1]);
+        params[2].InitAsDescriptorTable(1, &uavRange);
+        params[3].InitAsConstantBufferView(0);
+
+        CD3DX12_ROOT_SIGNATURE_DESC desc(_countof(params), params, 0, nullptr,
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS);
+
+        Microsoft::WRL::ComPtr<ID3DBlob> blob, error;
+        HRESULT hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error);
+        if (FAILED(hr))
+        {
+            if (error)
+            {
+                printf("FluidSystem: ブラー用ルートシグネチャ生成失敗 -> %s
+", static_cast<const char*>(error->GetBufferPointer()));
+            }
+            return false;
+        }
+        hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(m_blurRootSignature.ReleaseAndGetAddressOf()));
+        if (FAILED(hr))
+        {
+            printf("FluidSystem: ブラー用ルートシグネチャ作成に失敗しました (0x%08X)
+", hr);
+            return false;
+        }
+
+        Microsoft::WRL::ComPtr<ID3DBlob> cs;
+        if (!LoadOrCompileShader(L"SSFRBilateralCS.hlsl", "main", "cs_5_0", cs))
+        {
+            return false;
+        }
+
+        D3D12_COMPUTE_PIPELINE_STATE_DESC pso{};
+        pso.pRootSignature = m_blurRootSignature.Get();
+        pso.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
+        HRESULT hr2 = device->CreateComputePipelineState(&pso, IID_PPV_ARGS(m_blurPipelineState.ReleaseAndGetAddressOf()));
+        if (FAILED(hr2))
+        {
+            printf("FluidSystem: ブラー用PSO作成に失敗しました (0x%08X)
+", hr2);
+            return false;
+        }
+    }
+
+    // 法線生成
+    {
+        CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+        CD3DX12_DESCRIPTOR_RANGE uavRange(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+        CD3DX12_ROOT_PARAMETER params[3];
+        params[0].InitAsDescriptorTable(1, &srvRange);
+        params[1].InitAsDescriptorTable(1, &uavRange);
+        params[2].InitAsConstantBufferView(0);
+
+        CD3DX12_ROOT_SIGNATURE_DESC desc(_countof(params), params, 0, nullptr,
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS);
+
+        Microsoft::WRL::ComPtr<ID3DBlob> blob, error;
+        HRESULT hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error);
+        if (FAILED(hr))
+        {
+            if (error)
+            {
+                printf("FluidSystem: 法線CSルートシグネチャ生成失敗 -> %s
+", static_cast<const char*>(error->GetBufferPointer()));
+            }
+            return false;
+        }
+        hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(m_normalRootSignature.ReleaseAndGetAddressOf()));
+        if (FAILED(hr))
+        {
+            printf("FluidSystem: 法線CSルートシグネチャ作成に失敗しました (0x%08X)
+", hr);
+            return false;
+        }
+
+        Microsoft::WRL::ComPtr<ID3DBlob> cs;
+        if (!LoadOrCompileShader(L"SSFRNormalCS.hlsl", "main", "cs_5_0", cs))
+        {
+            return false;
+        }
+
+        D3D12_COMPUTE_PIPELINE_STATE_DESC pso{};
+        pso.pRootSignature = m_normalRootSignature.Get();
+        pso.CS = { cs->GetBufferPointer(), cs->GetBufferSize() };
+        HRESULT hr2 = device->CreateComputePipelineState(&pso, IID_PPV_ARGS(m_normalPipelineState.ReleaseAndGetAddressOf()));
+        if (FAILED(hr2))
+        {
+            printf("FluidSystem: 法線生成PSO作成に失敗しました (0x%08X)
+", hr2);
+            return false;
+        }
+    }
+
+    // 合成
+    {
+        CD3DX12_DESCRIPTOR_RANGE srvRanges[3];
+        srvRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+        srvRanges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+        srvRanges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
+        CD3DX12_ROOT_PARAMETER params[4];
+        params[0].InitAsDescriptorTable(1, &srvRanges[0], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[1].InitAsDescriptorTable(1, &srvRanges[1], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[2].InitAsDescriptorTable(1, &srvRanges[2], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[3].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
+
+        CD3DX12_STATIC_SAMPLER_DESC sampler(0);
+        sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+        sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+
+        CD3DX12_ROOT_SIGNATURE_DESC desc(_countof(params), params, 1, &sampler,
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
+            D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS);
+
+        Microsoft::WRL::ComPtr<ID3DBlob> blob, error;
+        HRESULT hr = D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, &blob, &error);
+        if (FAILED(hr))
+        {
+            if (error)
+            {
+                printf("FluidSystem: 合成ルートシグネチャ生成失敗 -> %s
+", static_cast<const char*>(error->GetBufferPointer()));
+            }
+            return false;
+        }
+        hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(m_compositeRootSignature.ReleaseAndGetAddressOf()));
+        if (FAILED(hr))
+        {
+            printf("FluidSystem: 合成ルートシグネチャ作成に失敗しました (0x%08X)
+", hr);
+            return false;
+        }
+
+        Microsoft::WRL::ComPtr<ID3DBlob> vs, ps;
+        if (!LoadOrCompileShader(L"FullscreenVS.hlsl", "main", "vs_5_0", vs))
+        {
+            return false;
+        }
+        if (!LoadOrCompileShader(L"SSFRCompositePS.hlsl", "main", "ps_5_0", ps))
+        {
+            return false;
+        }
+
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC pso{};
+        pso.pRootSignature = m_compositeRootSignature.Get();
+        pso.VS = { vs->GetBufferPointer(), vs->GetBufferSize() };
+        pso.PS = { ps->GetBufferPointer(), ps->GetBufferSize() };
+        pso.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+        pso.SampleMask = UINT_MAX;
+        pso.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+        pso.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+        pso.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+        pso.DepthStencilState.DepthEnable = FALSE;
+        pso.DepthStencilState.StencilEnable = FALSE;
+        pso.InputLayout = { nullptr, 0 };
+        pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+        pso.NumRenderTargets = 1;
+        pso.RTVFormats[0] = rtvFormat;
+        pso.SampleDesc.Count = 1;
+        pso.SampleDesc.Quality = 0;
+
+        HRESULT hr2 = device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_compositePipelineState.ReleaseAndGetAddressOf()));
+        if (FAILED(hr2))
+        {
+            printf("FluidSystem: 合成PSOの生成に失敗しました (0x%08X)
+", hr2);
+            return false;
+        }
+    }
+
     return true;
+}
+
+void FluidSystem::DestroySSFRResources()
+{
+    m_particleDepthTexture.reset();
+    m_smoothedDepthTexture.reset();
+    m_normalTexture.reset();
+    m_thicknessTexture.reset();
+    m_particleDepthState = D3D12_RESOURCE_STATE_COMMON;
+    m_smoothedDepthState = D3D12_RESOURCE_STATE_COMMON;
+    m_normalState = D3D12_RESOURCE_STATE_COMMON;
+    m_thicknessState = D3D12_RESOURCE_STATE_COMMON;
+
+    m_particleRootSignature.Reset();
+    m_particlePipelineState.Reset();
+    m_blurRootSignature.Reset();
+    m_blurPipelineState.Reset();
+    m_normalRootSignature.Reset();
+    m_normalPipelineState.Reset();
+    m_compositeRootSignature.Reset();
+    m_compositePipelineState.Reset();
 }
 
 void FluidSystem::CreateGPUResources(ID3D12Device* device)
