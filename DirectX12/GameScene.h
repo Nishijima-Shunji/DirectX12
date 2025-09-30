@@ -4,7 +4,7 @@
 #include <vector>
 #include <d3dx12.h>
 #include "IActor.h"      // IActor の定義
-
+#include "Engine.h"
 #include "Camera.h"
 #include "FluidSystem.h"
 
