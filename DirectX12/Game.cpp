@@ -1,37 +1,58 @@
+#include <windows.h>
 #include "Game.h"
-#include "MetaballRenderer.h"
+#include "Engine.h"
+#include "TitleScene.h"
+#include "Scene.h"
+#include "GameScene.h"
 
 // =======================================================================================
-// コンストラクタでメタボール描画専用のレンダラーを初期化する
+//      �R���X�g���N�^
 // =======================================================================================
 Game::Game()
 {
-    m_renderer = std::make_unique<MetaballRenderer>();
-    if (m_renderer && !m_renderer->Initialize())
-    {
-        // 初期化に失敗した場合は安全のため解放しておく
-        m_renderer.reset();
-    }
+    RegisterScenes();                       // �g�p����V�[����o�^
+    m_SceneManager.ChangeScene("Scene");    // �ŏ��̃V�[��
 }
 
 // =======================================================================================
-// レイマーチング用パラメーターを更新する
+//      ���C������
 // =======================================================================================
 void Game::Update(float deltaTime)
 {
-    if (m_renderer)
-    {
-        m_renderer->Update(deltaTime);
-    }
+    m_SceneManager.Update(deltaTime);
 }
 
 // =======================================================================================
-// フルスクリーントライアングルでメタボールを描画する
+//      �`�揈��
 // =======================================================================================
 void Game::Render()
 {
-    if (m_renderer)
-    {
-        m_renderer->Render();
-    }
+    m_SceneManager.Render();
+}
+
+// =======================================================================================
+//      �V�[���̓o�^�Ăяo��
+// =======================================================================================
+void Game::RegisterScenes()
+{
+    
+    m_SceneManager.RegisterScene("Scene", [this]() {
+        return std::make_unique<Scene>(this); // Game*�n��
+        });
+
+    m_SceneManager.RegisterScene("TitleScene", [this]() {
+        return std::make_unique<TitleScene>(this); // Game*�n��
+        });
+
+    m_SceneManager.RegisterScene("Game", [this]() {
+        return std::make_unique<GameScene>(this); // ���l��
+        });
+}
+
+// =======================================================================================
+//      �V�[���̕ύX�Ăяo��
+// =======================================================================================
+void Game::ChangeScene(const std::string& name)
+{
+    m_SceneManager.ChangeScene(name);
 }
