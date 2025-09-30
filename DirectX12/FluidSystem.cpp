@@ -1208,8 +1208,7 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
     UINT height = std::max<UINT>(1u, g_Engine->FrameBufferHeight());
     if (width == 0 || height == 0)
     {
-        printf("FluidSystem: バックバッファの解像度が無効です
-");
+        printf("FluidSystem: buckbuffer failed\n");
         return false;
     }
 
@@ -1243,8 +1242,7 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
             IID_PPV_ARGS(m_cpuMetaBuffer.ReleaseAndGetAddressOf()));
         if (FAILED(hr))
         {
-            printf("FluidSystem: CPUメタデータバッファの生成に失敗しました (0x%08X)
-", hr);
+            printf("FluidSystem: CPUメタデータバッファの生成に失敗しました (0x%08X)\n", hr);
             return false;
         }
 
@@ -1274,8 +1272,7 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
             IID_PPV_ARGS(m_gpuMetaBuffer.ReleaseAndGetAddressOf()));
         if (FAILED(hr))
         {
-            printf("FluidSystem: GPUメタデータバッファの生成に失敗しました (0x%08X)
-", hr);
+            printf("FluidSystem: GPUメタデータバッファの生成に失敗しました (0x%08X)\n", hr);
             return false;
         }
     }
@@ -1320,8 +1317,7 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         HRESULT hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_ssfrRtvHeap.ReleaseAndGetAddressOf()));
         if (FAILED(hr))
         {
-            printf("FluidSystem: SSFR用RTVヒープの生成に失敗しました (0x%08X)
-", hr);
+            printf("FluidSystem: SSFR用RTVヒープの生成に失敗しました (0x%08X)\n", hr);
             return false;
         }
         m_ssfrRtvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
@@ -1371,8 +1367,7 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
             IID_PPV_ARGS(resource.ReleaseAndGetAddressOf()));
         if (FAILED(hr))
         {
-            printf("FluidSystem: テクスチャ %ls の生成に失敗しました (0x%08X)
-", name, hr);
+            printf("FluidSystem: テクスチャ %ls の生成に失敗しました (0x%08X)\n", name, hr);
             return false;
         }
         resource->SetName(name);
@@ -1390,8 +1385,7 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         }
         if (!srvHandle)
         {
-            printf("FluidSystem: %ls のSRV登録に失敗しました
-", name);
+            printf("FluidSystem: %ls のSRV登録に失敗しました\n", name);
             return false;
         }
 
@@ -1410,8 +1404,7 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         }
         if (!uavHandle)
         {
-            printf("FluidSystem: %ls のUAV登録に失敗しました
-", name);
+            printf("FluidSystem: %ls のUAV登録に失敗しました\n", name);
             return false;
         }
 
@@ -1542,16 +1535,14 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         {
             if (error)
             {
-                printf("FluidSystem: 粒子用ルートシグネチャ生成失敗 -> %s
-", static_cast<const char*>(error->GetBufferPointer()));
+                printf("FluidSystem: 粒子用ルートシグネチャ生成失敗 -> %s", static_cast<const char*>(error->GetBufferPointer()));
             }
             return false;
         }
         hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(m_particleRootSignature.ReleaseAndGetAddressOf()));
         if (FAILED(hr))
         {
-            printf("FluidSystem: 粒子用ルートシグネチャ作成に失敗しました (0x%08X)
-", hr);
+            printf("FluidSystem: 粒子用ルートシグネチャ作成に失敗しました (0x%08X)", hr);
             return false;
         }
 
@@ -1586,8 +1577,7 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         hr = device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_particlePipelineState.ReleaseAndGetAddressOf()));
         if (FAILED(hr))
         {
-            printf("FluidSystem: 粒子描画PSOの生成に失敗しました (0x%08X)
-", hr);
+            printf("FluidSystem: 粒子描画PSOの生成に失敗しました (0x%08X)", hr);
             return false;
         }
     }
@@ -1617,16 +1607,14 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         {
             if (error)
             {
-                printf("FluidSystem: ブラー用ルートシグネチャ生成失敗 -> %s
-", static_cast<const char*>(error->GetBufferPointer()));
+                printf("FluidSystem: ブラー用ルートシグネチャ生成失敗 -> %s", static_cast<const char*>(error->GetBufferPointer()));
             }
             return false;
         }
         hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(m_blurRootSignature.ReleaseAndGetAddressOf()));
         if (FAILED(hr))
         {
-            printf("FluidSystem: ブラー用ルートシグネチャ作成に失敗しました (0x%08X)
-", hr);
+            printf("FluidSystem: ブラー用ルートシグネチャ作成に失敗しました (0x%08X)", hr);
             return false;
         }
 
@@ -1642,8 +1630,7 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         HRESULT hr2 = device->CreateComputePipelineState(&pso, IID_PPV_ARGS(m_blurPipelineState.ReleaseAndGetAddressOf()));
         if (FAILED(hr2))
         {
-            printf("FluidSystem: ブラー用PSO作成に失敗しました (0x%08X)
-", hr2);
+            printf("FluidSystem: ブラー用PSO作成に失敗しました (0x%08X)", hr2);
             return false;
         }
     }
@@ -1670,16 +1657,14 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         {
             if (error)
             {
-                printf("FluidSystem: 法線CSルートシグネチャ生成失敗 -> %s
-", static_cast<const char*>(error->GetBufferPointer()));
+                printf("FluidSystem: 法線CSルートシグネチャ生成失敗 -> %s", static_cast<const char*>(error->GetBufferPointer()));
             }
             return false;
         }
         hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(m_normalRootSignature.ReleaseAndGetAddressOf()));
         if (FAILED(hr))
         {
-            printf("FluidSystem: 法線CSルートシグネチャ作成に失敗しました (0x%08X)
-", hr);
+            printf("FluidSystem: 法線CSルートシグネチャ作成に失敗しました (0x%08X)", hr);
             return false;
         }
 
@@ -1695,8 +1680,7 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         HRESULT hr2 = device->CreateComputePipelineState(&pso, IID_PPV_ARGS(m_normalPipelineState.ReleaseAndGetAddressOf()));
         if (FAILED(hr2))
         {
-            printf("FluidSystem: 法線生成PSO作成に失敗しました (0x%08X)
-", hr2);
+            printf("FluidSystem: 法線生成PSO作成に失敗しました (0x%08X)", hr2);
             return false;
         }
     }
@@ -1733,16 +1717,14 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         {
             if (error)
             {
-                printf("FluidSystem: 合成ルートシグネチャ生成失敗 -> %s
-", static_cast<const char*>(error->GetBufferPointer()));
+                printf("FluidSystem: 合成ルートシグネチャ生成失敗 -> %s", static_cast<const char*>(error->GetBufferPointer()));
             }
             return false;
         }
         hr = device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), IID_PPV_ARGS(m_compositeRootSignature.ReleaseAndGetAddressOf()));
         if (FAILED(hr))
         {
-            printf("FluidSystem: 合成ルートシグネチャ作成に失敗しました (0x%08X)
-", hr);
+            printf("FluidSystem: 合成ルートシグネチャ作成に失敗しました (0x%08X)", hr);
             return false;
         }
 
@@ -1777,8 +1759,7 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         HRESULT hr2 = device->CreateGraphicsPipelineState(&pso, IID_PPV_ARGS(m_compositePipelineState.ReleaseAndGetAddressOf()));
         if (FAILED(hr2))
         {
-            printf("FluidSystem: 合成PSOの生成に失敗しました (0x%08X)
-", hr2);
+            printf("FluidSystem: 合成PSOの生成に失敗しました (0x%08X)", hr2);
             return false;
         }
     }
