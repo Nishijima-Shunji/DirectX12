@@ -3,6 +3,7 @@
 #include "MetaBallPipelineState.h"
 #include "RandomUtil.h"
 #include "ComputePipelineState.h"
+#include "Texture2D.h"
 #include <d3dx12.h>
 #include <cstdio>
 #include <algorithm>
@@ -122,6 +123,11 @@ void FluidSystem::Init(ID3D12Device* device, DXGI_FORMAT rtvFormat, UINT maxPart
         printf("FluidSystem ERROR: メタボール描画パイプラインの初期化に失敗したためGPU機能を無効化します\n");
         m_gpuAvailable = false;
         m_useGPU = false;
+    }
+
+    if (!CreateCompositePipeline(device))
+    {
+        printf("FluidSystem ERROR: フルスクリーン合成パイプラインの初期化に失敗しました\n");
     }
 
     CreateGPUResources(device);
@@ -405,6 +411,80 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
         cmd->SetGraphicsRootDescriptorTable(2, m_gpuGridTableSRV->HandleGPU);
         cmd->SetGraphicsRootDescriptorTable(3, m_gpuGridCountSRV->HandleGPU);
     }
+    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cmd->DrawInstanced(3, 1, 0, 0);
+}
+
+void FluidSystem::Composite(ID3D12GraphicsCommandList* cmd,
+    D3D12_CPU_DESCRIPTOR_HANDLE colorTarget,
+    D3D12_CPU_DESCRIPTOR_HANDLE depthTarget,
+    DescriptorHandle* depthTexture,
+    DescriptorHandle* normalTexture,
+    DescriptorHandle* colorTexture,
+    const XMFLOAT4X4& view,
+    const XMFLOAT4X4& proj,
+    const XMFLOAT3& camPos,
+    float deltaTime,
+    UINT frameCount)
+{
+    if (!cmd || !m_initialized || !m_compositeCB || !m_compositeRootSignature || !m_compositePSO.IsValid())
+    {
+        return;
+    }
+
+    if (depthTexture && normalTexture && colorTexture &&
+        depthTexture->HandleGPU.ptr != 0 && normalTexture->HandleGPU.ptr != 0 && colorTexture->HandleGPU.ptr != 0)
+    {
+        m_compositeDepthSRV = depthTexture;
+        m_compositeNormalSRV = normalTexture;
+        m_compositeColorSRV = colorTexture;
+        m_compositeTexturesValid = true;
+    }
+
+    if (!m_compositeTexturesValid)
+    {
+        return;
+    }
+
+    DescriptorHandle* depthHandle = m_compositeDepthSRV;
+    DescriptorHandle* normalHandle = m_compositeNormalSRV;
+    DescriptorHandle* colorHandle = m_compositeColorSRV;
+    if (!depthHandle || !normalHandle || !colorHandle ||
+        depthHandle->HandleGPU.ptr == 0 || normalHandle->HandleGPU.ptr == 0 || colorHandle->HandleGPU.ptr == 0)
+    {
+        return;
+    }
+
+    // 定数バッファへビュー・射影行列とカメラ情報を書き込む
+    CompositeConstants* cb = m_compositeCB->GetPtr<CompositeConstants>();
+    XMMATRIX viewMat = XMLoadFloat4x4(&view);
+    XMMATRIX projMat = XMLoadFloat4x4(&proj);
+    XMMATRIX viewProj = XMMatrixMultiply(viewMat, projMat);
+    XMStoreFloat4x4(&cb->View, XMMatrixTranspose(viewMat));
+    XMStoreFloat4x4(&cb->Proj, XMMatrixTranspose(projMat));
+    XMStoreFloat4x4(&cb->ViewProj, XMMatrixTranspose(viewProj));
+    cb->CameraPos = camPos;
+    cb->Pad0 = 0.0f;
+    cb->FrameCount = frameCount;
+    cb->DeltaTime = deltaTime;
+    cb->Pad1 = XMFLOAT2(0.0f, 0.0f);
+
+    // メインのレンダーターゲットと深度を明示的に再設定しておく
+    cmd->OMSetRenderTargets(1, &colorTarget, FALSE, &depthTarget);
+
+    // SRV用ディスクリプタヒープをバインドしてフルスクリーンPSOを設定
+    ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
+    cmd->SetDescriptorHeaps(1, heaps);
+    cmd->SetGraphicsRootSignature(m_compositeRootSignature.Get());
+    cmd->SetPipelineState(m_compositePSO.Get());
+
+    // 深度・法線・カラーの順にテクスチャSRVをセット
+    cmd->SetGraphicsRootDescriptorTable(0, depthHandle->HandleGPU);
+    cmd->SetGraphicsRootDescriptorTable(1, normalHandle->HandleGPU);
+    cmd->SetGraphicsRootDescriptorTable(2, colorHandle->HandleGPU);
+    cmd->SetGraphicsRootConstantBufferView(3, m_compositeCB->GetAddress());
+
+    // フルスクリーントライアングルを描画して流体を合成
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmd->DrawInstanced(3, 1, 0, 0);
 }
@@ -1049,6 +1129,94 @@ bool FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
         printf("FluidSystem 5 : GPUメタデータUAVの登録に失敗しました\n");
         cleanupMetaResources();
         return false;
+    }
+
+    return true;
+}
+
+bool FluidSystem::CreateCompositePipeline(ID3D12Device* device)
+{
+    if (!device)
+    {
+        return false;
+    }
+
+    m_compositeRootSignature.Reset();
+    m_compositePSO = FullscreenPSO();
+    m_compositeCB.reset();
+    m_compositeTexturesValid = false;
+
+    // SRV(t0~t2) と CBV(b0) をピクセルシェーダーに渡すルートシグネチャを構築
+    CD3DX12_DESCRIPTOR_RANGE ranges[3];
+    ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+    ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+    ranges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
+
+    CD3DX12_ROOT_PARAMETER params[4];
+    params[0].InitAsDescriptorTable(1, &ranges[0], D3D12_SHADER_VISIBILITY_PIXEL);
+    params[1].InitAsDescriptorTable(1, &ranges[1], D3D12_SHADER_VISIBILITY_PIXEL);
+    params[2].InitAsDescriptorTable(1, &ranges[2], D3D12_SHADER_VISIBILITY_PIXEL);
+    params[3].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
+
+    CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
+    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+
+    CD3DX12_ROOT_SIGNATURE_DESC desc;
+    desc.Init(_countof(params), params, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+    ComPtr<ID3DBlob> serialized;
+    ComPtr<ID3DBlob> errors;
+    if (FAILED(D3D12SerializeRootSignature(&desc, D3D_ROOT_SIGNATURE_VERSION_1, serialized.GetAddressOf(), errors.GetAddressOf())))
+    {
+        if (errors)
+        {
+            printf("FluidSystem: Composite root signature serialize failed -> %s\n", static_cast<const char*>(errors->GetBufferPointer()));
+        }
+        return false;
+    }
+
+    if (FAILED(device->CreateRootSignature(0, serialized->GetBufferPointer(), serialized->GetBufferSize(), IID_PPV_ARGS(m_compositeRootSignature.ReleaseAndGetAddressOf()))))
+    {
+        printf("FluidSystem: フルスクリーン合成用ルートシグネチャ生成に失敗しました\n");
+        return false;
+    }
+
+    m_compositePSO.SetRootSignature(m_compositeRootSignature.Get());
+    m_compositePSO.SetShaders(L"FullscreenVS.cso", L"SSFRCompositePS.cso");
+    m_compositePSO.SetFormats(m_rtvFormat);
+    m_compositePSO.SetBlend(FullscreenPSO::Blend::Alpha);
+    if (!m_compositePSO.Create(device))
+    {
+        printf("FluidSystem: フルスクリーン合成PSOの生成に失敗しました\n");
+        m_compositeRootSignature.Reset();
+        return false;
+    }
+
+    m_compositeCB = std::make_unique<ConstantBuffer>(sizeof(CompositeConstants));
+    if (!m_compositeCB || !m_compositeCB->IsValid())
+    {
+        printf("FluidSystem: フルスクリーン合成CBの確保に失敗しました\n");
+        m_compositeCB.reset();
+        return false;
+    }
+
+    // 失敗時にも描画が破綻しないように、フォールバックとして白テクスチャのディスクリプタを確保
+    if (Texture2D* fallback = Texture2D::GetWhite())
+    {
+        if (!m_compositeDepthSRV)
+        {
+            m_compositeDepthSRV = g_Engine->CbvSrvUavHeap()->Register(fallback);
+        }
+        if (!m_compositeNormalSRV)
+        {
+            m_compositeNormalSRV = g_Engine->CbvSrvUavHeap()->Register(fallback);
+        }
+        if (!m_compositeColorSRV)
+        {
+            m_compositeColorSRV = g_Engine->CbvSrvUavHeap()->Register(fallback);
+        }
     }
 
     return true;

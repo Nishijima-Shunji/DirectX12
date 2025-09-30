@@ -5,6 +5,7 @@
 #include "SharedStruct.h"
 #include "SpatialGrid.h"
 #include "ComputePipelineState.h"
+#include "FullscreenPSO.h"
 #include <d3d12.h>
 #include <wrl.h>
 #include <DirectXMath.h>
@@ -81,6 +82,21 @@ public:
         const DirectX::XMFLOAT4X4& viewProj,
         const DirectX::XMFLOAT3& camPos,
         float isoLevel);
+    void Composite(ID3D12GraphicsCommandList* cmd,
+        D3D12_CPU_DESCRIPTOR_HANDLE colorTarget,
+        D3D12_CPU_DESCRIPTOR_HANDLE depthTarget,
+        DescriptorHandle* depthTexture,
+        DescriptorHandle* normalTexture,
+        DescriptorHandle* colorTexture,
+        const DirectX::XMFLOAT4X4& view,
+        const DirectX::XMFLOAT4X4& proj,
+        const DirectX::XMFLOAT3& camPos,
+        float deltaTime,
+        UINT frameCount);
+
+    DescriptorHandle* DepthTextureHandle() const { return m_compositeTexturesValid ? m_compositeDepthSRV : nullptr; }
+    DescriptorHandle* NormalTextureHandle() const { return m_compositeTexturesValid ? m_compositeNormalSRV : nullptr; }
+    DescriptorHandle* ColorTextureHandle() const { return m_compositeTexturesValid ? m_compositeColorSRV : nullptr; }
 
     // 水面のカラーや泡の強さを外部から調整できるようにする
     void SetWaterAppearance(const DirectX::XMFLOAT3& shallowColor,
@@ -107,6 +123,18 @@ private:
         DirectX::XMFLOAT4   WaterDeep;   // 深い水の色 / w=吸収係数
         DirectX::XMFLOAT4   WaterShallow;// 浅い水の色 / w=泡検出のしきい値
         DirectX::XMFLOAT4   ShadingParams;// x=泡強度 y=反射割合 z=スペキュラ強度 w=時間
+    };
+
+    struct CompositeConstants
+    {
+        DirectX::XMFLOAT4X4 View;      // ビュー行列（転置済み）
+        DirectX::XMFLOAT4X4 Proj;      // 射影行列（転置済み）
+        DirectX::XMFLOAT4X4 ViewProj;  // ビュー×射影行列（転置済み）
+        DirectX::XMFLOAT3   CameraPos; // カメラワールド座標
+        float               Pad0;      // 16byte合わせ用パディング
+        UINT                FrameCount;// フレームカウンタ
+        float               DeltaTime; // 前フレームからの経過時間
+        DirectX::XMFLOAT2   Pad1;      // HLSLと揃えるためのパディング
     };
 
     struct GPUParams
@@ -157,6 +185,7 @@ private:
     void ReadbackGPUToCPU();
     void UpdateParticleBuffer();
     bool CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat);
+    bool CreateCompositePipeline(ID3D12Device* device);
     void CreateGPUResources(ID3D12Device* device);
     void UpdateComputeParams(float dt);
     void ResolveBounds(FluidParticle& p) const;
@@ -181,6 +210,13 @@ private:
     DescriptorHandle* m_gpuMetaSRV = nullptr;
     DescriptorHandle* m_gpuMetaUAV = nullptr;
     DescriptorHandle* m_activeMetaSRV = nullptr;
+    std::unique_ptr<ConstantBuffer> m_compositeCB;
+    Microsoft::WRL::ComPtr<ID3D12RootSignature> m_compositeRootSignature;
+    FullscreenPSO m_compositePSO;
+    DescriptorHandle* m_compositeDepthSRV = nullptr;
+    DescriptorHandle* m_compositeNormalSRV = nullptr;
+    DescriptorHandle* m_compositeColorSRV = nullptr;
+    bool m_compositeTexturesValid = false;
 
     // GPUシミュレーション関連
     bool m_useGPU = false;

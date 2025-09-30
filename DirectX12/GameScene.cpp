@@ -67,6 +67,9 @@ void GameScene::Update(float deltaTime) {
 	auto cmd = g_Engine->CommandList();
 	m_fluid.Simulate(cmd, deltaTime);
 
+	m_lastDeltaTime = deltaTime;          // 合成パス用に直近のデルタタイムを保存
+	++m_frameCounter;                    // フレーム番号をインクリメント
+
 	// 全体のupdate
 	for (auto& obj : m_objects) {
 		if (obj->IsAlive)
@@ -98,13 +101,34 @@ void GameScene::Draw() {
         XMMATRIX viewProjMat = XMMatrixMultiply(viewMat, projMat);
         XMFLOAT4X4 viewProj;
         XMStoreFloat4x4(&viewProj, viewProjMat);
+        XMFLOAT4X4 view;
+        XMStoreFloat4x4(&view, viewMat);
+        XMFLOAT4X4 proj;
+        XMStoreFloat4x4(&proj, projMat);
         auto cameraPos = camObj->GetPosition();
 
 	//particle->Draw();
+
+	m_fluid.Render(cmd, invViewProj, viewProj, cameraPos, 1.0f); // まず流体用の中間テクスチャを構築
 
 	for (auto& actor : m_objects) {
 		if (actor->IsAlive)
 			actor->Render(commandList);
 	}
-        m_fluid.Render(cmd, invViewProj, viewProj, cameraPos, 1.0f);
+
+	auto mainRtv = g_Engine->CurrentBackBufferView();
+	auto mainDsv = g_Engine->DepthStencilView();
+	m_fluid.Composite(
+		cmd,
+		mainRtv,
+		mainDsv,
+		m_fluid.DepthTextureHandle(),
+		m_fluid.NormalTextureHandle(),
+		m_fluid.ColorTextureHandle(),
+		view,
+		proj,
+		cameraPos,
+		m_lastDeltaTime,
+		static_cast<UINT>(m_frameCounter)
+	);
 }
