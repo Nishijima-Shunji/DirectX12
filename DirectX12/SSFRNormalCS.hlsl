@@ -1,55 +1,94 @@
-#define PASS_NORMAL_CS
 #include "SharedStruct.hlsli"
 
-Texture2D<float> g_DepthTexture : register(t0);
-RWTexture2D<float4> g_NormalTexture : register(u0);
+Texture2D<uint> g_SmoothedDepthTexture : register(t0);
+RWTexture2D<float4> g_FluidNormalTexture : register(u0);
 
-cbuffer SceneConstantBuffer : register(b0)
+// ヘルパー関数群はバイラテラルフィルタと同様
+int2 GetScreenExtent()
 {
-    matrix View;
-    matrix Proj;
-    matrix ViewProj;
-    float3 CameraPos;
-    uint FrameCount;
-    float DeltaTime;
-};
-
-
-// 3x3のSobelフィルタで法線を計算
-float3 reconstructNormal(uint2 id)
-{
-    float d0 = g_DepthTexture.Load(int3(id.x - 1, id.y - 1, 0)).r;
-    float d1 = g_DepthTexture.Load(int3(id.x, id.y - 1, 0)).r;
-    float d2 = g_DepthTexture.Load(int3(id.x + 1, id.y - 1, 0)).r;
-
-    float d3 = g_DepthTexture.Load(int3(id.x - 1, id.y, 0)).r;
-    float d4 = g_DepthTexture.Load(int3(id.x, id.y, 0)).r;
-    float d5 = g_DepthTexture.Load(int3(id.x + 1, id.y, 0)).r;
-
-    float d6 = g_DepthTexture.Load(int3(id.x - 1, id.y + 1, 0)).r;
-    float d7 = g_DepthTexture.Load(int3(id.x, id.y + 1, 0)).r;
-    float d8 = g_DepthTexture.Load(int3(id.x + 1, id.y + 1, 0)).r;
-    
-    // Sobelフィルタ
-    float dz_dx = (d2 + 2.0f * d5 + d8) - (d0 + 2.0f * d3 + d6);
-    float dz_dy = (d6 + 2.0f * d7 + d8) - (d0 + 2.0f * d1 + d2);
-
-    float3 n = float3(-dz_dx, -dz_dy, 0.001f);
-    return normalize(n);
+    return int2(screenSize);
 }
 
-[numthreads(32, 32, 1)]
-void main(uint3 DTid : SV_DispatchThreadID)
+float2 PixelToNDC(int2 pixel)
 {
-    uint2 id = DTid.xy;
-    float depth = g_DepthTexture.Load(int3(id, 0)).r;
+    float2 xy = (float2(pixel) + 0.5f) / screenSize;
+    return float2(xy.x * 2.0f - 1.0f, 1.0f - xy.y * 2.0f);
+}
 
-    if (depth >= 1.0f)
+float LoadDepth(int2 pixel)
+{
+    int2 extent = GetScreenExtent();
+    pixel = clamp(pixel, int2(0, 0), extent - 1);
+    return asfloat(g_SmoothedDepthTexture.Load(int3(pixel, 0)));
+}
+
+float3 ReconstructViewPosition(int2 pixel, float depth)
+{
+    float2 ndc = PixelToNDC(pixel);
+    float vx = ndc.x * depth / proj._11;
+    float vy = ndc.y * depth / proj._22;
+    return float3(vx, vy, depth);
+}
+
+float3 ReconstructNormal(int2 pixel)
+{
+    float centerDepth = LoadDepth(pixel);
+    if (centerDepth <= 0.0f)
     {
-        g_NormalTexture[id] = float4(0, 0, 0, 0);
+        return float3(0.0f, 0.0f, 0.0f);
+    }
+
+    float depthL = LoadDepth(pixel + int2(-1, 0));
+    float depthR = LoadDepth(pixel + int2(1, 0));
+    float depthU = LoadDepth(pixel + int2(0, -1));
+    float depthD = LoadDepth(pixel + int2(0, 1));
+
+    if (depthL <= 0.0f) depthL = centerDepth;
+    if (depthR <= 0.0f) depthR = centerDepth;
+    if (depthU <= 0.0f) depthU = centerDepth;
+    if (depthD <= 0.0f) depthD = centerDepth;
+
+    float3 pC = ReconstructViewPosition(pixel, centerDepth);
+    float3 pL = ReconstructViewPosition(pixel + int2(-1, 0), depthL);
+    float3 pR = ReconstructViewPosition(pixel + int2(1, 0), depthR);
+    float3 pU = ReconstructViewPosition(pixel + int2(0, -1), depthU);
+    float3 pD = ReconstructViewPosition(pixel + int2(0, 1), depthD);
+
+    float3 dx = pR - pL;
+    float3 dy = pD - pU;
+
+    float3 normal = normalize(cross(dy, dx));
+    if (!all(isfinite(normal)))
+    {
+        normal = float3(0.0f, 0.0f, -1.0f);
+    }
+
+    // カメラ側に向くように符号を調整（ビュー空間 +Z が前方）
+    if (normal.z > 0.0f)
+    {
+        normal *= -1.0f;
+    }
+
+    return normal;
+}
+
+[numthreads(8, 8, 1)]
+void main(uint3 dispatchThreadID : SV_DispatchThreadID)
+{
+    uint2 pixel = dispatchThreadID.xy;
+    int2 extent = GetScreenExtent();
+    if (pixel.x >= extent.x || pixel.y >= extent.y)
+    {
         return;
     }
-    
-    float3 normal = reconstructNormal(id);
-    g_NormalTexture[id] = float4(normal, 1.0f);
+
+    float depth = LoadDepth(int2(pixel));
+    if (depth <= 0.0f)
+    {
+        g_FluidNormalTexture[pixel] = float4(0.0f, 0.0f, 0.0f, 0.0f);
+        return;
+    }
+
+    float3 normal = ReconstructNormal(int2(pixel));
+    g_FluidNormalTexture[pixel] = float4(normal, 1.0f);
 }
