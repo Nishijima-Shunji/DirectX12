@@ -1,7 +1,7 @@
 #include "SharedStruct.hlsli"
 
-RWTexture2D<uint> g_FluidDepthUAV    : register(u0); // R32_UINT に線形深度を格納（float を asuint で詰め込む）
-RWTexture2D<uint> g_FluidThicknessUAV : register(u1); // 厚みも同様に float ビット列で蓄積
+RWTexture2D<uint> g_FluidDepthUAV    : register(u1); // SV_Target0 と衝突しないよう UAV は u1 から割り当てる
+RWTexture2D<uint> g_FluidThicknessUAV : register(u2); // 厚みも同様に float ビット列で蓄積
 
 struct PSIn
 {

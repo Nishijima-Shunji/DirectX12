@@ -1519,9 +1519,10 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
     // 粒子描画ルートシグネチャ
     {
         CD3DX12_DESCRIPTOR_RANGE uavRanges[3];
-        uavRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
-        uavRanges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
-        uavRanges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2);
+        // ピクセルシェーダーの RTV0 と競合しないよう、UAV はレジスタ u1 以降へ配置
+        uavRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
+        uavRanges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2);
+        uavRanges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 3);
 
         CD3DX12_ROOT_PARAMETER params[4];
         params[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_ALL);

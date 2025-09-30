@@ -1,6 +1,7 @@
 #include "Game.h"
 #include "SceneManager.h"
 #include "GameScene.h"
+#include "Engine.h" // エンジンの各種リソースへアクセスするためのヘッダーを追加
 #include <DirectXMath.h>
 #include "SharedStruct.h"
 #include "App.h"
@@ -104,6 +105,7 @@ void GameScene::Draw() {
         auto cameraPos = camObj->GetPosition();
 
         // 1. 流体の中間テクスチャを更新（粒子深度・平滑化・法線など）
+        // ピクセルシェーダーで参照する行列やカメラ位置を流体レンダリングへ渡す
         m_fluid.Render(cmd, viewMatrixFloat, projMatrixFloat, viewProjFloat, cameraPos, 1.0f);
 
         // 2. シーンジオメトリを通常のRTV/DSVへ描画
@@ -113,6 +115,7 @@ void GameScene::Draw() {
         }
 
         // 3. シーンカラー／深度と流体情報を合成して最終カラーを出力
+        // レンダーターゲットと深度バッファを用いて流体の最終合成を実行
         m_fluid.Composite(
                 cmd,
                 g_Engine->CurrentRenderTargetResource(),
