@@ -436,7 +436,8 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt)
 
 
 void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
-    const XMFLOAT4X4& invViewProj,
+    const XMFLOAT4X4& view,
+    const XMFLOAT4X4& proj,
     const XMFLOAT4X4& viewProj,
     const XMFLOAT3& camPos,
     float isoLevel)
@@ -447,8 +448,8 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
     if (!m_initialized || !cmd || m_particleCount == 0 ||
         !m_particleRootSignature || !m_particlePipelineState ||
         !m_blurPipelineState || !m_normalPipelineState ||
-        !m_compositePipelineState || !m_particleDepthTexture ||
-        !m_smoothedDepthTexture || !m_normalTexture || !m_thicknessTexture ||
+        !m_particleDepthTexture || !m_smoothedDepthTexture ||
+        !m_normalTexture || !m_thicknessTexture ||
         !m_particleDepthSRV || !m_particleDepthUAV || !m_smoothedDepthSRV || !m_smoothedDepthUAV ||
         !m_normalSRV || !m_normalUAV || !m_thicknessSRV || !m_thicknessUAV)
     {
@@ -466,18 +467,19 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
     UINT height = std::max<UINT>(1u, g_Engine->FrameBufferHeight());
 
     SSFRCameraConstants* camera = cameraCB->GetPtr<SSFRCameraConstants>();
+    XMMATRIX viewMatrix = XMLoadFloat4x4(&view);
+    XMMATRIX projMatrix = XMLoadFloat4x4(&proj);
     XMMATRIX viewProjMatrix = XMLoadFloat4x4(&viewProj);
-    XMMATRIX viewMatrix = XMMatrixIdentity();
-    XMMATRIX projMatrix = XMMatrixIdentity();
 
-    XMStoreFloat4x4(&camera->ViewProj, XMMatrixTranspose(viewProjMatrix));
     XMStoreFloat4x4(&camera->View, XMMatrixTranspose(viewMatrix));
     XMStoreFloat4x4(&camera->Proj, XMMatrixTranspose(projMatrix));
+    XMStoreFloat4x4(&camera->ViewProj, XMMatrixTranspose(viewProjMatrix));
     camera->ScreenSize = XMFLOAT2(static_cast<float>(width), static_cast<float>(height));
     camera->InvScreen = XMFLOAT2(1.0f / static_cast<float>(width), 1.0f / static_cast<float>(height));
     camera->NearZ = 0.1f;
     camera->FarZ = 1000.0f;
-    camera->IorF0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+    float f0 = std::clamp(m_reflectionStrength, 0.0f, 1.0f);
+    camera->IorF0 = XMFLOAT3(f0, f0, f0);
     camera->Absorption = m_waterAbsorption;
 
     // ブラー定数は1度だけ設定しておけばよいので、呼び出し毎に更新不要
@@ -563,15 +565,109 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
     transition(m_smoothedDepthTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, m_smoothedDepthState);
     transition(m_normalTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, m_normalState);
     transition(m_thicknessTexture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, m_thicknessState);
+}
 
+void FluidSystem::Composite(ID3D12GraphicsCommandList* cmd,
+    ID3D12Resource* sceneColor,
+    ID3D12Resource* sceneDepth,
+    D3D12_CPU_DESCRIPTOR_HANDLE sceneRTV)
+{
+    if (!m_initialized || !cmd || m_particleCount == 0 ||
+        !sceneColor || !sceneDepth ||
+        !m_sceneColorCopy || !m_sceneColorSRV || !m_sceneDepthSRV ||
+        !m_smoothedDepthSRV || !m_normalSRV || !m_thicknessSRV ||
+        !m_compositeRootSignature || !m_compositePipelineState)
+    {
+        return;
+    }
+
+    UINT frameIndex = g_Engine->CurrentBackBufferIndex();
+    auto& cameraCB = m_cameraCB[frameIndex];
+    if (!cameraCB)
+    {
+        return;
+    }
+
+    ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
+    cmd->SetDescriptorHeaps(1, heaps);
+
+    // 1. シーンカラーをサンプルするためバックバッファをコピー元へ遷移
+    auto toCopySource = CD3DX12_RESOURCE_BARRIER::Transition(
+        sceneColor,
+        D3D12_RESOURCE_STATE_RENDER_TARGET,
+        D3D12_RESOURCE_STATE_COPY_SOURCE);
+    cmd->ResourceBarrier(1, &toCopySource);
+
+    // 2. コピー先テクスチャを COPY_DEST へ揃える
+    if (m_sceneColorCopyState != D3D12_RESOURCE_STATE_COPY_DEST)
+    {
+        auto toCopyDest = CD3DX12_RESOURCE_BARRIER::Transition(
+            m_sceneColorCopy.Get(),
+            m_sceneColorCopyState,
+            D3D12_RESOURCE_STATE_COPY_DEST);
+        cmd->ResourceBarrier(1, &toCopyDest);
+        m_sceneColorCopyState = D3D12_RESOURCE_STATE_COPY_DEST;
+    }
+
+    // 3. バックバッファの内容をシェーダー参照用テクスチャにコピー
+    cmd->CopyResource(m_sceneColorCopy.Get(), sceneColor);
+
+    // 4. コピー結果をピクセルシェーダー用に遷移
+    auto toSceneSRV = CD3DX12_RESOURCE_BARRIER::Transition(
+        m_sceneColorCopy.Get(),
+        D3D12_RESOURCE_STATE_COPY_DEST,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    cmd->ResourceBarrier(1, &toSceneSRV);
+    m_sceneColorCopyState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+
+    // 5. バックバッファを再度レンダーターゲット状態に戻す
+    auto toRenderTarget = CD3DX12_RESOURCE_BARRIER::Transition(
+        sceneColor,
+        D3D12_RESOURCE_STATE_COPY_SOURCE,
+        D3D12_RESOURCE_STATE_RENDER_TARGET);
+    cmd->ResourceBarrier(1, &toRenderTarget);
+
+    // 6. 深度バッファをピクセルシェーダーから参照できる状態へ
+    if (m_sceneDepthState != D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
+    {
+        auto toDepthSRV = CD3DX12_RESOURCE_BARRIER::Transition(
+            sceneDepth,
+            m_sceneDepthState,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        cmd->ResourceBarrier(1, &toDepthSRV);
+        m_sceneDepthState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+    }
+
+    // 7. 合成先のRTVを再設定（深度は不要なので未設定）
+    cmd->OMSetRenderTargets(1, &sceneRTV, FALSE, nullptr);
+
+    // 8. フルスクリーン三角形でシーンカラーと流体テクスチャを合成
     cmd->SetGraphicsRootSignature(m_compositeRootSignature.Get());
     cmd->SetPipelineState(m_compositePipelineState.Get());
     cmd->SetGraphicsRootDescriptorTable(0, m_smoothedDepthSRV->HandleGPU);
     cmd->SetGraphicsRootDescriptorTable(1, m_normalSRV->HandleGPU);
     cmd->SetGraphicsRootDescriptorTable(2, m_thicknessSRV->HandleGPU);
-    cmd->SetGraphicsRootConstantBufferView(3, cameraCB->GetAddress());
+    cmd->SetGraphicsRootDescriptorTable(3, m_sceneDepthSRV->HandleGPU);
+    cmd->SetGraphicsRootDescriptorTable(4, m_sceneColorSRV->HandleGPU);
+    cmd->SetGraphicsRootConstantBufferView(5, cameraCB->GetAddress());
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmd->DrawInstanced(3, 1, 0, 0);
+
+    // 9. 深度バッファを次のフレームで書き込めるように戻す
+    auto toDepthWrite = CD3DX12_RESOURCE_BARRIER::Transition(
+        sceneDepth,
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        D3D12_RESOURCE_STATE_DEPTH_WRITE);
+    cmd->ResourceBarrier(1, &toDepthWrite);
+    m_sceneDepthState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+
+    // 10. シーンカラーのコピーを次フレームのコピー先に戻す
+    auto resetSceneCopy = CD3DX12_RESOURCE_BARRIER::Transition(
+        m_sceneColorCopy.Get(),
+        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        D3D12_RESOURCE_STATE_COPY_DEST);
+    cmd->ResourceBarrier(1, &resetSceneCopy);
+    m_sceneColorCopyState = D3D12_RESOURCE_STATE_COPY_DEST;
 }
 
 void FluidSystem::SetWaterAppearance(const XMFLOAT3& shallowColor,
@@ -1348,6 +1444,78 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         return false;
     }
 
+    // シーンカラーを参照するためのコピー先テクスチャとSRVを用意
+    {
+        bool needCreate = !m_sceneColorCopy;
+        if (m_sceneColorCopy)
+        {
+            auto desc = m_sceneColorCopy->GetDesc();
+            needCreate = desc.Width != width || desc.Height != height;
+        }
+
+        if (needCreate)
+        {
+            m_sceneColorCopy.Reset();
+            auto colorDesc = CD3DX12_RESOURCE_DESC::Tex2D(rtvFormat, width, height, 1, 1);
+            HRESULT hr = device->CreateCommittedResource(
+                &gpuHeap,
+                D3D12_HEAP_FLAG_NONE,
+                &colorDesc,
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                nullptr,
+                IID_PPV_ARGS(m_sceneColorCopy.ReleaseAndGetAddressOf()));
+            if (FAILED(hr))
+            {
+                printf("FluidSystem: シーンカラーコピー用テクスチャの生成に失敗しました (0x%08X)\n", hr);
+                return false;
+            }
+            m_sceneColorCopyState = D3D12_RESOURCE_STATE_COPY_DEST;
+        }
+
+        D3D12_SHADER_RESOURCE_VIEW_DESC sceneColorDesc{};
+        sceneColorDesc.Format = rtvFormat;
+        sceneColorDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        sceneColorDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        sceneColorDesc.Texture2D.MipLevels = 1;
+        if (!m_sceneColorSRV)
+        {
+            m_sceneColorSRV = g_Engine->CbvSrvUavHeap()->Register(m_sceneColorCopy.Get(), sceneColorDesc);
+        }
+        else
+        {
+            g_Engine->Device()->CreateShaderResourceView(m_sceneColorCopy.Get(), &sceneColorDesc, m_sceneColorSRV->HandleCPU);
+        }
+        if (!m_sceneColorSRV)
+        {
+            printf("FluidSystem: シーンカラーSRVの登録に失敗しました\n");
+            return false;
+        }
+    }
+
+    // 深度バッファを参照するためのSRVを作成
+    if (ID3D12Resource* depthBuffer = g_Engine->DepthStencilBuffer())
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC depthDesc{};
+        depthDesc.Format = DXGI_FORMAT_R32_FLOAT;
+        depthDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        depthDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        depthDesc.Texture2D.MipLevels = 1;
+        if (!m_sceneDepthSRV)
+        {
+            m_sceneDepthSRV = g_Engine->CbvSrvUavHeap()->Register(depthBuffer, depthDesc);
+        }
+        else
+        {
+            g_Engine->Device()->CreateShaderResourceView(depthBuffer, &depthDesc, m_sceneDepthSRV->HandleCPU);
+        }
+        if (!m_sceneDepthSRV)
+        {
+            printf("FluidSystem: シーン深度SRVの登録に失敗しました\n");
+            return false;
+        }
+        m_sceneDepthState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    }
+
     // 粒子描画ルートシグネチャ
     {
         CD3DX12_DESCRIPTOR_RANGE uavRanges[3];
@@ -1534,15 +1702,19 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
 
     // 合成
     {
-        CD3DX12_DESCRIPTOR_RANGE srvRanges[3];
+        CD3DX12_DESCRIPTOR_RANGE srvRanges[5];
         srvRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
         srvRanges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
         srvRanges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2);
-        CD3DX12_ROOT_PARAMETER params[4];
+        srvRanges[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 3);
+        srvRanges[4].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4);
+        CD3DX12_ROOT_PARAMETER params[6];
         params[0].InitAsDescriptorTable(1, &srvRanges[0], D3D12_SHADER_VISIBILITY_PIXEL);
         params[1].InitAsDescriptorTable(1, &srvRanges[1], D3D12_SHADER_VISIBILITY_PIXEL);
         params[2].InitAsDescriptorTable(1, &srvRanges[2], D3D12_SHADER_VISIBILITY_PIXEL);
-        params[3].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
+        params[3].InitAsDescriptorTable(1, &srvRanges[3], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[4].InitAsDescriptorTable(1, &srvRanges[4], D3D12_SHADER_VISIBILITY_PIXEL);
+        params[5].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
 
         CD3DX12_STATIC_SAMPLER_DESC sampler(0);
         sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
@@ -1623,6 +1795,11 @@ void FluidSystem::DestroySSFRResources()
     m_smoothedDepthState = D3D12_RESOURCE_STATE_COMMON;
     m_normalState = D3D12_RESOURCE_STATE_COMMON;
     m_thicknessState = D3D12_RESOURCE_STATE_COMMON;
+    m_sceneColorCopy.Reset();
+    m_sceneColorCopyState = D3D12_RESOURCE_STATE_COMMON;
+    m_sceneDepthState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
+    m_sceneColorSRV = nullptr;
+    m_sceneDepthSRV = nullptr;
 
     m_particleRootSignature.Reset();
     m_particlePipelineState.Reset();

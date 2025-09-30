@@ -27,8 +27,11 @@ public: // 外からアクセスするためのGetter
 	ID3D12Device6*				Device();
 	ID3D12GraphicsCommandList*	CommandList();
 	UINT						CurrentBackBufferIndex();
-    D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
-	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
+        D3D12_CPU_DESCRIPTOR_HANDLE CurrentBackBufferView() const;
+        D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilView() const;
+        ID3D12Resource*                     RenderTargetResource(UINT index) const;
+        ID3D12Resource*                     CurrentRenderTargetResource() const;
+        ID3D12Resource*                     DepthStencilBuffer() const;
 
 	UINT						FrameBufferWidth() const; // フレームバッファの幅を取得
 	UINT						FrameBufferHeight() const; // フレームバッファの高さを取得

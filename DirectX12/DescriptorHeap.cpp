@@ -40,30 +40,41 @@ ID3D12DescriptorHeap* DescriptorHeap::GetHeap()
 
 DescriptorHandle* DescriptorHeap::Register(Texture2D* texture)
 {
-	auto count = m_pHandles.size();
-	if (HANDLE_MAX <= count)
-	{
-		return nullptr;
-	}
+        if (!texture)
+        {
+                return nullptr;
+        }
+        return Register(texture->Resource(), texture->ViewDesc());
+}
 
-	DescriptorHandle* pHandle = new DescriptorHandle();
+DescriptorHandle* DescriptorHeap::Register(ID3D12Resource* resource, const D3D12_SHADER_RESOURCE_VIEW_DESC& desc)
+{
+        if (!resource)
+        {
+                return nullptr;
+        }
 
-	auto handleCPU = m_pHeap->GetCPUDescriptorHandleForHeapStart(); // ィスクリプタヒプ初アドレス
-	handleCPU.ptr += m_IncrementSize * count; // 初アドレスからcount番目が今回追されたリソースのハンドル
+        auto count = m_pHandles.size();
+        if (HANDLE_MAX <= count)
+        {
+                return nullptr;
+        }
 
-	auto handleGPU = m_pHeap->GetGPUDescriptorHandleForHeapStart(); // ィスクリプタヒプ初アドレス
-	handleGPU.ptr += m_IncrementSize * count; // 初アドレスからcount番目が今回追されたリソースのハンドル
+        DescriptorHandle* pHandle = new DescriptorHandle();
 
-	pHandle->HandleCPU = handleCPU;
-	pHandle->HandleGPU = handleGPU;
+        auto handleCPU = m_pHeap->GetCPUDescriptorHandleForHeapStart();
+        handleCPU.ptr += m_IncrementSize * count;
 
-	auto device = g_Engine->Device();
-	auto resource = texture->Resource();
-	auto desc = texture->ViewDesc();
-	device->CreateShaderResourceView(resource, &desc, pHandle->HandleCPU); // シェーーリソースビュー作
+        auto handleGPU = m_pHeap->GetGPUDescriptorHandleForHeapStart();
+        handleGPU.ptr += m_IncrementSize * count;
 
-	m_pHandles.push_back(pHandle);
-	return pHandle; // ハンドルを返す
+        pHandle->HandleCPU = handleCPU;
+        pHandle->HandleGPU = handleGPU;
+
+        g_Engine->Device()->CreateShaderResourceView(resource, &desc, pHandle->HandleCPU);
+
+        m_pHandles.push_back(pHandle);
+        return pHandle;
 }
 
 DescriptorHandle* DescriptorHeap::RegisterBuffer(

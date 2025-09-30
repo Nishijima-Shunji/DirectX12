@@ -89,22 +89,33 @@ void GameScene::Update(float deltaTime) {
 }
 
 void GameScene::Draw() {
-	commandList = g_Engine->CommandList(); // コマンドリストを取得
-	auto cmd = g_Engine->CommandList();
-	auto camObj = g_Engine->GetObj<Camera>("Camera");
-        auto invViewProj = camObj->GetInvViewProj();
+        commandList = g_Engine->CommandList(); // コマンドリストを取得
+        auto cmd = g_Engine->CommandList();
+        auto camObj = g_Engine->GetObj<Camera>("Camera");
         XMMATRIX viewMat = camObj->GetViewMatrix();
         XMMATRIX projMat = camObj->GetProjMatrix();
         XMMATRIX viewProjMat = XMMatrixMultiply(viewMat, projMat);
-        XMFLOAT4X4 viewProj;
-        XMStoreFloat4x4(&viewProj, viewProjMat);
+        XMFLOAT4X4 viewMatrixFloat;
+        XMFLOAT4X4 projMatrixFloat;
+        XMFLOAT4X4 viewProjFloat;
+        XMStoreFloat4x4(&viewMatrixFloat, viewMat);
+        XMStoreFloat4x4(&projMatrixFloat, projMat);
+        XMStoreFloat4x4(&viewProjFloat, viewProjMat);
         auto cameraPos = camObj->GetPosition();
 
-	//particle->Draw();
+        // 1. 流体の中間テクスチャを更新（粒子深度・平滑化・法線など）
+        m_fluid.Render(cmd, viewMatrixFloat, projMatrixFloat, viewProjFloat, cameraPos, 1.0f);
 
-	for (auto& actor : m_objects) {
-		if (actor->IsAlive)
-			actor->Render(commandList);
-	}
-        m_fluid.Render(cmd, invViewProj, viewProj, cameraPos, 1.0f);
+        // 2. シーンジオメトリを通常のRTV/DSVへ描画
+        for (auto& actor : m_objects) {
+                if (actor->IsAlive)
+                        actor->Render(commandList);
+        }
+
+        // 3. シーンカラー／深度と流体情報を合成して最終カラーを出力
+        m_fluid.Composite(
+                cmd,
+                g_Engine->CurrentRenderTargetResource(),
+                g_Engine->DepthStencilBuffer(),
+                g_Engine->CurrentBackBufferView());
 }

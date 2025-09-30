@@ -78,10 +78,16 @@ public:
 
     void Simulate(ID3D12GraphicsCommandList* cmd, float dt);
     void Render(ID3D12GraphicsCommandList* cmd,
-        const DirectX::XMFLOAT4X4& invViewProj,
+        const DirectX::XMFLOAT4X4& view,
+        const DirectX::XMFLOAT4X4& proj,
         const DirectX::XMFLOAT4X4& viewProj,
         const DirectX::XMFLOAT3& camPos,
         float isoLevel);
+
+    void Composite(ID3D12GraphicsCommandList* cmd,
+        ID3D12Resource* sceneColor,
+        ID3D12Resource* sceneDepth,
+        D3D12_CPU_DESCRIPTOR_HANDLE sceneRTV);
 
     // 水面のカラーや泡の強さを外部から調整できるようにする
     void SetWaterAppearance(const DirectX::XMFLOAT3& shallowColor,
@@ -205,6 +211,12 @@ private:
     DescriptorHandle* m_normalUAV = nullptr;
     DescriptorHandle* m_thicknessSRV = nullptr;
     DescriptorHandle* m_thicknessUAV = nullptr;
+
+    DescriptorHandle* m_sceneColorSRV = nullptr;
+    DescriptorHandle* m_sceneDepthSRV = nullptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> m_sceneColorCopy;
+    D3D12_RESOURCE_STATES m_sceneColorCopyState = D3D12_RESOURCE_STATE_COMMON;
+    D3D12_RESOURCE_STATES m_sceneDepthState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_ssfrRtvHeap;            // RTV専用ヒープ
     UINT m_ssfrRtvDescriptorSize = 0;
