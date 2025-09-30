@@ -17,6 +17,7 @@ namespace graphics {
         static bool CreatePipelineState(ID3D12Device* device,
             ID3D12RootSignature* rootSig,
             DXGI_FORMAT rtvFormat,
+            DXGI_FORMAT dsvFormat,
             ComPtr<ID3D12PipelineState>& outPSO);
     };
 

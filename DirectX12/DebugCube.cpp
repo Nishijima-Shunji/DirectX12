@@ -44,6 +44,7 @@ DebugCube::DebugCube() {
     m_pipelineState->SetRootSignature(m_rootSignature->Get());
     m_pipelineState->SetVS(L"SimpleVS.cso");
     m_pipelineState->SetPS(L"ColorPS.cso");
+    m_pipelineState->SetDepthStencilFormat(DXGI_FORMAT_D32_FLOAT); // 深度バッファ(D32)とPSOの設定を一致させる
     m_pipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 }
 

@@ -164,6 +164,7 @@ namespace graphics {
         ID3D12Device* device,
         ID3D12RootSignature* rootSig,
         DXGI_FORMAT rtvFormat,
+        DXGI_FORMAT dsvFormat,
         ComPtr<ID3D12PipelineState>& outPSO)
     {
         if (!device || !rootSig)
@@ -193,6 +194,7 @@ namespace graphics {
         desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         desc.NumRenderTargets = 1;
         desc.RTVFormats[0] = rtvFormat;
+        desc.DSVFormat = dsvFormat; // 深度バッファの実際のフォーマット(D32)と一致させる
         desc.SampleMask = UINT_MAX;
         desc.SampleDesc.Count = 1;
         auto rasterizerDesc = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);

@@ -92,6 +92,11 @@ void PipelineState::SetPS(std::wstring filePath)
     }
 }
 
+void PipelineState::SetDepthStencilFormat(DXGI_FORMAT format)
+{
+    desc.DSVFormat = format; // フレームバッファの深度バッファ形式とPSOを揃える
+}
+
 void PipelineState::Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE type)
 {
     desc.PrimitiveTopologyType = type;

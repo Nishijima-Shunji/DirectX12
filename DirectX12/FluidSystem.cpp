@@ -929,7 +929,8 @@ bool FluidSystem::CreateMetaPipeline(ID3D12Device* device, DXGI_FORMAT rtvFormat
         return false;
     }
 
-    if (!graphics::MetaBallPipeline::CreatePipelineState(device, m_metaRootSignature.Get(), rtvFormat, m_metaPipelineState))
+    // 深度ステンシルビューはD32形式なので、PSOにも同じフォーマットを渡しておく
+    if (!graphics::MetaBallPipeline::CreatePipelineState(device, m_metaRootSignature.Get(), rtvFormat, DXGI_FORMAT_D32_FLOAT, m_metaPipelineState))
     {
         printf("FluidSystem: MetaBall PSO Create failed\n");
         cleanupMetaResources();

@@ -6,22 +6,22 @@
 class PipelineState
 {
 public:
-	PipelineState();	// ƒRƒ“ƒXƒgƒ‰ƒNƒ^‚Å‚ ‚é’ö“x‚Ìİ’è‚ğ‚·‚é
-	bool IsValid();		// ¶¬‚É¬Œ÷‚µ‚½‚©‚Ç‚¤‚©‚ğ•Ô‚·
+	PipelineState();	// RXgN^Å‚xÌİ’
+	bool IsValid();		// ÉÇ‚Ô‚
 
-	void SetInputLayout(D3D12_INPUT_LAYOUT_DESC layout);		// “ü—ÍƒŒƒCƒAƒEƒg‚ğİ’è
-	void SetRootSignature(ID3D12RootSignature* rootSignature);	// ƒ‹[ƒgƒVƒOƒlƒ`ƒƒ‚ğİ’è
-	void SetVS(std::wstring filePath);							// ’¸“_ƒVƒF[ƒ_[‚ğİ’è
-	void SetPS(std::wstring filePath);							// ƒsƒNƒZƒ‹ƒVƒF[ƒ_[‚ğİ’è
-	void Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);												// ƒpƒCƒvƒ‰ƒCƒ“ƒXƒe[ƒg‚ğ¶¬
-
+	void SetInputLayout(D3D12_INPUT_LAYOUT_DESC layout);            // ÍƒCAEgİ’
+	void SetRootSignature(ID3D12RootSignature* rootSignature);      // [gVOl`İ’
+	void SetVS(std::wstring filePath);                                                      // VSã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã‚’è¨­å®š
+	void SetPS(std::wstring filePath);                                                      // PSã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã‚’è¨­å®š
+	void SetDepthStencilFormat(DXGI_FORMAT format);                                         // æ·±åº¦ã‚¹ãƒ†ãƒ³ã‚·ãƒ«ãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆè¨­å®š
+	void Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);                                        // ã‚°ãƒ©ãƒ•ã‚£ãƒƒã‚¯ã‚¹ãƒ‘ã‚¤ãƒ—ãƒ©ã‚¤ãƒ³ã‚’ç”Ÿæˆ
 	ID3D12PipelineState* Get();
 
 private:
-	bool m_IsValid = false;										// ¶¬‚É¬Œ÷‚µ‚½‚©‚Ç‚¤‚©
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};				// ƒpƒCƒvƒ‰ƒCƒ“ƒXƒe[ƒg‚Ìİ’è
-	ComPtr<ID3D12PipelineState> m_pPipelineState = nullptr;		// ƒpƒCƒvƒ‰ƒCƒ“ƒXƒe[ƒg
-	ComPtr<ID3DBlob> m_pVsBlob;									// ’¸“_ƒVƒF[ƒ_[
-	ComPtr<ID3DBlob> m_pPSBlob;									// ƒsƒNƒZƒ‹ƒVƒF[ƒ_[
+	bool m_IsValid = false;										// ÉÇ‚
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc = {};				// pCvCXe[gÌİ’
+	ComPtr<ID3D12PipelineState> m_pPipelineState = nullptr;		// pCvCXe[g
+	ComPtr<ID3DBlob> m_pVsBlob;									// _VF[_[
+	ComPtr<ID3DBlob> m_pPSBlob;									// sNZVF[_[
 };
 
