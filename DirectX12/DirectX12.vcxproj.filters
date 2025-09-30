@@ -284,6 +284,9 @@
     <FxCompile Include="BuildGridCS.hlsl">
       <Filter>リソース ファイル\ComputeShader</Filter>
     </FxCompile>
+    <FxCompile Include="ClearGridCS.hlsl">
+      <Filter>リソース ファイル\ComputeShader</Filter>
+    </FxCompile>
     <FxCompile Include="ParticleCS.hlsl">
       <Filter>リソース ファイル\ComputeShader</Filter>
     </FxCompile>

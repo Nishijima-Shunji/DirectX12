@@ -339,7 +339,11 @@ void FluidSystem::Simulate(ID3D12GraphicsCommandList* cmd, float dt)
     }
 }
 
-void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const XMFLOAT4X4& invViewProj, const XMFLOAT3& camPos, float isoLevel)
+void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
+    const XMFLOAT4X4& invViewProj,
+    const XMFLOAT4X4& viewProj,
+    const XMFLOAT3& camPos,
+    float isoLevel)
 {
     if (!m_initialized || !cmd || m_particleCount == 0 || !m_activeMetaSRV ||
         !m_metaRootSignature || !m_metaPipelineState)
@@ -353,6 +357,10 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd, const XMFLOAT4X4& invVi
     XMMATRIX invVP = XMLoadFloat4x4(&invViewProj);
     invVP = XMMatrixTranspose(invVP);
     XMStoreFloat4x4(&cb->InvViewProj, invVP);
+
+    XMMATRIX vp = XMLoadFloat4x4(&viewProj);
+    vp = XMMatrixTranspose(vp);
+    XMStoreFloat4x4(&cb->ViewProj, vp);
 
     cb->CamRadius = XMFLOAT4(camPos.x, camPos.y, camPos.z, m_material.renderRadius);
 

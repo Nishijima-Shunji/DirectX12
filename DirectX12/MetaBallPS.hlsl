@@ -1,6 +1,7 @@
 cbuffer MetaCB : register(b0)
 {
     float4x4 invViewProj;   // ビュー射影逆行列
+    float4x4 viewProj;      // ビュー射影行列（深度計算用）
     float4   camRadius;     // xyz: カメラ位置, w: 粒子半径（描画用）
     float4   isoCount;      // x: しきい値, y: 粒子数, z: レイステップ係数, w: 未使用
     float4   waterDeep;     // xyz: 深い水の色, w: 吸収係数
@@ -68,8 +69,14 @@ float Field(float3 p, out float3 grad)
     return sum - iso;
 }
 
+struct PSOutput
+{
+    float4 color : SV_TARGET;
+    float  depth : SV_DEPTH;
+};
+
 // main関数はVS側からの構造体をそのまま使用
-float4 main(VSOutput IN) : SV_TARGET
+PSOutput main(VSOutput IN)
 {
     float4 clip = float4(IN.uv * 2.0 - 1.0, 0.0, 1.0);
     float4 wp = mul(invViewProj, clip);
@@ -138,6 +145,15 @@ float4 main(VSOutput IN) : SV_TARGET
     float alpha = saturate(0.35 + absorption * 0.45 + fresnel * 0.35);
     color = lerp(envColor, color, alpha);
 
-    return float4(saturate(color), alpha);
+    // 深度を書き込むためにヒット位置をクリップ空間へ変換
+    float4 clipPos = mul(viewProj, float4(p, 1.0));
+    float invW = (abs(clipPos.w) > 1e-6) ? rcp(clipPos.w) : 0.0;
+    float depth = clipPos.z * invW;
+    depth = saturate(depth);
+
+    PSOutput OUT;
+    OUT.color = float4(saturate(color), alpha);
+    OUT.depth = depth;
+    return OUT;
 
 }

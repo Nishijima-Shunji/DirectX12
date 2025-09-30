@@ -26,7 +26,7 @@ struct FluidMaterial
     float renderRadius = 0.10f;       // メタボール描画半径
     float lambdaEpsilon = 100.0f;     // PBF安定化係数
     float xsphC = 0.05f;              // XSPH粘性（CPU）
-    int   solverIterations = 4;       // PBF反復回数
+    int   solverIterations = 1;       // PBF反復回数（安定動作用に軽量化）
 };
 
 // プリセットマテリアル
@@ -78,6 +78,7 @@ public:
     void Simulate(ID3D12GraphicsCommandList* cmd, float dt);
     void Render(ID3D12GraphicsCommandList* cmd,
         const DirectX::XMFLOAT4X4& invViewProj,
+        const DirectX::XMFLOAT4X4& viewProj,
         const DirectX::XMFLOAT3& camPos,
         float isoLevel);
 
@@ -98,6 +99,7 @@ private:
     struct MetaConstants
     {
         DirectX::XMFLOAT4X4 InvViewProj; // ビュー射影逆行列（転置済み）
+        DirectX::XMFLOAT4X4 ViewProj;    // ビュー射影行列（転置済み）
         DirectX::XMFLOAT4   CamRadius;   // カメラ座標と粒子半径
         DirectX::XMFLOAT4   IsoCount;    // 等値面しきい値 / 粒子数 / レイマーチ係数 / 未使用
         DirectX::XMFLOAT4   WaterDeep;   // 深い水の色 / w=吸収係数

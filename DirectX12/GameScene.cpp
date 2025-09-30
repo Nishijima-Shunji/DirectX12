@@ -41,7 +41,7 @@ bool GameScene::Init() {
 	auto device = g_Engine->Device();
 	const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-        const UINT maxParticles = 1024; // 60fpsを維持できるよう上限を適度に抑える
+        const UINT maxParticles = 512; // 初期負荷を抑えて安定動作させるため控えめに設定
         m_fluid.Init(device, rtvFormat, maxParticles, 0);
         m_fluid.SetWaterAppearance(
                 XMFLOAT3(0.32f, 0.7f, 0.95f),  // 浅瀬カラー
@@ -92,8 +92,13 @@ void GameScene::Draw() {
 	commandList = g_Engine->CommandList(); // コマンドリストを取得
 	auto cmd = g_Engine->CommandList();
 	auto camObj = g_Engine->GetObj<Camera>("Camera");
-	auto invViewProj = camObj->GetInvViewProj();
-	auto cameraPos = camObj->GetPosition();
+        auto invViewProj = camObj->GetInvViewProj();
+        XMMATRIX viewMat = camObj->GetViewMatrix();
+        XMMATRIX projMat = camObj->GetProjMatrix();
+        XMMATRIX viewProjMat = XMMatrixMultiply(viewMat, projMat);
+        XMFLOAT4X4 viewProj;
+        XMStoreFloat4x4(&viewProj, viewProjMat);
+        auto cameraPos = camObj->GetPosition();
 
 	//particle->Draw();
 
@@ -101,5 +106,5 @@ void GameScene::Draw() {
 		if (actor->IsAlive)
 			actor->Render(commandList);
 	}
-	m_fluid.Render(cmd, invViewProj, cameraPos, 1.0f);
+        m_fluid.Render(cmd, invViewProj, viewProj, cameraPos, 1.0f);
 }
