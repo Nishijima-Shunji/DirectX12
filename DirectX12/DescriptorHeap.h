@@ -16,9 +16,9 @@ public:
 class DescriptorHeap
 {
 public:
-	DescriptorHeap(); // コンストラクタで生成する
-	ID3D12DescriptorHeap* GetHeap(); // ディスクリプタヒープを返す
-	DescriptorHandle* Register(Texture2D* texture); // テクスチャーをディスクリプタヒープに登録し、ハンドルを返す
+	DescriptorHeap(); // コンストラクタで生す
+	ID3D12DescriptorHeap* GetHeap(); // ィスクリプタヒプを返す
+	DescriptorHandle* Register(Texture2D* texture); // クスチャーをディスクリプタヒプに登録しハンドルを返す
     DescriptorHandle* RegisterBuffer(
             ID3D12Resource* resource,
             UINT            numElements,
@@ -31,10 +31,15 @@ public:
             UINT            stride
     );
 
+    DescriptorHandle* RegisterTextureUAV(
+            ID3D12Resource* resource,
+            DXGI_FORMAT      format
+    );
+
 private:
-	bool m_IsValid = false; // 生成に成功したかどうか
+	bool m_IsValid = false; // 生に成功したかど
 	UINT m_IncrementSize = 0;
-	ComPtr<ID3D12DescriptorHeap> m_pHeap = nullptr; // ディスクリプタヒープ本体
-	std::vector<DescriptorHandle*> m_pHandles; // 登録されているハンドル
+	ComPtr<ID3D12DescriptorHeap> m_pHeap = nullptr; // ィスクリプタヒプ本
+	std::vector<DescriptorHandle*> m_pHandles; // 登録されてるハンドル
 
 };
