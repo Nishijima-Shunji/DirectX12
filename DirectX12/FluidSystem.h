@@ -102,6 +102,8 @@ private:
         DirectX::XMFLOAT4X4 ViewProj;    // ビュー射影行列（転置済み）
         DirectX::XMFLOAT4   CamRadius;   // カメラ座標と粒子半径
         DirectX::XMFLOAT4   IsoCount;    // 等値面しきい値 / 粒子数 / レイマーチ係数 / 未使用
+        DirectX::XMFLOAT4   GridMinCell; // グリッドの最小座標 / セルサイズ
+        DirectX::XMUINT4    GridDimInfo; // グリッドの寸法 / 総セル数（w）
         DirectX::XMFLOAT4   WaterDeep;   // 深い水の色 / w=吸収係数
         DirectX::XMFLOAT4   WaterShallow;// 浅い水の色 / w=泡検出のしきい値
         DirectX::XMFLOAT4   ShadingParams;// x=泡強度 y=反射割合 z=スペキュラ強度 w=時間
@@ -190,6 +192,8 @@ private:
     GPUBufferHandle m_gpuParticleBuffers[2];
     Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuGridCount;
     Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuGridTable;
+    DescriptorHandle* m_gpuGridCountSRV = nullptr;
+    DescriptorHandle* m_gpuGridTableSRV = nullptr;
     DescriptorHandle* m_gpuGridCountUAV = nullptr;
     DescriptorHandle* m_gpuGridTableUAV = nullptr;
     Microsoft::WRL::ComPtr<ID3D12Resource> m_gpuUpload;

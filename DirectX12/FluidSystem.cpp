@@ -369,6 +369,25 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
     float adaptiveStep = std::clamp(std::lerp(0.55f, 0.22f, std::clamp(particleRatio * 1.5f, 0.0f, 1.0f)), 0.18f, 0.6f);
     cb->IsoCount = XMFLOAT4(isoLevel * 0.6f, static_cast<float>(m_particleCount), adaptiveStep, 0.0f);
 
+    const bool gridHandlesValid = m_gpuGridCountSRV && m_gpuGridTableSRV &&
+        m_gpuGridCountSRV->HandleGPU.ptr != 0 && m_gpuGridTableSRV->HandleGPU.ptr != 0;
+    // GPUグリッドが利用できる場合のみセル情報を設定する
+    const bool gridReady = m_useGPU && HasValidGPUResources() && gridHandlesValid;
+
+    if (gridReady)
+    {
+        const float cellSize = std::max(0.0f, m_spatialGrid.CellSize());
+        cb->GridMinCell = XMFLOAT4(m_boundsMin.x, m_boundsMin.y, m_boundsMin.z, cellSize);
+        const UINT totalCells = std::max<UINT>(1u, m_gridDim.x * m_gridDim.y * m_gridDim.z);
+        cb->GridDimInfo = XMUINT4(m_gridDim.x, m_gridDim.y, m_gridDim.z, totalCells);
+    }
+    else
+    {
+        // グリッドが無効なときはセルサイズを0にしてシェーダーにフォールバックさせる
+        cb->GridMinCell = XMFLOAT4(m_boundsMin.x, m_boundsMin.y, m_boundsMin.z, 0.0f);
+        cb->GridDimInfo = XMUINT4(0, 0, 0, 0);
+    }
+
     cb->WaterDeep = XMFLOAT4(m_waterColorDeep.x, m_waterColorDeep.y, m_waterColorDeep.z, m_waterAbsorption);
     cb->WaterShallow = XMFLOAT4(m_waterColorShallow.x, m_waterColorShallow.y, m_waterColorShallow.z, m_foamCurvatureThreshold);
     cb->ShadingParams = XMFLOAT4(m_foamStrength, m_reflectionStrength, m_specularPower, m_totalSimulatedTime);
@@ -379,6 +398,13 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
     cmd->SetPipelineState(m_metaPipelineState.Get());
     cmd->SetGraphicsRootDescriptorTable(0, m_activeMetaSRV->HandleGPU);
     cmd->SetGraphicsRootConstantBufferView(1, m_metaCB[frameIndex]->GetAddress());
+
+    if (gridHandlesValid)
+    {
+        // 空間グリッドのSRVをピクセルシェーダーへ渡す
+        cmd->SetGraphicsRootDescriptorTable(2, m_gpuGridTableSRV->HandleGPU);
+        cmd->SetGraphicsRootDescriptorTable(3, m_gpuGridCountSRV->HandleGPU);
+    }
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     cmd->DrawInstanced(3, 1, 0, 0);
 }
@@ -810,11 +836,20 @@ void FluidSystem::StepGPU(ID3D12GraphicsCommandList* cmd, float dt)
     cmd->Dispatch(groupsParticle, 1, 1);
 
     // 書き込み完了後の状態遷移
-    auto metaToSRV = CD3DX12_RESOURCE_BARRIER::Transition(m_gpuMetaBuffer.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    auto metaToSRV = CD3DX12_RESOURCE_BARRIER::Transition(
+        m_gpuMetaBuffer.Get(),
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     cmd->ResourceBarrier(1, &metaToSRV);
-    auto gridCountToSRV = CD3DX12_RESOURCE_BARRIER::Transition(m_gpuGridCount.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    auto gridCountToSRV = CD3DX12_RESOURCE_BARRIER::Transition(
+        m_gpuGridCount.Get(),
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     cmd->ResourceBarrier(1, &gridCountToSRV);
-    auto gridTableToSRV = CD3DX12_RESOURCE_BARRIER::Transition(m_gpuGridTable.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    auto gridTableToSRV = CD3DX12_RESOURCE_BARRIER::Transition(
+        m_gpuGridTable.Get(),
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     cmd->ResourceBarrier(1, &gridTableToSRV);
 
     // 新しい結果を読み戻し用にコピー
@@ -1101,6 +1136,27 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         m_gpuAvailable = false;
         return;
     }
+    if (!m_gpuGridCountSRV)
+    {
+        m_gpuGridCountSRV = g_Engine->CbvSrvUavHeap()->RegisterBuffer(m_gpuGridCount.Get(), cellCount, sizeof(UINT));
+    }
+    else
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+        desc.Format = DXGI_FORMAT_UNKNOWN;
+        desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        desc.Buffer.NumElements = cellCount;
+        desc.Buffer.StructureByteStride = sizeof(UINT);
+        g_Engine->Device()->CreateShaderResourceView(m_gpuGridCount.Get(), &desc, m_gpuGridCountSRV->HandleCPU);
+    }
+    if (!m_gpuGridCountSRV)
+    {
+        printf("FluidSystem 10a : グリッドカウントSRVの登録に失敗しました\n");
+        m_gpuAvailable = false;
+        return;
+    }
+
     if (!m_gpuGridCountUAV)
     {
         m_gpuGridCountUAV = g_Engine->CbvSrvUavHeap()->RegisterBufferUAV(m_gpuGridCount.Get(), cellCount, sizeof(UINT));
@@ -1130,6 +1186,27 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         m_gpuAvailable = false;
         return;
     }
+    if (!m_gpuGridTableSRV)
+    {
+        m_gpuGridTableSRV = g_Engine->CbvSrvUavHeap()->RegisterBuffer(m_gpuGridTable.Get(), cellCount * kMaxParticlesPerCell, sizeof(UINT));
+    }
+    else
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+        desc.Format = DXGI_FORMAT_UNKNOWN;
+        desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        desc.Buffer.NumElements = cellCount * kMaxParticlesPerCell;
+        desc.Buffer.StructureByteStride = sizeof(UINT);
+        g_Engine->Device()->CreateShaderResourceView(m_gpuGridTable.Get(), &desc, m_gpuGridTableSRV->HandleCPU);
+    }
+    if (!m_gpuGridTableSRV)
+    {
+        printf("FluidSystem 11a : グリッドテーブルSRVの登録に失敗しました\n");
+        m_gpuAvailable = false;
+        return;
+    }
+
     if (!m_gpuGridTableUAV)
     {
         m_gpuGridTableUAV = g_Engine->CbvSrvUavHeap()->RegisterBufferUAV(m_gpuGridTable.Get(), cellCount * kMaxParticlesPerCell, sizeof(UINT));
@@ -1447,12 +1524,12 @@ bool FluidSystem::HasValidGPUResources() const
         }
     }
 
-    if (!m_gpuGridCount || !isValidHandle(m_gpuGridCountUAV))
+    if (!m_gpuGridCount || !isValidHandle(m_gpuGridCountSRV) || !isValidHandle(m_gpuGridCountUAV))
     {
         return false;
     }
 
-    if (!m_gpuGridTable || !isValidHandle(m_gpuGridTableUAV))
+    if (!m_gpuGridTable || !isValidHandle(m_gpuGridTableSRV) || !isValidHandle(m_gpuGridTableUAV))
     {
         return false;
     }

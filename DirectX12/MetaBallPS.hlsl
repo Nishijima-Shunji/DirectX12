@@ -4,6 +4,8 @@ cbuffer MetaCB : register(b0)
     float4x4 viewProj;      // ビュー射影行列（深度計算用）
     float4   camRadius;     // xyz: カメラ位置, w: 粒子半径（描画用）
     float4   isoCount;      // x: しきい値, y: 粒子数, z: レイステップ係数, w: 未使用
+    float4   gridMinCell;   // xyz: グリッド最小座標, w: セルサイズ
+    uint4    gridDimInfo;   // xyz: グリッド寸法, w: セル総数
     float4   waterDeep;     // xyz: 深い水の色, w: 吸収係数
     float4   waterShallow;  // xyz: 浅い水の色, w: 泡検出のしきい値
     float4   shadingParams; // x: 泡強度, y: 反射割合, z: スペキュラパワー, w: 経過時間
@@ -22,47 +24,163 @@ struct VSOutput
 };
 
 StructuredBuffer<ParticleMeta> Particles : register(t0);
+StructuredBuffer<uint>        GridTable : register(t1);
+StructuredBuffer<uint>        GridCount : register(t2);
 
-// 粒子群からスカラー場を評価し、同時に勾配（法線）を計算する
-float Field(float3 p, out float3 grad)
+static const uint MAX_PARTICLES_PER_CELL = 64;
+static const int  NEIGHBOR_SPAN = 1;
+
+// -----------------------------------------------------------------------------
+// グリッドを利用しない（フォールバック）密度評価
+// -----------------------------------------------------------------------------
+float EvaluateFieldBruteForce(float3 p, out float3 grad)
 {
     grad = float3(0, 0, 0);
-    float sum = 0;
+    float sum = 0.0;
     const uint count = (uint)isoCount.y;
-    if (count == 0)
-    {
-        return -1.0; // 粒子が無ければヒットしない
-    }
-
     const float iso = isoCount.x;
-    // 粒子毎に滑らかなガウス核で寄与を合成する（SSFRの厚み感を少し意識）
-    const float kernelMul = 2.5f; // 遠すぎる粒子は無視して負荷を下げる
 
     [loop]
     for (uint i = 0; i < count; ++i)
     {
-        float3 d = p - Particles[i].pos;
-        float  radius = max(Particles[i].r, 1e-4);
+        ParticleMeta meta = Particles[i];
+        float3 d = p - meta.pos;
+        float  radius = max(meta.r, 1e-4);
         float  r2 = radius * radius;
         float  dist2 = dot(d, d);
-        float  cutoff2 = r2 * kernelMul * kernelMul;
+        float  cutoff2 = r2 * 6.25; // kernelMul=2.5f を二乗した値
         if (dist2 > cutoff2)
         {
             continue;
         }
 
-        float  influence = exp(-dist2 / r2);
+        float influence = exp(-dist2 / r2);
         if (influence < 1e-4)
         {
             continue;
         }
+
         sum += influence;
         grad += (-2.0 * influence / r2) * d;
 
-        // 充分密度が溜まったら早期終了してレイマーチ回数を節約
         if (sum > iso + 0.75)
         {
             break;
+        }
+    }
+
+    return sum - iso;
+}
+
+// -----------------------------------------------------------------------------
+// 空間グリッドを用いた密度評価。総参照粒子数を返して空セルの判定に使う。
+// -----------------------------------------------------------------------------
+float EvaluateFieldGrid(float3 p, out float3 grad, out uint totalSamples)
+{
+    grad = float3(0, 0, 0);
+    totalSamples = 0;
+    float sum = 0.0;
+
+    const uint particleCount = (uint)isoCount.y;
+    const float iso = isoCount.x;
+    const uint totalCells = gridDimInfo.w;
+    const float cellSize = gridMinCell.w;
+
+    if (particleCount == 0)
+    {
+        return -iso;
+    }
+
+    const bool gridUsable = (totalCells > 0) && (cellSize > 0.0f) &&
+        (gridDimInfo.x > 0) && (gridDimInfo.y > 0) && (gridDimInfo.z > 0);
+
+    if (!gridUsable)
+    {
+        float value = EvaluateFieldBruteForce(p, grad);
+        totalSamples = particleCount;
+        return value;
+    }
+
+    float3 gridMin = gridMinCell.xyz;
+    uint3  gridDim = uint3(gridDimInfo.xyz);
+    uint   maxTableIndex = totalCells * MAX_PARTICLES_PER_CELL;
+
+    int3 baseCell = int3(floor((p - gridMin) / cellSize));
+
+    [loop]
+    for (int oz = -NEIGHBOR_SPAN; oz <= NEIGHBOR_SPAN; ++oz)
+    {
+        for (int oy = -NEIGHBOR_SPAN; oy <= NEIGHBOR_SPAN; ++oy)
+        {
+            for (int ox = -NEIGHBOR_SPAN; ox <= NEIGHBOR_SPAN; ++ox)
+            {
+                int3 cell = baseCell + int3(ox, oy, oz);
+                if (cell.x < 0 || cell.y < 0 || cell.z < 0)
+                {
+                    continue;
+                }
+                if (cell.x >= int(gridDim.x) || cell.y >= int(gridDim.y) || cell.z >= int(gridDim.z))
+                {
+                    continue;
+                }
+
+                uint cellIndex = uint(cell.x) + gridDim.x * (uint(cell.y) + gridDim.y * uint(cell.z));
+                if (cellIndex >= totalCells)
+                {
+                    continue;
+                }
+
+                uint count = GridCount[cellIndex];
+                if (count == 0)
+                {
+                    continue;
+                }
+
+                count = min(count, MAX_PARTICLES_PER_CELL);
+                uint baseIndex = cellIndex * MAX_PARTICLES_PER_CELL;
+                totalSamples += count;
+
+                [loop]
+                for (uint i = 0; i < count; ++i)
+                {
+                    uint tableIndex = baseIndex + i;
+                    if (tableIndex >= maxTableIndex)
+                    {
+                        break;
+                    }
+
+                    uint particleIndex = GridTable[tableIndex];
+                    if (particleIndex >= particleCount)
+                    {
+                        continue;
+                    }
+
+                    ParticleMeta meta = Particles[particleIndex];
+                    float3 d = p - meta.pos;
+                    float  radius = max(meta.r, 1e-4);
+                    float  r2 = radius * radius;
+                    float  dist2 = dot(d, d);
+                    float  cutoff2 = r2 * 6.25; // kernelMul=2.5f の二乗
+                    if (dist2 > cutoff2)
+                    {
+                        continue;
+                    }
+
+                    float influence = exp(-dist2 / r2);
+                    if (influence < 1e-4)
+                    {
+                        continue;
+                    }
+
+                    sum += influence;
+                    grad += (-2.0 * influence / r2) * d;
+
+                    if (sum > iso + 0.75)
+                    {
+                        return sum - iso;
+                    }
+                }
+            }
         }
     }
 
@@ -75,9 +193,9 @@ struct PSOutput
     float  depth : SV_DEPTH;
 };
 
-// main関数はVS側からの構造体をそのまま使用
 PSOutput main(VSOutput IN)
 {
+    // フルスクリーン三角形のUVからレイを生成
     float4 clip = float4(IN.uv * 2.0 - 1.0, 0.0, 1.0);
     float4 wp = mul(invViewProj, clip);
     wp /= wp.w;
@@ -86,25 +204,51 @@ PSOutput main(VSOutput IN)
     float3 rd = normalize(wp.xyz - ro);
 
     float3 p = ro;
-    float  d = 0.0;
     float3 grad = float3(0, 0, 0);
+    float  field = -isoCount.x;
+    bool   hit = false;
+
+    float cellSize = max(gridMinCell.w, 0.01);
+    float3 gridExtent = float3(gridDimInfo.xyz) * cellSize;
+    float maxDistance = length(gridExtent) + cellSize * 4.0;
+    maxDistance = max(maxDistance, 50.0);
+
+    float travelled = 0.0;
     const int MAX_STEP = 80;
-    const float stepScale = max(isoCount.z, 0.05);
 
     [loop]
-    for (int i = 0; i < MAX_STEP; ++i)
+    for (int i = 0; i < MAX_STEP && travelled < maxDistance; ++i)
     {
-        d = Field(p, grad);
-        if (abs(d) < 0.01)
+        float3 localGrad;
+        uint    sampleCount;
+        float   value = EvaluateFieldGrid(p, localGrad, sampleCount);
+
+        if (gridDimInfo.w > 0 && sampleCount == 0)
         {
-            break; // 等値面に十分近づいたら終了
+            // 粒子が存在しないセルは大きくスキップして高速化
+            float skip = max(cellSize * 1.25, 0.1);
+            p += rd * skip;
+            travelled += skip;
+            continue;
         }
-        p += rd * (-d) * stepScale; // SSFR風に負方向へ押し戻す
+
+        grad = localGrad;
+        field = value;
+
+        if (abs(value) < 0.01)
+        {
+            hit = true;
+            break;
+        }
+
+        float stepLen = max(abs(value) * isoCount.z, 0.02);
+        p += rd * (-value) * isoCount.z;
+        travelled += stepLen;
     }
 
-    if (abs(d) >= 0.02)
+    if (!hit)
     {
-        discard; // 交差しなかったので何も描かない
+        discard;
     }
 
     float3 n = (dot(grad, grad) > 1e-6) ? normalize(grad) : float3(0, 1, 0);
@@ -113,21 +257,17 @@ PSOutput main(VSOutput IN)
 
     float diff = saturate(dot(n, lightDir));
 
-    // 水の厚さを簡易的に推定して色の吸収を行う
     float viewDist = length(ro - p);
     float absorption = exp(-viewDist * waterDeep.w);
     float3 baseWater = lerp(waterDeep.xyz, waterShallow.xyz, absorption);
 
-    // 周囲光の色を少し青寄りに設定して水らしい落ち着いたトーンに
     float3 envColor = float3(0.05, 0.16, 0.28);
 
     float3 diffuse = baseWater * (0.25 + diff * 0.75);
 
-    // フレネルで反射寄りにする領域を抽出し、反射強度はパラメータで制御
     float fresnel = pow(1.0 - saturate(dot(n, viewDir)), 5.0);
     float3 reflection = lerp(baseWater, float3(0.75, 0.9, 1.0), shadingParams.y);
 
-    // 泡は勾配の強さと簡易波動（正弦波）で変動させる
     float curvature = saturate(1.0 - length(grad) * waterShallow.w);
     float foamWave = 0.5 + 0.5 * sin(dot(p.xz, float2(0.8, 0.45)) * 2.2 + shadingParams.w * 1.4);
     float foamMask = saturate((curvature - 0.25) * 2.0) * foamWave;
@@ -139,21 +279,17 @@ PSOutput main(VSOutput IN)
     color += reflection * fresnel;
     color += spec * 0.35;
     color = lerp(envColor, color, 0.65);
-    color += shadingParams.x * foamMask * float3(1.0, 1.0, 1.0);
+    color += shadingParams.x * foamMask;
 
-    // 厚さによる透過感を持たせるためアルファも吸収とフレネルで調整
     float alpha = saturate(0.35 + absorption * 0.45 + fresnel * 0.35);
     color = lerp(envColor, color, alpha);
 
-    // 深度を書き込むためにヒット位置をクリップ空間へ変換
     float4 clipPos = mul(viewProj, float4(p, 1.0));
     float invW = (abs(clipPos.w) > 1e-6) ? rcp(clipPos.w) : 0.0;
-    float depth = clipPos.z * invW;
-    depth = saturate(depth);
+    float depth = saturate(clipPos.z * invW);
 
     PSOutput OUT;
     OUT.color = float4(saturate(color), alpha);
     OUT.depth = depth;
     return OUT;
-
 }
