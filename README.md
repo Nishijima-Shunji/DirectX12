@@ -1,6 +1,6 @@
 # DirectX12
 
-This is a small DirectX 12 sample project. The solution file `DirectX12.sln` was created with Visual Studio 2022 (v17).
+This is a small DirectX 12 sample project focused on real-time fluid simulation. The solution file `DirectX12.sln` was created with Visual Studio 2022 (v17).
 
 ## Build environment
 
@@ -22,6 +22,14 @@ The `DirectX12.vcxproj` assumes the include directories and library paths for th
 1. Open `DirectX12.sln` in Visual Studio.
 2. Select the `x64` configuration (`Debug` or `Release`).
 3. Build the solution and run the generated executable.
+
+### Controls
+
+- The application boots directly into the `GameScene`, which contains the SPH-based fluid simulation.
+- Press **G** to gather nearby particles toward the center of the basin.
+- Press **F** to splash particles outward and create a wave.
+- Press **L** to switch back to the legacy model rendering scene.
+- Press **Space** while in the legacy scene or the title scene to return to the fluid simulation.
 
 The `assets` folder contains sample resources (e.g. `korosuke.fbx` and `default.png`) used by the project.
 

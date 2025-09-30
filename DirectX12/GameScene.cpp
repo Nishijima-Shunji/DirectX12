@@ -36,14 +36,15 @@ bool GameScene::Init() {
 	camera->Init();
 	g_Engine->RegisterObj<Camera>("Camera", camera);
 
-	//particle = std::make_unique<Particle>(camera);
+        // 流体システムの初期化
+        auto device = g_Engine->Device();
+        const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-	// 流体システムの初期化
-	auto device = g_Engine->Device();
-	const DXGI_FORMAT rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-
-        const UINT maxParticles = 5; // 初期負荷を抑えて安定動作させるため控えめに設定
-        m_fluid.Init(device, rtvFormat, maxParticles, 0);
+        // 描画面積全体を満たす程度の粒子数を確保しておく。
+        // 粒子が多いほど水塊らしい振る舞いになるが、あまり増やし過ぎるとGPU負荷が増大するため
+        // デフォルトでは 512 粒子でバランスを取っている。
+        m_maxParticles = 512;
+        m_fluid.Init(device, rtvFormat, m_maxParticles, 0);
         m_fluid.SetWaterAppearance(
                 XMFLOAT3(0.32f, 0.7f, 0.95f),  // 浅瀬カラー
                 XMFLOAT3(0.04f, 0.18f, 0.32f), // 深場カラー
@@ -52,7 +53,7 @@ bool GameScene::Init() {
                 0.55f,                         // 泡強度
                 0.65f,                         // 反射割合
                 96.0f);                        // ハイライトの鋭さ
-        m_fluid.SpawnParticlesSphere(XMFLOAT3(0.0f, 0.6f, 0.0f), 1.1f, maxParticles);
+        m_fluid.SpawnParticlesSphere(XMFLOAT3(0.0f, 0.6f, 0.0f), 1.1f, m_maxParticles);
         m_fluid.UseGPU(true);
 
 
@@ -63,10 +64,22 @@ bool GameScene::Init() {
 }
 
 void GameScene::Update(float deltaTime) {
-	g_Engine->GetObj<Camera>("Camera")->Update(deltaTime);
-	//particle->Update(deltaTime);
-	auto cmd = g_Engine->CommandList();
-	m_fluid.Simulate(cmd, deltaTime);
+        g_Engine->GetObj<Camera>("Camera")->Update(deltaTime);
+        auto cmd = g_Engine->CommandList();
+
+        // 毎フレームキー入力に応じて外力操作を設定し直す。
+        // Gather（Gキー）：水塊を中央へ引き寄せる。
+        // Splash（Fキー）：水面を押し広げる。
+        m_fluid.ClearDynamicOperations();
+        if (GetAsyncKeyState('G') & 0x8000) {
+                m_fluid.QueueGather(XMFLOAT3(0.0f, 0.6f, 0.0f), 0.9f, 12.0f);
+        }
+        if (GetAsyncKeyState('F') & 0x8000) {
+                m_fluid.QueueSplash(XMFLOAT3(0.0f, 0.6f, 0.0f), 0.8f, 6.0f);
+        }
+
+        // 登録した操作を考慮して流体を1ステップ進める。
+        m_fluid.Simulate(cmd, deltaTime);
 
 	// 全体のupdate
 	for (auto& obj : m_objects) {
