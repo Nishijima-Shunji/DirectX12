@@ -153,6 +153,9 @@
     <ClCompile Include="MetaBallPipelineState.cpp">
       <Filter>ソース ファイル\System\PSO</Filter>
     </ClCompile>
+    <ClCompile Include="MetaballRenderer.cpp">
+      <Filter>ソース ファイル\Game</Filter>
+    </ClCompile>
     <ClCompile Include="FluidSystem.cpp">
       <Filter>ソース ファイル\Game</Filter>
     </ClCompile>
@@ -215,6 +218,9 @@
     </ClInclude>
     <ClInclude Include="ParticlePipelineState.h">
       <Filter>ヘッダー ファイル\System\PSO</Filter>
+    </ClInclude>
+    <ClInclude Include="MetaballRenderer.h">
+      <Filter>ヘッダー ファイル\Game</Filter>
     </ClInclude>
     <ClInclude Include="PipelineState.h">
       <Filter>ヘッダー ファイル\System\PSO</Filter>

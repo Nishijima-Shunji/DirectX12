@@ -165,6 +165,7 @@
     <ClCompile Include="IndexBuffer.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MetaBallPipelineState.cpp" />
+    <ClCompile Include="MetaballRenderer.cpp" />
     <ClCompile Include="Object.cpp" />
     <ClCompile Include="Particle.cpp" />
     <ClCompile Include="PipelineState.cpp" />
@@ -198,6 +199,7 @@
     <ClInclude Include="IActor.h" />
     <ClInclude Include="IndexBuffer.h" />
     <ClInclude Include="MetaBallPipelineState.h" />
+    <ClInclude Include="MetaballRenderer.h" />
     <ClInclude Include="Object.h" />
     <ClInclude Include="Particle.h" />
     <ClInclude Include="PipelineState.h" />
