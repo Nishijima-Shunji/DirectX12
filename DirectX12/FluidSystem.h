@@ -52,6 +52,15 @@ struct FluidParticle
     DirectX::XMFLOAT3 predicted;  // 予測位置
     float lambda = 0.0f;          // PBFラグランジュ乗数
     float density = 0.0f;         // 計算密度
+    UINT  collisionMask = 0;      // 衝突が発生した境界を保持するビットマスク
+};
+
+// 流体が境界へ衝突した際に通知するイベント
+struct FluidCollisionEvent
+{
+    DirectX::XMFLOAT3 position;   // 衝突位置
+    DirectX::XMFLOAT3 normal;     // 衝突面の法線
+    float               strength; // 衝突の強さ（速度から算出）
 };
 
 class FluidSystem
@@ -67,6 +76,7 @@ public:
 
     void SetMaterialPreset(FluidMaterialPreset preset);
     void SetMaterial(const FluidMaterial& material);
+    void SetSimulationBounds(const DirectX::XMFLOAT3& minBound, const DirectX::XMFLOAT3& maxBound);
     const FluidMaterial& Material() const { return m_material; }
 
     void SpawnParticlesSphere(const DirectX::XMFLOAT3& center, float radius, UINT count);
@@ -74,7 +84,11 @@ public:
 
     void QueueGather(const DirectX::XMFLOAT3& target, float radius, float strength);
     void QueueSplash(const DirectX::XMFLOAT3& position, float radius, float impulse);
+    void QueueDirectionalImpulse(const DirectX::XMFLOAT3& center, float radius, const DirectX::XMFLOAT3& direction, float strength);
     void ClearDynamicOperations();
+
+    bool Raycast(const DirectX::XMFLOAT3& origin, const DirectX::XMFLOAT3& direction, float maxDistance, float radius, DirectX::XMFLOAT3& hitPosition) const;
+    void PopCollisionEvents(std::vector<FluidCollisionEvent>& outEvents);
 
     void Simulate(ID3D12GraphicsCommandList* cmd, float dt);
     void Render(ID3D12GraphicsCommandList* cmd,
@@ -154,6 +168,14 @@ private:
         float impulse;
     };
 
+    struct DirectionalImpulseOperation
+    {
+        DirectX::XMFLOAT3 center;
+        float radius;
+        DirectX::XMFLOAT3 direction;
+        float strength;
+    };
+
     struct GPUBufferHandle
     {
         Microsoft::WRL::ComPtr<ID3D12Resource> resource;
@@ -163,6 +185,12 @@ private:
     };
 
     static constexpr UINT kMaxParticlesPerCell = 64; // グリッド1セルが保持できる粒子数の上限
+    static constexpr UINT kCollisionMinX = 1u << 0;
+    static constexpr UINT kCollisionMaxX = 1u << 1;
+    static constexpr UINT kCollisionMinY = 1u << 2;
+    static constexpr UINT kCollisionMaxY = 1u << 3;
+    static constexpr UINT kCollisionMinZ = 1u << 4;
+    static constexpr UINT kCollisionMaxZ = 1u << 5;
 
     void UpdateGridSettings();
     void ApplyExternalOperationsCPU(float dt);
@@ -175,7 +203,7 @@ private:
     void DestroySSFRResources();
     void CreateGPUResources(ID3D12Device* device);
     void UpdateComputeParams(float dt);
-    void ResolveBounds(FluidParticle& p) const;
+    UINT ResolveBounds(FluidParticle& p) const;
     ID3D12GraphicsCommandList* BeginComputeCommandList();
     void SubmitComputeCommandList();
     bool HasValidGPUResources() const;
@@ -279,6 +307,8 @@ private:
 
     std::vector<GatherOperation> m_gatherOps;
     std::vector<SplashOperation> m_splashOps;
+    std::vector<DirectionalImpulseOperation> m_directionalOps;
+    std::vector<FluidCollisionEvent> m_collisionEvents;
 
     ID3D12Device* m_device = nullptr;
     DXGI_FORMAT   m_rtvFormat = DXGI_FORMAT_R8G8B8A8_UNORM;

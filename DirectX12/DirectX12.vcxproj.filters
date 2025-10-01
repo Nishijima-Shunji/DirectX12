@@ -150,9 +150,6 @@
     <ClCompile Include="DescriptorHeap.cpp">
       <Filter>ソース ファイル\System\DescriptorHeap</Filter>
     </ClCompile>
-    <ClCompile Include="MetaBallPipelineState.cpp">
-      <Filter>ソース ファイル\System\PSO</Filter>
-    </ClCompile>
     <ClCompile Include="FluidSystem.cpp">
       <Filter>ソース ファイル\Game</Filter>
     </ClCompile>
@@ -234,9 +231,6 @@
     <ClInclude Include="DescriptorHeap.h">
       <Filter>ヘッダー ファイル\System\DescriptorHeap</Filter>
     </ClInclude>
-    <ClInclude Include="MetaBallPipelineState.h">
-      <Filter>ヘッダー ファイル\System\PSO</Filter>
-    </ClInclude>
     <ClInclude Include="IActor.h">
       <Filter>ヘッダー ファイル\Game</Filter>
     </ClInclude>
@@ -260,9 +254,6 @@
     <FxCompile Include="FadePS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
-    <FxCompile Include="MetaBallPS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
     <FxCompile Include="ParticlePS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
@@ -270,9 +261,6 @@
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
     <FxCompile Include="FadeVS.hlsl">
-      <Filter>リソース ファイル\VertexShader</Filter>
-    </FxCompile>
-    <FxCompile Include="MetaBallVS.hlsl">
       <Filter>リソース ファイル\VertexShader</Filter>
     </FxCompile>
     <FxCompile Include="ParticleVS.hlsl">
@@ -308,6 +296,9 @@
     <FxCompile Include="Composite.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
+    <FxCompile Include="ColorOnlyPS.hlsl">
+      <Filter>リソース ファイル\PixelShader</Filter>
+    </FxCompile>
     <FxCompile Include="PBFCS.hlsl">
       <Filter>リソース ファイル\ComputeShader</Filter>
     </FxCompile>
@@ -317,6 +308,9 @@
     <FxCompile Include="SSFRCompositePS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
+    <FxCompile Include="ColorOnlyVS.hlsl">
+      <Filter>リソース ファイル\VertexShader</Filter>
+    </FxCompile>
     <FxCompile Include="SSFRParticleVS.hlsl">
       <Filter>リソース ファイル\VertexShader</Filter>
     </FxCompile>
@@ -325,9 +319,6 @@
     </FxCompile>
     <FxCompile Include="SSFRNormalCS.hlsl">
       <Filter>リソース ファイル\ComputeShader</Filter>
-    </FxCompile>
-    <FxCompile Include="metacomposite.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
   </ItemGroup>
   <ItemGroup>

@@ -273,6 +273,14 @@ void FluidSystem::SetMaterial(const FluidMaterial& material)
     }
 }
 
+void FluidSystem::SetSimulationBounds(const XMFLOAT3& minBound, const XMFLOAT3& maxBound)
+{
+    // 境界設定を更新し、SPHの探索グリッドも再構築する
+    m_boundsMin = minBound;
+    m_boundsMax = maxBound;
+    UpdateGridSettings();
+}
+
 // ============================
 // 流体生成
 // ============================
@@ -306,6 +314,7 @@ void FluidSystem::SpawnParticlesSphere(const XMFLOAT3& center, float radius, UIN
         particle.predicted = particle.position;
         particle.density = m_material.restDensity;
         particle.lambda = 0.0f;
+        particle.collisionMask = 0;
 
         m_cpuParticles.push_back(particle);
         ++m_particleCount;
@@ -350,10 +359,26 @@ void FluidSystem::QueueSplash(const XMFLOAT3& position, float radius, float impu
     m_splashOps.push_back({ position, radius, impulse });
 }
 
+void FluidSystem::QueueDirectionalImpulse(const XMFLOAT3& center, float radius, const XMFLOAT3& direction, float strength)
+{
+    XMVECTOR dirVec = XMLoadFloat3(&direction);
+    if (XMVectorGetX(XMVector3LengthSq(dirVec)) < 1e-6f)
+    {
+        return;
+    }
+    DirectionalImpulseOperation op{};
+    op.center = center;
+    op.radius = radius;
+    op.direction = direction;
+    op.strength = strength;
+    m_directionalOps.push_back(op);
+}
+
 void FluidSystem::ClearDynamicOperations()
 {
     m_gatherOps.clear();
     m_splashOps.clear();
+    m_directionalOps.clear();
 }
 
 float FluidSystem::EffectiveTimeStep(float dt) const
@@ -752,6 +777,32 @@ void FluidSystem::ApplyExternalOperationsCPU(float dt)
         m_splashOps.clear();
     }
 
+    // 指向性インパルス（例：前方へ飛ばす操作）
+    if (!m_directionalOps.empty())
+    {
+        for (const auto& op : m_directionalOps)
+        {
+            XMVECTOR center = XMLoadFloat3(&op.center);
+            XMVECTOR dir = XMLoadFloat3(&op.direction);
+            dir = XMVector3Normalize(dir);
+            for (auto& particle : m_cpuParticles)
+            {
+                XMVECTOR pos = XMLoadFloat3(&particle.position);
+                XMVECTOR diff = XMVectorSubtract(pos, center);
+                float dist = XMVectorGetX(XMVector3Length(diff));
+                if (dist < op.radius)
+                {
+                    float weight = 1.0f - (dist / op.radius);
+                    XMVECTOR vel = XMLoadFloat3(&particle.velocity);
+                    vel = XMVectorAdd(vel, XMVectorScale(dir, op.strength * weight));
+                    XMStoreFloat3(&particle.velocity, vel);
+                    modified = true;
+                }
+            }
+        }
+        m_directionalOps.clear();
+    }
+
     if (modified)
     {
         m_cpuDirty = true;
@@ -781,6 +832,7 @@ void FluidSystem::StepCPU(float dt)
     for (size_t i = 0; i < m_cpuParticles.size(); ++i)
     {
         auto& particle = m_cpuParticles[i];
+        particle.collisionMask = 0;
         XMVECTOR vel = XMLoadFloat3(&particle.velocity);
         XMVECTOR grav = XMLoadFloat3(&gravity);
         vel = XMVectorAdd(vel, XMVectorScale(grav, dt));
@@ -884,7 +936,7 @@ void FluidSystem::StepCPU(float dt)
             pi.predicted.y += delta.y;
             pi.predicted.z += delta.z;
 
-            ResolveBounds(pi);
+            pi.collisionMask |= ResolveBounds(pi);
         }
     }
 
@@ -895,6 +947,8 @@ void FluidSystem::StepCPU(float dt)
             particle.predicted.y - particle.position.y,
             particle.predicted.z - particle.position.z };
         particle.velocity = XMFLOAT3(delta.x / dt, delta.y / dt, delta.z / dt);
+
+        const float preBounceSpeed = XMVectorGetX(XMVector3Length(XMLoadFloat3(&particle.velocity)));
 
         // XSPH粘性
         xsphNeighbors.clear();
@@ -922,17 +976,147 @@ void FluidSystem::StepCPU(float dt)
         particle.velocity.y += m_material.xsphC * xsph.y;
         particle.velocity.z += m_material.xsphC * xsph.z;
 
+        if (particle.collisionMask != 0)
+        {
+            const float restitution = 0.45f; // 境界からの跳ね返り係数
+            XMFLOAT3 normal{ 0.0f, 0.0f, 0.0f };
+
+            if ((particle.collisionMask & kCollisionMinX) && particle.velocity.x < 0.0f)
+            {
+                particle.velocity.x = -particle.velocity.x * restitution;
+                normal.x += 1.0f;
+            }
+            if ((particle.collisionMask & kCollisionMaxX) && particle.velocity.x > 0.0f)
+            {
+                particle.velocity.x = -particle.velocity.x * restitution;
+                normal.x -= 1.0f;
+            }
+            if ((particle.collisionMask & kCollisionMinY) && particle.velocity.y < 0.0f)
+            {
+                particle.velocity.y = -particle.velocity.y * restitution;
+                normal.y += 1.0f;
+            }
+            if ((particle.collisionMask & kCollisionMaxY) && particle.velocity.y > 0.0f)
+            {
+                particle.velocity.y = -particle.velocity.y * restitution;
+                normal.y -= 1.0f;
+            }
+            if ((particle.collisionMask & kCollisionMinZ) && particle.velocity.z < 0.0f)
+            {
+                particle.velocity.z = -particle.velocity.z * restitution;
+                normal.z += 1.0f;
+            }
+            if ((particle.collisionMask & kCollisionMaxZ) && particle.velocity.z > 0.0f)
+            {
+                particle.velocity.z = -particle.velocity.z * restitution;
+                normal.z -= 1.0f;
+            }
+
+            float normalLen = XMVectorGetX(XMVector3Length(XMLoadFloat3(&normal)));
+            if (normalLen > 0.0f && preBounceSpeed > 0.2f)
+            {
+                float invLen = 1.0f / normalLen;
+                normal.x *= invLen;
+                normal.y *= invLen;
+                normal.z *= invLen;
+                FluidCollisionEvent evt{};
+                evt.position = particle.predicted;
+                evt.normal = normal;
+                evt.strength = preBounceSpeed;
+                m_collisionEvents.push_back(evt);
+            }
+
+            particle.collisionMask = 0;
+        }
+
         particle.position = particle.predicted;
     }
 
     m_cpuDirty = true;
 }
 
-void FluidSystem::ResolveBounds(FluidParticle& p) const
+UINT FluidSystem::ResolveBounds(FluidParticle& p) const
 {
-    p.predicted.x = std::clamp(p.predicted.x, m_boundsMin.x, m_boundsMax.x);
-    p.predicted.y = std::clamp(p.predicted.y, m_boundsMin.y, m_boundsMax.y);
-    p.predicted.z = std::clamp(p.predicted.z, m_boundsMin.z, m_boundsMax.z);
+    UINT mask = 0;
+    if (p.predicted.x < m_boundsMin.x)
+    {
+        p.predicted.x = m_boundsMin.x;
+        mask |= kCollisionMinX;
+    }
+    else if (p.predicted.x > m_boundsMax.x)
+    {
+        p.predicted.x = m_boundsMax.x;
+        mask |= kCollisionMaxX;
+    }
+
+    if (p.predicted.y < m_boundsMin.y)
+    {
+        p.predicted.y = m_boundsMin.y;
+        mask |= kCollisionMinY;
+    }
+    else if (p.predicted.y > m_boundsMax.y)
+    {
+        p.predicted.y = m_boundsMax.y;
+        mask |= kCollisionMaxY;
+    }
+
+    if (p.predicted.z < m_boundsMin.z)
+    {
+        p.predicted.z = m_boundsMin.z;
+        mask |= kCollisionMinZ;
+    }
+    else if (p.predicted.z > m_boundsMax.z)
+    {
+        p.predicted.z = m_boundsMax.z;
+        mask |= kCollisionMaxZ;
+    }
+    return mask;
+}
+
+bool FluidSystem::Raycast(const XMFLOAT3& origin, const XMFLOAT3& direction, float maxDistance, float radius, XMFLOAT3& hitPosition) const
+{
+    if (m_cpuParticles.empty())
+    {
+        return false;
+    }
+
+    XMVECTOR rayOrigin = XMLoadFloat3(&origin);
+    XMVECTOR rayDir = XMVector3Normalize(XMLoadFloat3(&direction));
+    float bestDistance = maxDistance;
+    bool hit = false;
+
+    for (const auto& particle : m_cpuParticles)
+    {
+        XMVECTOR pos = XMLoadFloat3(&particle.position);
+        XMVECTOR diff = XMVectorSubtract(pos, rayOrigin);
+        float t = XMVectorGetX(XMVector3Dot(diff, rayDir));
+        if (t < 0.0f || t > bestDistance)
+        {
+            continue;
+        }
+        XMVECTOR closest = XMVectorAdd(rayOrigin, XMVectorScale(rayDir, t));
+        float distanceToRay = XMVectorGetX(XMVector3Length(XMVectorSubtract(pos, closest)));
+        if (distanceToRay <= radius)
+        {
+            bestDistance = t;
+            XMStoreFloat3(&hitPosition, pos);
+            hit = true;
+        }
+    }
+
+    return hit;
+}
+
+void FluidSystem::PopCollisionEvents(std::vector<FluidCollisionEvent>& outEvents)
+{
+    if (m_collisionEvents.empty())
+    {
+        outEvents.clear();
+        return;
+    }
+
+    outEvents.insert(outEvents.end(), m_collisionEvents.begin(), m_collisionEvents.end());
+    m_collisionEvents.clear();
 }
 
 void FluidSystem::UploadCPUToGPU(ID3D12GraphicsCommandList* cmd)
