@@ -6,12 +6,36 @@ void SceneManager::RegisterScene(const std::string& name, SceneFactory factory)
     m_Registry[name] = factory;
 }
 
+std::unique_ptr<BaseScene> SceneManager::CreateInitializedScene(const std::string& name)
+{
+    auto it = m_Registry.find(name);
+    if (it == m_Registry.end())
+    {
+        return nullptr;
+    }
+
+    auto scene = it->second();
+    if (!scene)
+    {
+        return nullptr;
+    }
+
+    // 生成直後に必ず初期化を実行し、失敗した場合は無効として扱う
+    if (!scene->Init())
+    {
+        return nullptr;
+    }
+
+    return scene;
+}
+
 void SceneManager::ChangeScene(const std::string& name)
 {
     if (m_SceneStack.empty()) {
-        auto it = m_Registry.find(name);
-        if (it != m_Registry.end()) {
-            m_SceneStack.push(it->second());
+        auto scene = CreateInitializedScene(name);
+        if (scene)
+        {
+            m_SceneStack.push(std::move(scene));
         }
     } else {
         m_pendingScene = name;
@@ -21,9 +45,10 @@ void SceneManager::ChangeScene(const std::string& name)
 
 void SceneManager::PushScene(const std::string& name)
 {
-    auto it = m_Registry.find(name);
-    if (it != m_Registry.end()) {
-        m_SceneStack.push(it->second());
+    auto scene = CreateInitializedScene(name);
+    if (scene)
+    {
+        m_SceneStack.push(std::move(scene));
     }
 }
 
@@ -43,12 +68,13 @@ void SceneManager::Update(float deltaTime)
     }
 
     if (!m_pendingScene.empty() && m_fade.IsFadeOutComplete()) {
-        auto it = m_Registry.find(m_pendingScene);
-        if (it != m_Registry.end()) {
+        auto newScene = CreateInitializedScene(m_pendingScene);
+        if (newScene)
+        {
             if (!m_SceneStack.empty()) {
                 m_SceneStack.pop();
             }
-            m_SceneStack.push(it->second());
+            m_SceneStack.push(std::move(newScene));
         }
         m_pendingScene.clear();
         m_fade.StartFadeIn();

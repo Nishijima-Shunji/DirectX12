@@ -18,6 +18,9 @@ private:
     FadeController m_fade;
     std::string m_pendingScene;
 
+    // シーン名から生成・初期化済みのシーンを取得するユーティリティ
+    std::unique_ptr<BaseScene> CreateInitializedScene(const std::string& name);
+
 public:
     void RegisterScene(const std::string& name, SceneFactory factory);
     void ChangeScene(const std::string& name);
