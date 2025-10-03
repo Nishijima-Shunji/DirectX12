@@ -7,6 +7,7 @@
 #include "PipelineState.h"
 #include "DescriptorHeap.h"
 #include "Camera.h"
+#include "Engine.h"
 #include <DirectXMath.h>
 #include <Windows.h>
 #include <array>
