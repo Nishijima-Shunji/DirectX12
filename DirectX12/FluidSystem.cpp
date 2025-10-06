@@ -705,6 +705,10 @@ void FluidSystem::Composite(ID3D12GraphicsCommandList* cmd,
         D3D12_RESOURCE_STATE_COPY_DEST);
     cmd->ResourceBarrier(1, &resetSceneCopy);
     m_sceneColorCopyState = D3D12_RESOURCE_STATE_COPY_DEST;
+
+    // 11. 合成でDSVを外したため通常描画に戻る前に深度ステンシルを再バインドする
+    auto depthHandle = g_Engine->DepthStencilView();
+    cmd->OMSetRenderTargets(1, &sceneRTV, FALSE, &depthHandle);
 }
 
 void FluidSystem::SetWaterAppearance(const XMFLOAT3& shallowColor,
