@@ -568,9 +568,12 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
         cmd->SetComputeRootDescriptorTable(0, m_particleDepthSRV->HandleGPU);
         cmd->SetComputeRootDescriptorTable(1, m_particleDepthSRV->HandleGPU);
         cmd->SetComputeRootDescriptorTable(2, m_smoothedDepthUAV->HandleGPU);
+        // CameraCB (register b0) を必ずバインドする
+        cmd->SetComputeRootConstantBufferView(3, cameraCB->GetAddress());
         if (m_blurParamsCB)
         {
-            cmd->SetComputeRootConstantBufferView(3, m_blurParamsCB->GetAddress());
+            // BilateralParams (register b1) をバインドする
+            cmd->SetComputeRootConstantBufferView(4, m_blurParamsCB->GetAddress());
         }
         UINT groupX = (width + 15) / 16;
         UINT groupY = (height + 15) / 16;
@@ -1785,11 +1788,12 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         srvRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
         srvRanges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
         CD3DX12_DESCRIPTOR_RANGE uavRange(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
-        CD3DX12_ROOT_PARAMETER params[4];
+        CD3DX12_ROOT_PARAMETER params[5];
         params[0].InitAsDescriptorTable(1, &srvRanges[0]);
         params[1].InitAsDescriptorTable(1, &srvRanges[1]);
         params[2].InitAsDescriptorTable(1, &uavRange);
         params[3].InitAsConstantBufferView(0);
+        params[4].InitAsConstantBufferView(1);
 
         CD3DX12_ROOT_SIGNATURE_DESC desc(_countof(params), params, 0, nullptr,
             D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS |
