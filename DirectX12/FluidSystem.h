@@ -252,6 +252,11 @@ private:
     D3D12_CPU_DESCRIPTOR_HANDLE m_smoothedDepthRTV = {};
     D3D12_CPU_DESCRIPTOR_HANDLE m_thicknessRTV = {};
 
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_ssfrCpuUavHeap;         // UAVクリア用CPUヒープ
+    UINT m_ssfrCpuUavDescriptorSize = 0;
+    D3D12_CPU_DESCRIPTOR_HANDLE m_particleDepthUavCpuHandle = {};
+    D3D12_CPU_DESCRIPTOR_HANDLE m_smoothedDepthUavCpuHandle = {};
+
     D3D12_RESOURCE_STATES m_particleDepthState = D3D12_RESOURCE_STATE_COMMON;
     D3D12_RESOURCE_STATES m_smoothedDepthState = D3D12_RESOURCE_STATE_COMMON;
     D3D12_RESOURCE_STATES m_normalState = D3D12_RESOURCE_STATE_COMMON;

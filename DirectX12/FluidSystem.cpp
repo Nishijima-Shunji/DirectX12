@@ -541,8 +541,9 @@ void FluidSystem::Render(ID3D12GraphicsCommandList* cmd,
     transition(m_thicknessTexture, D3D12_RESOURCE_STATE_RENDER_TARGET, m_thicknessState);
 
     const float clearDepth[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    cmd->ClearUnorderedAccessViewFloat(m_particleDepthUAV->HandleGPU, m_particleDepthUAV->HandleCPU, m_particleDepthTexture->Resource(), clearDepth, 0, nullptr);
-    cmd->ClearUnorderedAccessViewFloat(m_smoothedDepthUAV->HandleGPU, m_smoothedDepthUAV->HandleCPU, m_smoothedDepthTexture->Resource(), clearDepth, 0, nullptr);
+    // ClearUnorderedAccessViewFloat ではCPU可視のUAVハンドルが必要なので、専用ヒープで確保したハンドルを使用する
+    cmd->ClearUnorderedAccessViewFloat(m_particleDepthUAV->HandleGPU, m_particleDepthUavCpuHandle, m_particleDepthTexture->Resource(), clearDepth, 0, nullptr);
+    cmd->ClearUnorderedAccessViewFloat(m_smoothedDepthUAV->HandleGPU, m_smoothedDepthUavCpuHandle, m_smoothedDepthTexture->Resource(), clearDepth, 0, nullptr);
     const float clearThickness[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
     cmd->ClearRenderTargetView(m_thicknessRTV, clearThickness, 0, nullptr);
 
@@ -1518,6 +1519,27 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         m_ssfrRtvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     }
 
+    if (!m_ssfrCpuUavHeap)
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC heapDesc{};
+        heapDesc.NumDescriptors = 3;
+        heapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+        heapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        HRESULT hr = device->CreateDescriptorHeap(&heapDesc, IID_PPV_ARGS(m_ssfrCpuUavHeap.ReleaseAndGetAddressOf()));
+        if (FAILED(hr))
+        {
+            printf("FluidSystem: SSFR用CPU UAVヒープの生成に失敗しました (0x%08X)\n", hr);
+            return false;
+        }
+        m_ssfrCpuUavDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+        // UAVのクリアではCPU可視ディスクリプタが必須なため、ここでオフラインハンドルを確保する
+        auto cpuHandle = m_ssfrCpuUavHeap->GetCPUDescriptorHandleForHeapStart();
+        m_particleDepthUavCpuHandle = cpuHandle;
+        cpuHandle.ptr += m_ssfrCpuUavDescriptorSize;
+        m_smoothedDepthUavCpuHandle = cpuHandle;
+    }
+
     CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
 
     auto rtvHandle = m_ssfrRtvHeap->GetCPUDescriptorHandleForHeapStart();
@@ -1533,6 +1555,7 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         DescriptorHandle*& srvHandle,
         DescriptorHandle*& uavHandle,
         D3D12_CPU_DESCRIPTOR_HANDLE rtv,
+        D3D12_CPU_DESCRIPTOR_HANDLE uavCpuHandle,
         D3D12_RESOURCE_STATES& state,
         bool createRTV)
     {
@@ -1584,23 +1607,26 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
             return false;
         }
 
+        D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
+        uavDesc.Format = format;
+        uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+        uavDesc.Texture2D.MipSlice = 0;
+        uavDesc.Texture2D.PlaneSlice = 0;
+
         if (!uavHandle)
         {
             uavHandle = g_Engine->CbvSrvUavHeap()->RegisterTextureUAV(resource.Get(), format);
-        }
-        else
-        {
-            D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc{};
-            uavDesc.Format = format;
-            uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-            uavDesc.Texture2D.MipSlice = 0;
-            uavDesc.Texture2D.PlaneSlice = 0;
-            g_Engine->Device()->CreateUnorderedAccessView(resource.Get(), nullptr, &uavDesc, uavHandle->HandleCPU);
         }
         if (!uavHandle)
         {
             printf("FluidSystem: %ls のUAV登録に失敗しました\n", name);
             return false;
+        }
+        g_Engine->Device()->CreateUnorderedAccessView(resource.Get(), nullptr, &uavDesc, uavHandle->HandleCPU);
+
+        if (uavCpuHandle.ptr != 0)
+        {
+            g_Engine->Device()->CreateUnorderedAccessView(resource.Get(), nullptr, &uavDesc, uavCpuHandle);
         }
 
         if (createRTV)
@@ -1612,22 +1638,22 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         return true;
     };
 
-    if (!createTexture(DXGI_FORMAT_R32_FLOAT, L"FluidParticleDepth", m_particleDepthTexture, m_particleDepthSRV, m_particleDepthUAV, m_particleDepthRTV, m_particleDepthState, true))
+    if (!createTexture(DXGI_FORMAT_R32_FLOAT, L"FluidParticleDepth", m_particleDepthTexture, m_particleDepthSRV, m_particleDepthUAV, m_particleDepthRTV, m_particleDepthUavCpuHandle, m_particleDepthState, true))
     {
         return false;
     }
 
-    if (!createTexture(DXGI_FORMAT_R32_FLOAT, L"FluidSmoothedDepth", m_smoothedDepthTexture, m_smoothedDepthSRV, m_smoothedDepthUAV, m_smoothedDepthRTV, m_smoothedDepthState, true))
+    if (!createTexture(DXGI_FORMAT_R32_FLOAT, L"FluidSmoothedDepth", m_smoothedDepthTexture, m_smoothedDepthSRV, m_smoothedDepthUAV, m_smoothedDepthRTV, m_smoothedDepthUavCpuHandle, m_smoothedDepthState, true))
     {
         return false;
     }
 
-    if (!createTexture(DXGI_FORMAT_R8G8B8A8_UNORM, L"FluidNormal", m_normalTexture, m_normalSRV, m_normalUAV, {}, m_normalState, false))
+    if (!createTexture(DXGI_FORMAT_R8G8B8A8_UNORM, L"FluidNormal", m_normalTexture, m_normalSRV, m_normalUAV, {}, {}, m_normalState, false))
     {
         return false;
     }
 
-    if (!createTexture(DXGI_FORMAT_R16_FLOAT, L"FluidThickness", m_thicknessTexture, m_thicknessSRV, m_thicknessUAV, m_thicknessRTV, m_thicknessState, true))
+    if (!createTexture(DXGI_FORMAT_R16_FLOAT, L"FluidThickness", m_thicknessTexture, m_thicknessSRV, m_thicknessUAV, m_thicknessRTV, {}, m_thicknessState, true))
     {
         return false;
     }
@@ -1771,6 +1797,8 @@ bool FluidSystem::CreateSSFRResources(ID3D12Device* device, DXGI_FORMAT rtvForma
         pso.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
         pso.NumRenderTargets = 1;
         pso.RTVFormats[0] = rtvFormat;
+        // 深度を使用しないPSOなので、DSV形式はUNKNOWNにして空のDSVバインドを許可する
+        pso.DSVFormat = DXGI_FORMAT_UNKNOWN;
         pso.SampleDesc.Count = 1;
         pso.SampleDesc.Quality = 0;
 
@@ -1983,6 +2011,10 @@ void FluidSystem::DestroySSFRResources()
     m_sceneDepthState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
     m_sceneColorSRV = nullptr;
     m_sceneDepthSRV = nullptr;
+    m_ssfrCpuUavHeap.Reset();
+    m_ssfrCpuUavDescriptorSize = 0;
+    m_particleDepthUavCpuHandle = {};
+    m_smoothedDepthUavCpuHandle = {};
 
     m_particleRootSignature.Reset();
     m_particlePipelineState.Reset();
