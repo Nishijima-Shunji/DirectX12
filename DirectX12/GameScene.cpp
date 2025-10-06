@@ -26,10 +26,6 @@ bool GameScene::Init()
 {
     // === カメラ初期化 ===
     auto* camera = new Camera();
-    if (!camera || !camera->Init())
-    {
-        return false;
-    }
     g_Engine->RegisterObj<Camera>("Camera", camera);
 
     // === 流体系初期化 ===
