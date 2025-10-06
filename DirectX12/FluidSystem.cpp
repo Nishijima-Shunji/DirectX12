@@ -2186,32 +2186,39 @@ void FluidSystem::CreateGPUResources(ID3D12Device* device)
         return;
     }
 
-    // コンピュート用のルートシグネチャとPSO
-    CD3DX12_DESCRIPTOR_RANGE srvRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-    CD3DX12_DESCRIPTOR_RANGE uavRange0(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
-    CD3DX12_DESCRIPTOR_RANGE uavRange1(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
-    CD3DX12_DESCRIPTOR_RANGE uavRange2(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2);
-    CD3DX12_DESCRIPTOR_RANGE uavRange3(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 3);
+    // コンピュート用のルートシグネチャとPSOを構築する。
+    // それぞれのリソース種別に応じてテーブル／ルートディスクリプタを定義し、
+    // RootSignature の不整合による CreateComputePipelineState 失敗を避けるため、
+    // RegisterSpace や DescriptorRangeFlag を明示しておく。
+    CD3DX12_DESCRIPTOR_RANGE1 srvRange;
+    srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
 
-    CD3DX12_ROOT_PARAMETER params[7];
-    params[0].InitAsConstantBufferView(0);
-    params[1].InitAsConstantBufferView(1);
+    CD3DX12_DESCRIPTOR_RANGE1 uavRanges[4];
+    uavRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+    uavRanges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+    uavRanges[2].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+    uavRanges[3].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 3, 0, D3D12_DESCRIPTOR_RANGE_FLAG_DATA_STATIC);
+
+    CD3DX12_ROOT_PARAMETER1 params[7] = {};
+    params[0].InitAsConstantBufferView(0, 0, D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC);
+    params[1].InitAsConstantBufferView(1, 0, D3D12_ROOT_DESCRIPTOR_FLAG_DATA_STATIC);
     params[2].InitAsDescriptorTable(1, &srvRange);
-    params[3].InitAsDescriptorTable(1, &uavRange0);
-    params[4].InitAsDescriptorTable(1, &uavRange1);
-    params[5].InitAsDescriptorTable(1, &uavRange2);
-    params[6].InitAsDescriptorTable(1, &uavRange3);
+    params[3].InitAsDescriptorTable(1, &uavRanges[0]);
+    params[4].InitAsDescriptorTable(1, &uavRanges[1]);
+    params[5].InitAsDescriptorTable(1, &uavRanges[2]);
+    params[6].InitAsDescriptorTable(1, &uavRanges[3]);
 
-    CD3DX12_ROOT_SIGNATURE_DESC rootDesc;
-    rootDesc.Init(_countof(params), params, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
+    CD3DX12_VERSIONED_ROOT_SIGNATURE_DESC rootDesc;
+    rootDesc.Init_1_1(_countof(params), params, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_NONE);
 
     ComPtr<ID3DBlob> serialized;
     ComPtr<ID3DBlob> errors;
-    if (FAILED(D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, serialized.GetAddressOf(), errors.GetAddressOf())))
+    HRESULT hrSerialize = D3D12SerializeVersionedRootSignature(&rootDesc, serialized.GetAddressOf(), errors.GetAddressOf());
+    if (FAILED(hrSerialize))
     {
         if (errors)
         {
-            printf("Compute root signature error: %s\n", (char*)errors->GetBufferPointer());
+            printf("Compute root signature error: %s\n", static_cast<const char*>(errors->GetBufferPointer()));
         }
         return;
     }
