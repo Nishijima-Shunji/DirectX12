@@ -35,7 +35,7 @@ bool GameScene::Init()
         return false;
     }
 
-    m_fluid->Init(g_Engine->Device(), kBackBufferFormat, 4096, 128);
+    m_fluid->Init(g_Engine->Device(), kBackBufferFormat, 512, 128);
     m_fluid->UseGPU(false); // 安定性を優先してCPUでシミュレーション
     m_fluid->SetSimulationBounds(XMFLOAT3(-2.0f, 0.0f, -2.0f), XMFLOAT3(2.0f, 3.0f, 2.0f));
     m_fluid->SetWaterAppearance(
