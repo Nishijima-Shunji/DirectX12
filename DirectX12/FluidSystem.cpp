@@ -1,7 +1,9 @@
 #include "FluidSystem.h"
 #include "Camera.h"
 #include "Engine.h"
+#include "SphereMeshGenerator.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <random>
@@ -12,6 +14,23 @@ namespace
 {
     constexpr float kGravity = -9.8f;       // 重力加速度
     constexpr float kWallThickness = 0.0f;  // AABB扱いなので実体厚みは不要
+}
+
+namespace
+{
+    // 球メッシュ用の入力レイアウト定義
+    constexpr D3D12_INPUT_ELEMENT_DESC kSphereInputElements[] =
+    {
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "POSITION", 1, DXGI_FORMAT_R32G32B32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32_FLOAT,        1, 12, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+    };
+
+    constexpr D3D12_INPUT_ELEMENT_DESC kGridLineInputElements[] =
+    {
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    };
 }
 
 FluidSystem::FluidSystem()
@@ -38,20 +57,68 @@ bool FluidSystem::Init(ID3D12Device* device, const Bounds& initialBounds, UINT p
     {
         return false;
     }
-    m_pipelineState->SetInputLayout(ParticleVertex::InputLayout);
+    D3D12_INPUT_LAYOUT_DESC sphereLayout{};
+    sphereLayout.pInputElementDescs = kSphereInputElements;
+    sphereLayout.NumElements = _countof(kSphereInputElements);
+    m_pipelineState->SetInputLayout(sphereLayout);
     m_pipelineState->SetRootSignature(m_rootSignature->Get());
     m_pipelineState->SetVS(L"ParticleVS.cso");
     m_pipelineState->SetPS(L"ParticlePS.cso");
     m_pipelineState->SetDepthStencilFormat(DXGI_FORMAT_D32_FLOAT);
-    m_pipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT);
+    m_pipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
     if (!m_pipelineState->IsValid())
     {
         return false;
     }
 
-    size_t bufferSize = sizeof(ParticleVertex) * m_renderVertices.size();
-    m_vertexBuffer = std::make_unique<VertexBuffer>(bufferSize, sizeof(ParticleVertex), m_renderVertices.data());
-    if (!m_vertexBuffer || !m_vertexBuffer->IsValid())
+    MeshData sphereMesh = CreateLowPolySphere(1.0f, 1);
+    std::vector<SphereVertex> sphereVertices;
+    sphereVertices.reserve(sphereMesh.vertices.size());
+    for (const auto& v : sphereMesh.vertices)
+    {
+        SphereVertex sv{};
+        sv.position = v.Position;
+        sv.normal = v.Normal;
+        sphereVertices.push_back(sv);
+    }
+
+    const size_t sphereVBSize = sphereVertices.size() * sizeof(SphereVertex);
+    m_sphereVertexBuffer = std::make_unique<VertexBuffer>(sphereVBSize, sizeof(SphereVertex), sphereVertices.data());
+    if (!m_sphereVertexBuffer || !m_sphereVertexBuffer->IsValid())
+    {
+        return false;
+    }
+
+    const size_t sphereIBSize = sphereMesh.indices.size() * sizeof(uint32_t);
+    m_sphereIndexBuffer = std::make_unique<IndexBuffer>(sphereIBSize, sphereMesh.indices.data());
+    if (!m_sphereIndexBuffer || !m_sphereIndexBuffer->IsValid())
+    {
+        return false;
+    }
+    m_indexCount = static_cast<UINT>(sphereMesh.indices.size());
+
+    size_t instanceBufferSize = sizeof(ParticleInstance) * m_instances.size();
+    m_instanceBuffer = std::make_unique<VertexBuffer>(instanceBufferSize, sizeof(ParticleInstance), m_instances.data());
+    if (!m_instanceBuffer || !m_instanceBuffer->IsValid())
+    {
+        return false;
+    }
+
+    m_gridPipelineState = std::make_unique<PipelineState>();
+    if (!m_gridPipelineState)
+    {
+        return false;
+    }
+    D3D12_INPUT_LAYOUT_DESC gridLayout{};
+    gridLayout.pInputElementDescs = kGridLineInputElements;
+    gridLayout.NumElements = _countof(kGridLineInputElements);
+    m_gridPipelineState->SetInputLayout(gridLayout);
+    m_gridPipelineState->SetRootSignature(m_rootSignature->Get());
+    m_gridPipelineState->SetVS(L"GridLineVS.cso");
+    m_gridPipelineState->SetPS(L"GridLinePS.cso");
+    m_gridPipelineState->SetDepthStencilFormat(DXGI_FORMAT_D32_FLOAT);
+    m_gridPipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE);
+    if (!m_gridPipelineState->IsValid())
     {
         return false;
     }
@@ -72,8 +139,8 @@ void FluidSystem::InitializeParticles(UINT particleCount)
 {
     m_particles.clear();
     m_particles.resize(particleCount);
-    m_renderVertices.clear();
-    m_renderVertices.resize(particleCount);
+    m_instances.clear();
+    m_instances.resize(particleCount);
     m_neighborForces.assign(particleCount, DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f));
 
     // 初期配置は境界内に均等配置し、軽い乱数でばらけさせる
@@ -110,7 +177,8 @@ void FluidSystem::InitializeParticles(UINT particleCount)
                 particle.velocity = XMFLOAT3(0.0f, 0.0f, 0.0f);
                 m_particles[index] = particle;
 
-                m_renderVertices[index].position = particle.position;
+                m_instances[index].position = particle.position;
+                m_instances[index].radius = m_supportRadius;
                 ++index;
             }
         }
@@ -131,7 +199,7 @@ void FluidSystem::Update(float deltaTime)
     }
     for (size_t i = 0; i < m_particles.size(); ++i)
     {
-        m_grid.Insert(i, m_particles[i].position);
+        m_grid.Insert(i, m_particles[i].position); // グリッドでセル分割し近傍候補を限定することで計算負荷を抑える
         m_neighborForces[i] = XMFLOAT3(0.0f, 0.0f, 0.0f);
     }
 
@@ -166,7 +234,7 @@ void FluidSystem::Update(float deltaTime)
             const float weight = (m_supportRadius - dist) / m_supportRadius;
             const float strength = weight * weight; // 滑らかに減衰させる
             const XMVECTOR dir = XMVectorScale(diff, 1.0f / dist);
-            correction = XMVectorAdd(correction, XMVectorScale(dir, strength));
+            correction = XMVectorAdd(correction, XMVectorScale(dir, strength)); // セル内の粒子数が多いときはこの内積計算が処理負荷の主因
         }
 
         XMStoreFloat3(&m_neighborForces[i], correction);
@@ -197,7 +265,8 @@ void FluidSystem::Update(float deltaTime)
         ResolveCollisions(particle);
     }
 
-    UpdateVertexBuffer();
+    UpdateInstanceBuffer();
+    UpdateGridLines();
 }
 
 void FluidSystem::ResolveCollisions(Particle& particle) const
@@ -261,30 +330,123 @@ void FluidSystem::ResolveCollisions(Particle& particle) const
     }
 }
 
-void FluidSystem::UpdateVertexBuffer()
+void FluidSystem::UpdateInstanceBuffer()
 {
     for (size_t i = 0; i < m_particles.size(); ++i)
     {
-        m_renderVertices[i].position = m_particles[i].position;
+        m_instances[i].position = m_particles[i].position;
+        m_instances[i].radius = m_supportRadius; // 影響範囲の大きさで描画する
     }
 
-    if (!m_vertexBuffer)
+    if (!m_instanceBuffer)
     {
         return;
     }
 
     void* mapped = nullptr;
-    auto resource = m_vertexBuffer->GetResource();
+    auto resource = m_instanceBuffer->GetResource();
     if (resource && SUCCEEDED(resource->Map(0, nullptr, &mapped)))
     {
-        memcpy(mapped, m_renderVertices.data(), sizeof(ParticleVertex) * m_renderVertices.size());
+        memcpy(mapped, m_instances.data(), sizeof(ParticleInstance) * m_instances.size());
+        resource->Unmap(0, nullptr);
+    }
+}
+
+void FluidSystem::UpdateGridLines()
+{
+    m_gridLineVertices.clear();
+    m_gridLineVertexCount = 0;
+
+    std::vector<XMFLOAT3> cellMins;
+    m_grid.CollectActiveCellMins(cellMins);
+    if (cellMins.empty())
+    {
+        return;
+    }
+
+    const float cellSize = m_grid.CellSize();
+    m_gridLineVertices.reserve(cellMins.size() * 24);
+
+    auto addEdge = [this](const XMFLOAT3& a, const XMFLOAT3& b)
+    {
+        GridLineVertex v0{ a };
+        GridLineVertex v1{ b };
+        m_gridLineVertices.push_back(v0);
+        m_gridLineVertices.push_back(v1);
+    };
+
+    for (const auto& minCorner : cellMins)
+    {
+        const XMFLOAT3 maxCorner{
+            minCorner.x + cellSize,
+            minCorner.y + cellSize,
+            minCorner.z + cellSize };
+
+        const std::array<XMFLOAT3, 8> corners =
+        {
+            XMFLOAT3{ minCorner.x, minCorner.y, minCorner.z },
+            XMFLOAT3{ maxCorner.x, minCorner.y, minCorner.z },
+            XMFLOAT3{ maxCorner.x, maxCorner.y, minCorner.z },
+            XMFLOAT3{ minCorner.x, maxCorner.y, minCorner.z },
+            XMFLOAT3{ minCorner.x, minCorner.y, maxCorner.z },
+            XMFLOAT3{ maxCorner.x, minCorner.y, maxCorner.z },
+            XMFLOAT3{ maxCorner.x, maxCorner.y, maxCorner.z },
+            XMFLOAT3{ minCorner.x, maxCorner.y, maxCorner.z }
+        };
+
+        // 下面
+        addEdge(corners[0], corners[1]);
+        addEdge(corners[1], corners[2]);
+        addEdge(corners[2], corners[3]);
+        addEdge(corners[3], corners[0]);
+
+        // 上面
+        addEdge(corners[4], corners[5]);
+        addEdge(corners[5], corners[6]);
+        addEdge(corners[6], corners[7]);
+        addEdge(corners[7], corners[4]);
+
+        // 側面
+        addEdge(corners[0], corners[4]);
+        addEdge(corners[1], corners[5]);
+        addEdge(corners[2], corners[6]);
+        addEdge(corners[3], corners[7]);
+    }
+
+    m_gridLineVertexCount = static_cast<UINT>(m_gridLineVertices.size());
+    if (m_gridLineVertexCount == 0)
+    {
+        return;
+    }
+
+    const size_t requiredVertices = m_gridLineVertices.size();
+    if (!m_gridLineBuffer || requiredVertices > m_gridLineCapacity)
+    {
+        size_t bufferSize = sizeof(GridLineVertex) * requiredVertices;
+        m_gridLineBuffer = std::make_unique<VertexBuffer>(bufferSize, sizeof(GridLineVertex), m_gridLineVertices.data());
+        if (!m_gridLineBuffer || !m_gridLineBuffer->IsValid())
+        {
+            m_gridLineBuffer.reset();
+            m_gridLineCapacity = 0;
+            m_gridLineVertexCount = 0;
+            return;
+        }
+        m_gridLineCapacity = requiredVertices;
+        return;
+    }
+
+    void* mapped = nullptr;
+    auto resource = m_gridLineBuffer->GetResource();
+    if (resource && SUCCEEDED(resource->Map(0, nullptr, &mapped)))
+    {
+        memcpy(mapped, m_gridLineVertices.data(), sizeof(GridLineVertex) * requiredVertices);
         resource->Unmap(0, nullptr);
     }
 }
 
 void FluidSystem::Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera)
 {
-    if (!cmd || !m_vertexBuffer || !m_pipelineState || !m_rootSignature)
+    if (!cmd || !m_instanceBuffer || !m_pipelineState || !m_rootSignature)
     {
         return;
     }
@@ -302,13 +464,27 @@ void FluidSystem::Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera)
     constant->Proj = camera.GetProjMatrix();
 
     cmd->SetGraphicsRootSignature(m_rootSignature->Get());
-    cmd->SetPipelineState(m_pipelineState->Get());
     cmd->SetGraphicsRootConstantBufferView(0, cb->GetAddress());
 
-    auto vbView = m_vertexBuffer->View();
-    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
-    cmd->IASetVertexBuffers(0, 1, &vbView);
-    cmd->DrawInstanced(static_cast<UINT>(m_particles.size()), 1, 0, 0);
+    if (m_sphereVertexBuffer && m_sphereIndexBuffer && m_indexCount > 0)
+    {
+        cmd->SetPipelineState(m_pipelineState->Get());
+        auto vbViews = std::array<D3D12_VERTEX_BUFFER_VIEW, 2>{ m_sphereVertexBuffer->View(), m_instanceBuffer->View() };
+        auto ibView = m_sphereIndexBuffer->View();
+        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        cmd->IASetVertexBuffers(0, static_cast<UINT>(vbViews.size()), vbViews.data());
+        cmd->IASetIndexBuffer(&ibView);
+        cmd->DrawIndexedInstanced(m_indexCount, static_cast<UINT>(m_particles.size()), 0, 0, 0);
+    }
+
+    if (m_gridPipelineState && m_gridPipelineState->IsValid() && m_gridLineBuffer && m_gridLineVertexCount > 0)
+    {
+        cmd->SetPipelineState(m_gridPipelineState->Get());
+        auto gridVb = m_gridLineBuffer->View();
+        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_LINELIST);
+        cmd->IASetVertexBuffers(0, 1, &gridVb);
+        cmd->DrawInstanced(m_gridLineVertexCount, 1, 0, 0);
+    }
 }
 
 void FluidSystem::SetBounds(const Bounds& bounds)
@@ -318,7 +494,8 @@ void FluidSystem::SetBounds(const Bounds& bounds)
     {
         ResolveCollisions(particle);
     }
-    UpdateVertexBuffer();
+    UpdateInstanceBuffer();
+    UpdateGridLines();
 }
 
 void FluidSystem::AdjustWall(const XMFLOAT3& direction, float amount)
@@ -372,5 +549,6 @@ void FluidSystem::AdjustWall(const XMFLOAT3& direction, float amount)
     {
         ResolveCollisions(particle);
     }
-    UpdateVertexBuffer();
+    UpdateInstanceBuffer();
+    UpdateGridLines();
 }

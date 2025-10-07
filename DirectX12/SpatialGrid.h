@@ -12,6 +12,7 @@ public:
     float CellSize() const { return m_cellSize; }
     void Insert(size_t index, const DirectX::XMFLOAT3& pos);
     void Query(const DirectX::XMFLOAT3& center, float radius, std::vector<size_t>& results) const;
+    void CollectActiveCellMins(std::vector<DirectX::XMFLOAT3>& outCellMins) const;
 
 private:
     struct Int3 {

@@ -39,3 +39,16 @@ void SpatialGrid::Query(const DirectX::XMFLOAT3& center, float radius, std::vect
         }
     }
 }
+
+void SpatialGrid::CollectActiveCellMins(std::vector<DirectX::XMFLOAT3>& outCellMins) const {
+    outCellMins.clear();
+    outCellMins.reserve(m_cells.size());
+    for (const auto& cell : m_cells) {
+        const Int3& key = cell.first;
+        DirectX::XMFLOAT3 minCorner{
+            static_cast<float>(key.x) * m_cellSize,
+            static_cast<float>(key.y) * m_cellSize,
+            static_cast<float>(key.z) * m_cellSize };
+        outCellMins.push_back(minCorner); // グリッド境界の最小点を保持して描画ライン生成に使う
+    }
+}

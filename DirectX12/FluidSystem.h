@@ -1,6 +1,7 @@
 #pragma once
 #include "ConstantBuffer.h"
 #include "Engine.h"
+#include "IndexBuffer.h"
 #include "PipelineState.h"
 #include "RootSignature.h"
 #include "SharedStruct.h"
@@ -50,14 +51,41 @@ private:
 
     void InitializeParticles(UINT particleCount);
     void ResolveCollisions(Particle& particle) const;
-    void UpdateVertexBuffer();
+    void UpdateInstanceBuffer();
+    void UpdateGridLines();
+
+    struct SphereVertex
+    {
+        DirectX::XMFLOAT3 position; // 球メッシュの頂点位置
+        DirectX::XMFLOAT3 normal;   // 球メッシュの法線
+    };
+
+    struct ParticleInstance
+    {
+        DirectX::XMFLOAT3 position; // 粒子中心位置
+        float radius;               // 描画半径
+    };
+
+    struct GridLineVertex
+    {
+        DirectX::XMFLOAT3 position; // グリッド境界線の頂点位置
+    };
 
     std::vector<Particle> m_particles;               // 流体粒子
-    std::vector<ParticleVertex> m_renderVertices;    // 描画用頂点
-    std::unique_ptr<VertexBuffer> m_vertexBuffer;    // 粒子描画用VB
+    std::vector<ParticleInstance> m_instances;       // インスタンシング用データ
+    std::unique_ptr<VertexBuffer> m_instanceBuffer;  // 粒子描画用インスタンスVB
+    std::unique_ptr<VertexBuffer> m_sphereVertexBuffer; // 球メッシュ頂点VB
+    std::unique_ptr<IndexBuffer> m_sphereIndexBuffer;   // 球メッシュIB
+    UINT m_indexCount = 0;                              // 球メッシュのインデックス数
     std::unique_ptr<RootSignature> m_rootSignature;  // 粒子描画用ルートシグネチャ
     std::unique_ptr<PipelineState> m_pipelineState;  // 粒子描画用PSO
+    std::unique_ptr<PipelineState> m_gridPipelineState; // グリッド描画用PSO
     std::array<std::unique_ptr<ConstantBuffer>, Engine::FRAME_BUFFER_COUNT> m_constantBuffers; // 定数バッファ
+
+    std::vector<GridLineVertex> m_gridLineVertices;  // グリッド線分頂点
+    std::unique_ptr<VertexBuffer> m_gridLineBuffer;   // グリッド線分用VB
+    size_t m_gridLineCapacity = 0;                    // グリッド線分VBの収容数
+    UINT m_gridLineVertexCount = 0;                   // 描画に使用する頂点数
 
     Bounds m_bounds{};             // 現在の境界
     DirectX::XMMATRIX m_world;     // 粒子全体のワールド行列
