@@ -22,6 +22,7 @@ private:
 public:
     DebugCube();
     ~DebugCube();
+    void SetWorldMatrix(const DirectX::XMMATRIX& world);
     void Update(float deltaTime) override;
     void Render(ID3D12GraphicsCommandList* cmd) override;
 };

@@ -58,6 +58,11 @@ DebugCube::~DebugCube() {
     }
 }
 
+void DebugCube::SetWorldMatrix(const DirectX::XMMATRIX& world)
+{
+    m_world = world;
+}
+
 void DebugCube::Update(float /*deltaTime*/) {
     // カメラの行列を定数バッファへ設定
     auto cam = g_Engine->GetObj<Camera>("Camera");

@@ -4,101 +4,94 @@
 #include "SharedStruct.h"
 #include <algorithm>
 
-
 using namespace DirectX;
 
-Camera::Camera() {
-	Init();
+Camera::Camera()
+{
+        Init();
 }
 
-bool Camera::Init() {
-	// s—ñ•ÏŠ·
-	eyePos = DirectX::XMVectorSet(0.0f, 0.0f, 2.0f, 0.0f);		// ‹“_‚ÌˆÊ’u
-	targetPos = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);	// ‹“_‚ğŒü‚¯‚éÀ•W
-	upward = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);		// ã•ûŒü‚ğ•\‚·ƒxƒNƒgƒ‹
-	fov = DirectX::XMConvertToRadians(75.0);
-	// ‹–ìŠp
-	aspect = static_cast<float>(WINDOW_WIDTH) / static_cast<float>(WINDOW_HEIGHT);		// ƒAƒXƒyƒNƒg”ä
-
-	return 0;
+bool Camera::Init()
+{
+        // è¡Œåˆ—åˆæœŸåŒ–ï¼ˆè¦–ç‚¹ã¨å‘ãï¼‰
+        eyePos = DirectX::XMVectorSet(0.0f, 0.0f, 2.0f, 0.0f);          // è¦–ç‚¹ã®ä½ç½®
+        targetPos = DirectX::XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);       // æ³¨è¦–ç‚¹
+        upward = DirectX::XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);          // ä¸Šæ–¹å‘ãƒ™ã‚¯ãƒˆãƒ«
+        fov = DirectX::XMConvertToRadians(75.0);
+        aspect = static_cast<float>(WINDOW_WIDTH) / static_cast<float>(WINDOW_HEIGHT); // ã‚¢ã‚¹ãƒšã‚¯ãƒˆæ¯”
+        return 0;
 }
 
-void Camera::Update(float deltaTime) {
-	// ‰ñ“]Špiƒˆ[Eƒsƒbƒ`j
-	static float yaw = 0.0f;
-	static float pitch = 0.0f;
-	static bool isDragging = false;
-	static POINT lastMouse;
+void Camera::Update(float /*deltaTime*/)
+{
+        // ã‚«ãƒ¡ãƒ©å›è»¢ï¼ˆãƒ¨ãƒ¼ãƒ»ãƒ”ãƒƒãƒï¼‰ã¯å³ãƒ‰ãƒ©ãƒƒã‚°ã§åˆ¶å¾¡
+        static float yaw = 0.0f;
+        static float pitch = 0.0f;
+        static bool isDragging = false;
+        static POINT lastMouse;
 
-	// ƒ}ƒEƒX‰Eƒ{ƒ^ƒ“‚Å‰ñ“]
-	if (GetAsyncKeyState(VK_RBUTTON) & 0x8000) {
-		POINT curMouse;
-		GetCursorPos(&curMouse);
+        bool rightPressed = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+        if (rightPressed) {
+                POINT curMouse;
+                GetCursorPos(&curMouse);
+                if (!isDragging) {
+                        lastMouse = curMouse;
+                        isDragging = true;
+                }
 
-		if (!isDragging) {
-			// ‰‰ñ‚¾‚¯ƒ}ƒEƒXˆÊ’u‚ğƒZƒbƒgiƒhƒ‰ƒbƒOŠJnj
-			lastMouse = curMouse;
-			isDragging = true;
-		}
+                float dx = static_cast<float>(curMouse.x - lastMouse.x) * 0.005f;
+                float dy = static_cast<float>(curMouse.y - lastMouse.y) * 0.005f;
 
-		float dx = static_cast<float>(curMouse.x - lastMouse.x) * 0.005f;
-		float dy = static_cast<float>(curMouse.y - lastMouse.y) * 0.005f;
+                yaw -= dx;
+                pitch -= dy;
+                pitch = std::clamp(pitch, -XM_PIDIV2 + 0.01f, XM_PIDIV2 - 0.01f);
 
-		// ƒ}ƒEƒX‚Ì“®‚«‚É‰‚¶‚Äƒˆ[Eƒsƒbƒ`‚ğXVi+‚Å”½“]ó‘Ôj
-		yaw -= dx;
-		pitch -= dy;
+                lastMouse = curMouse;
+        } else {
+                isDragging = false;
+        }
 
-		pitch = std::clamp(pitch, -XM_PIDIV2 + 0.01f, XM_PIDIV2 - 0.01f);
+        // å›è»¢è¡Œåˆ—ã‹ã‚‰å‰æ–¹ãƒ»å³æ–¹å‘ãƒ™ã‚¯ãƒˆãƒ«ã‚’ç®—å‡º
+        XMMATRIX rotMat = XMMatrixRotationRollPitchYaw(pitch, yaw, 0);
+        XMVECTOR forward = XMVector3TransformNormal(XMVectorSet(0, 0, -1, 0), rotMat);
+        XMVECTOR right = XMVector3TransformNormal(XMVectorSet(1, 0, 0, 0), rotMat);
 
-		lastMouse = curMouse;
-	}
-	else {
-		isDragging = false; // ƒ{ƒ^ƒ“—£‚µ‚½‚çƒhƒ‰ƒbƒOI—¹
-	}
+        // å³ã‚¯ãƒªãƒƒã‚¯ä¸­ã®ã¿ WASDQE ã§ã‚«ãƒ¡ãƒ©ç§»å‹•
+        if (rightPressed) {
+                if (GetAsyncKeyState('W') & 0x8000) eyePos += forward * 0.05f;
+                if (GetAsyncKeyState('S') & 0x8000) eyePos -= forward * 0.05f;
+                if (GetAsyncKeyState('A') & 0x8000) eyePos -= right * 0.05f;
+                if (GetAsyncKeyState('D') & 0x8000) eyePos += right * 0.05f;
+                if (GetAsyncKeyState('E') & 0x8000) eyePos += XMVectorSet(0, 1, 0, 0) * 0.05f;
+                if (GetAsyncKeyState('Q') & 0x8000) eyePos -= XMVectorSet(0, 1, 0, 0) * 0.05f;
+        }
 
-	// ‰ñ“]s—ñiƒˆ[¨ƒsƒbƒ`j
-	XMMATRIX rotMat = XMMatrixRotationRollPitchYaw(pitch, yaw, 0);
-	XMVECTOR forward = XMVector3TransformNormal(XMVectorSet(0, 0, -1, 0), rotMat);
-	XMVECTOR right = XMVector3TransformNormal(XMVectorSet(1, 0, 0, 0), rotMat);
+        // æ³¨è¦–ç‚¹æ›´æ–°
+        targetPos = XMVectorAdd(eyePos, forward);
 
-	// ˆÚ“®
-	if (GetAsyncKeyState('W') & 0x8000) eyePos += forward * 0.05f;
-	if (GetAsyncKeyState('S') & 0x8000) eyePos -= forward * 0.05f;
-	if (GetAsyncKeyState('A') & 0x8000) eyePos -= right * 0.05f;
-	if (GetAsyncKeyState('D') & 0x8000) eyePos += right * 0.05f;
-	if (GetAsyncKeyState('E') & 0x8000) eyePos += XMVectorSet(0, 1, 0, 0) * 0.05f;
-	if (GetAsyncKeyState('Q') & 0x8000) eyePos -= XMVectorSet(0, 1, 0, 0) * 0.05f;
-
-	// ƒ^[ƒQƒbƒg = ‘O•û
-	targetPos = XMVectorAdd(eyePos, forward);
-
-	// ƒrƒ…[EƒvƒƒWƒFƒNƒVƒ‡ƒ“XV
-	viewMatrix = XMMatrixLookAtRH(eyePos, targetPos, XMVectorSet(0, 1, 0, 0));
-	projMatrix = XMMatrixPerspectiveFovRH(fov, aspect, 0.1f, 1000.0f);
-
+        // ãƒ“ãƒ¥ãƒ¼ãƒ»ãƒ—ãƒ­ã‚¸ã‚§ã‚¯ã‚·ãƒ§ãƒ³æ›´æ–°
+        viewMatrix = XMMatrixLookAtRH(eyePos, targetPos, XMVectorSet(0, 1, 0, 0));
+        projMatrix = XMMatrixPerspectiveFovRH(fov, aspect, 0.1f, 1000.0f);
 }
 
 DirectX::XMFLOAT4X4 Camera::GetInvViewProj() const
 {
-	// View~Proj s—ñ‚ğŠ|‚¯‚é
-	XMMATRIX view = GetViewMatrix();
-	XMMATRIX proj = GetProjMatrix();
-	XMMATRIX viewProj = XMMatrixMultiply(view, proj);
+        XMMATRIX view = GetViewMatrix();
+        XMMATRIX proj = GetProjMatrix();
+        XMMATRIX viewProj = XMMatrixMultiply(view, proj);
 
-	// ‹ts—ñ‚ğŒvZ
-	XMVECTOR det;
-	XMMATRIX invVP = XMMatrixInverse(&det, viewProj);
+        XMVECTOR det;
+        XMMATRIX invVP = XMMatrixInverse(&det, viewProj);
 
-	// Ši”[‚µ‚Ä•Ô‚·
-	DirectX::XMFLOAT4X4 out;
-	XMStoreFloat4x4(&out, invVP);
-	return out;
+        DirectX::XMFLOAT4X4 out;
+        XMStoreFloat4x4(&out, invVP);
+        return out;
 }
 
 DirectX::XMFLOAT3 Camera::GetPosition()
 {
-	XMVECTOR eye = GetEyePos();
-	DirectX::XMFLOAT3 pos;
-	XMStoreFloat3(&pos, eye);
-	return pos;
+        XMVECTOR eye = GetEyePos();
+        DirectX::XMFLOAT3 pos;
+        XMStoreFloat3(&pos, eye);
+        return pos;
 }
