@@ -3,6 +3,7 @@
 #include "Engine.h"
 #include "Camera.h"
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -217,39 +218,56 @@ void GameScene::HandleWallControl(Camera& camera, float deltaTime)
         return;
     }
 
-    XMVECTOR forward = XMVector3Normalize(XMVectorSubtract(camera.GetTargetPos(), camera.GetEyePos()));
-    forward = XMVectorSet(XMVectorGetX(forward), 0.0f, XMVectorGetZ(forward), 0.0f);
-    if (XMVector3LengthSq(forward).m128_f32[0] < 1e-6f)
-    {
-        forward = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-    }
-    forward = XMVector3Normalize(forward);
+    float pushPull = 0.0f;
+    if (GetAsyncKeyState('W') & 0x8000) pushPull += 1.0f;
+    if (GetAsyncKeyState('S') & 0x8000) pushPull -= 1.0f;
 
-    XMVECTOR right = XMVector3Cross(forward, XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f));
+    float slide = 0.0f;
+    if (GetAsyncKeyState('D') & 0x8000) slide += 1.0f;
+    if (GetAsyncKeyState('A') & 0x8000) slide -= 1.0f;
+
+    if (std::fabs(pushPull) < 1e-3f && std::fabs(slide) < 1e-3f)
+    {
+        return;
+    }
+
+    // カメラ側から壁へ向かう水平方向ベクトルを算出
+    XMVECTOR viewToCamera = XMVectorSubtract(camera.GetEyePos(), camera.GetTargetPos());
+    viewToCamera = XMVectorSet(XMVectorGetX(viewToCamera), 0.0f, XMVectorGetZ(viewToCamera), 0.0f);
+    if (XMVector3LengthSq(viewToCamera).m128_f32[0] < 1e-6f)
+    {
+        viewToCamera = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+    }
+    viewToCamera = XMVector3Normalize(viewToCamera);
+
+    XMVECTOR right = XMVector3Cross(XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f), viewToCamera);
     if (XMVector3LengthSq(right).m128_f32[0] < 1e-6f)
     {
         right = XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f);
     }
     right = XMVector3Normalize(right);
 
-    XMVECTOR move = XMVectorZero();
-    if (GetAsyncKeyState('W') & 0x8000) move = XMVectorAdd(move, forward);
-    if (GetAsyncKeyState('S') & 0x8000) move = XMVectorSubtract(move, forward);
-    if (GetAsyncKeyState('D') & 0x8000) move = XMVectorAdd(move, right);
-    if (GetAsyncKeyState('A') & 0x8000) move = XMVectorSubtract(move, right);
-
-    if (XMVector3LengthSq(move).m128_f32[0] < 1e-6f)
+    if (!m_fluid)
     {
         return;
     }
 
-    move = XMVector3Normalize(move) * (m_wallMoveSpeed * deltaTime);
-    XMFLOAT3 delta;
-    XMStoreFloat3(&delta, move);
+    const float moveAmount = m_wallMoveSpeed * deltaTime;
 
-    if (m_fluid)
+    if (std::fabs(pushPull) >= 1e-3f)
     {
-        m_fluid->MoveBounds(delta);
+        XMFLOAT3 direction{};
+        XMStoreFloat3(&direction, viewToCamera);
+        // 観測中の壁を押したり引いたりする
+        m_fluid->AdjustWall(direction, pushPull * moveAmount);
+    }
+
+    if (std::fabs(slide) >= 1e-3f)
+    {
+        XMFLOAT3 direction{};
+        XMStoreFloat3(&direction, right);
+        // 右方向ベクトルに沿って側面の壁も制御する
+        m_fluid->AdjustWall(direction, slide * moveAmount);
     }
 }
 

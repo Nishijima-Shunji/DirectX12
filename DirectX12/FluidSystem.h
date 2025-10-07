@@ -4,6 +4,7 @@
 #include "PipelineState.h"
 #include "RootSignature.h"
 #include "SharedStruct.h"
+#include "SpatialGrid.h"
 #include "VertexBuffer.h"
 #include <DirectXMath.h>
 #include <array>
@@ -30,7 +31,7 @@ public:
     void Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera);
 
     void SetBounds(const Bounds& bounds);
-    void MoveBounds(const DirectX::XMFLOAT3& delta);
+    void AdjustWall(const DirectX::XMFLOAT3& direction, float amount); // 左クリック操作に合わせて壁を押し引きする
     const Bounds& GetBounds() const { return m_bounds; }
 
 private:
@@ -63,4 +64,11 @@ private:
     float m_particleRadius = 0.05f; // 粒子半径
     float m_restitution = 0.4f;     // 壁衝突時の反発係数
     float m_drag = 0.1f;            // 簡易減衰係数
+    float m_supportRadius = 0.18f;  // 粒子同士の相互作用半径
+    float m_interactionStrength = 8.0f; // 粒子押し戻し力の係数
+    float m_maxVelocity = 6.0f;     // 速度クランプ値
+
+    SpatialGrid m_grid;                                     // 近傍探索用グリッド
+    std::vector<size_t> m_neighborIndices;                 // 近傍粒子インデックス一時バッファ
+    std::vector<DirectX::XMFLOAT3> m_neighborForces;       // 粒子間相互作用の蓄積結果
 };

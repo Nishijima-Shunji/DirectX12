@@ -16,6 +16,7 @@ namespace
 
 FluidSystem::FluidSystem()
     : m_world(XMMatrixIdentity())
+    , m_grid(m_supportRadius)
 {
 }
 
@@ -73,6 +74,7 @@ void FluidSystem::InitializeParticles(UINT particleCount)
     m_particles.resize(particleCount);
     m_renderVertices.clear();
     m_renderVertices.resize(particleCount);
+    m_neighborForces.assign(particleCount, DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f));
 
     // 初期配置は境界内に均等配置し、軽い乱数でばらけさせる
     std::mt19937 rng{ 12345u };
@@ -121,12 +123,72 @@ void FluidSystem::Update(float deltaTime)
     const float gravityStep = kGravity * dt;
     const float dragFactor = std::clamp(1.0f - m_drag * dt, 0.0f, 1.0f);
 
-    for (auto& particle : m_particles)
+    // 近傍検索バッファを初期化し、粒子間の押し戻し量を算出
+    m_grid.Clear();
+    if (m_neighborForces.size() != m_particles.size())
     {
+        m_neighborForces.assign(m_particles.size(), XMFLOAT3(0.0f, 0.0f, 0.0f));
+    }
+    for (size_t i = 0; i < m_particles.size(); ++i)
+    {
+        m_grid.Insert(i, m_particles[i].position);
+        m_neighborForces[i] = XMFLOAT3(0.0f, 0.0f, 0.0f);
+    }
+
+    for (size_t i = 0; i < m_particles.size(); ++i)
+    {
+        const auto& particle = m_particles[i];
+        m_grid.Query(particle.position, m_supportRadius, m_neighborIndices);
+
+        XMVECTOR correction = XMVectorZero();
+        const XMVECTOR selfPos = XMLoadFloat3(&particle.position);
+        for (size_t neighborIndex : m_neighborIndices)
+        {
+            if (neighborIndex == i)
+            {
+                continue;
+            }
+
+            const XMVECTOR neighborPos = XMLoadFloat3(&m_particles[neighborIndex].position);
+            const XMVECTOR diff = XMVectorSubtract(selfPos, neighborPos);
+            const float distSq = XMVectorGetX(XMVector3LengthSq(diff));
+            if (distSq < 1e-8f)
+            {
+                continue;
+            }
+
+            const float dist = std::sqrt(distSq);
+            if (dist >= m_supportRadius)
+            {
+                continue;
+            }
+
+            const float weight = (m_supportRadius - dist) / m_supportRadius;
+            const float strength = weight * weight; // 滑らかに減衰させる
+            const XMVECTOR dir = XMVectorScale(diff, 1.0f / dist);
+            correction = XMVectorAdd(correction, XMVectorScale(dir, strength));
+        }
+
+        XMStoreFloat3(&m_neighborForces[i], correction);
+    }
+
+    for (size_t i = 0; i < m_particles.size(); ++i)
+    {
+        auto& particle = m_particles[i];
+
         particle.velocity.y += gravityStep;
+
+        particle.velocity.x += m_neighborForces[i].x * m_interactionStrength * dt;
+        particle.velocity.y += m_neighborForces[i].y * m_interactionStrength * dt;
+        particle.velocity.z += m_neighborForces[i].z * m_interactionStrength * dt;
+
         particle.velocity.x *= dragFactor;
         particle.velocity.y *= dragFactor;
         particle.velocity.z *= dragFactor;
+
+        particle.velocity.x = std::clamp(particle.velocity.x, -m_maxVelocity, m_maxVelocity);
+        particle.velocity.y = std::clamp(particle.velocity.y, -m_maxVelocity, m_maxVelocity);
+        particle.velocity.z = std::clamp(particle.velocity.z, -m_maxVelocity, m_maxVelocity);
 
         particle.position.x += particle.velocity.x * dt;
         particle.position.y += particle.velocity.y * dt;
@@ -259,20 +321,56 @@ void FluidSystem::SetBounds(const Bounds& bounds)
     UpdateVertexBuffer();
 }
 
-void FluidSystem::MoveBounds(const XMFLOAT3& delta)
+void FluidSystem::AdjustWall(const XMFLOAT3& direction, float amount)
 {
-    m_bounds.min.x += delta.x;
-    m_bounds.min.y += delta.y;
-    m_bounds.min.z += delta.z;
-    m_bounds.max.x += delta.x;
-    m_bounds.max.y += delta.y;
-    m_bounds.max.z += delta.z;
+    if (std::fabs(amount) < 1e-6f)
+    {
+        return;
+    }
+
+    const float absX = std::fabs(direction.x);
+    const float absZ = std::fabs(direction.z);
+    if (absX < 1e-4f && absZ < 1e-4f)
+    {
+        return;
+    }
+
+    const float minExtent = m_particleRadius * 4.0f; // 壁間の最小距離を確保
+
+    if (absX >= absZ)
+    {
+        if (direction.x >= 0.0f)
+        {
+            float newMax = m_bounds.max.x - amount;
+            newMax = std::max(newMax, m_bounds.min.x + minExtent);
+            m_bounds.max.x = newMax;
+        }
+        else
+        {
+            float newMin = m_bounds.min.x + amount;
+            newMin = std::min(newMin, m_bounds.max.x - minExtent);
+            m_bounds.min.x = newMin;
+        }
+    }
+    else
+    {
+        if (direction.z >= 0.0f)
+        {
+            float newMax = m_bounds.max.z - amount;
+            newMax = std::max(newMax, m_bounds.min.z + minExtent);
+            m_bounds.max.z = newMax;
+        }
+        else
+        {
+            float newMin = m_bounds.min.z + amount;
+            newMin = std::min(newMin, m_bounds.max.z - minExtent);
+            m_bounds.min.z = newMin;
+        }
+    }
 
     for (auto& particle : m_particles)
     {
-        particle.position.x += delta.x;
-        particle.position.y += delta.y;
-        particle.position.z += delta.z;
+        ResolveCollisions(particle);
     }
     UpdateVertexBuffer();
 }
