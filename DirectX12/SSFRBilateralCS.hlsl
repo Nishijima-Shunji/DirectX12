@@ -1,7 +1,7 @@
 #include "SharedStruct.hlsli"
 
-Texture2D<uint> g_RawDepthTexture       : register(t0); // 粒子スプラット直後の線形深度（asuint 格納）
-RWTexture2D<uint> g_SmoothedDepthTexture : register(u0); // 平滑化後の深度を出力
+Texture2D<float> g_RawDepthTexture        : register(t0); // 粒子スプラット直後の線形深度（float 格納）
+RWTexture2D<float> g_SmoothedDepthTexture : register(u0); // 平滑化後の深度を出力
 
 cbuffer BilateralParams : register(b1)
 {
@@ -39,8 +39,12 @@ float LoadDepth(int2 pixel)
 {
     int2 extent = GetScreenExtent();
     pixel = clamp(pixel, int2(0, 0), extent - 1);
-    uint packed = g_RawDepthTexture.Load(int3(pixel, 0));
-    return asfloat(packed);
+    float depth = g_RawDepthTexture.Load(int3(pixel, 0));
+    if (depth >= farZ - 1e-3f)
+    {
+        return 0.0f; // クリア値（遠方）を未描画扱いに戻す
+    }
+    return depth;
 }
 
 // 深度勾配から法線を推定する
@@ -94,7 +98,7 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     if (centerDepth <= 0.0f)
     {
         // 未描画領域はそのままコピー（0 を維持）
-        g_SmoothedDepthTexture[pixel] = 0;
+        g_SmoothedDepthTexture[pixel] = 0.0f;
         return;
     }
 
@@ -140,5 +144,5 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
         filteredDepth = depthSum / weightSum;
     }
 
-    g_SmoothedDepthTexture[pixel] = asuint(filteredDepth);
+    g_SmoothedDepthTexture[pixel] = filteredDepth;
 }

@@ -2,9 +2,9 @@
 
 SamplerState g_LinearClamp : register(s0);
 
-Texture2D<uint>    g_FluidDepthTexture     : register(t0); // 平滑化済み流体深度（asuint 格納）
+Texture2D<float>   g_FluidDepthTexture     : register(t0); // 平滑化済み流体深度（float 格納）
 Texture2D<float4>  g_FluidNormalTexture    : register(t1); // ビュー空間法線
-Texture2D<uint>    g_FluidThicknessTexture : register(t2); // 粒子厚み（asuint 格納）
+Texture2D<float>   g_FluidThicknessTexture : register(t2); // 粒子厚み（float 格納）
 Texture2D<float>   g_SceneDepthTexture     : register(t3); // シーン深度バッファ（0〜1）
 Texture2D<float4>  g_SceneColorTexture     : register(t4); // シーンカラー
 
@@ -85,8 +85,8 @@ float4 main(PSInput input) : SV_TARGET
         return g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0);
     }
 
-    float fluidDepth = asfloat(g_FluidDepthTexture.Load(int3(pixel, 0)));
-    if (fluidDepth <= 0.0f)
+    float fluidDepth = g_FluidDepthTexture.Load(int3(pixel, 0));
+    if (fluidDepth <= 0.0f || fluidDepth >= farZ - 1e-3f)
     {
         // 流体が存在しない画素は背景をそのまま返す
         return g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0);
@@ -107,7 +107,7 @@ float4 main(PSInput input) : SV_TARGET
         normal *= -1.0f; // カメラ側に向ける
     }
 
-    float thickness = asfloat(g_FluidThicknessTexture.Load(int3(pixel, 0)));
+    float thickness = g_FluidThicknessTexture.Load(int3(pixel, 0));
 
     float3 viewPos = ReconstructViewPosition(int2(pixel), fluidDepth);
     float3 viewDir = normalize(-viewPos);

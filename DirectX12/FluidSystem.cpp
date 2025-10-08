@@ -38,6 +38,12 @@ namespace
     };
 }
 
+namespace
+{
+    constexpr float kSSFRNearZ = 0.1f;   // ニア・ファーを固定しシェーダーと同値にして座標系の不一致を避ける
+    constexpr float kSSFRFarZ  = 1000.0f;
+}
+
 FluidSystem::FluidSystem()
     : m_world(XMMatrixIdentity())
 {
@@ -707,6 +713,20 @@ bool FluidSystem::CreateSSFROnce()
         m_ssfrCpuDescriptorCursor = 0;
     }
 
+    if (!m_ssfrRtvHeap)
+    {
+        D3D12_DESCRIPTOR_HEAP_DESC desc{};
+        desc.NumDescriptors = 8; // ※RTV をまとめて確保し、毎フレームの CreateRenderTargetView 呼び出しを最小化
+        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+        if (FAILED(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(m_ssfrRtvHeap.ReleaseAndGetAddressOf()))))
+        {
+            return false;
+        }
+        m_ssfrRtvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+        m_ssfrRtvCursor = 0;
+    }
+
     return true;
 }
 
@@ -758,6 +778,21 @@ D3D12_CPU_DESCRIPTOR_HANDLE FluidSystem::AllocateCpuDescriptor()
     return handle;
 }
 
+D3D12_CPU_DESCRIPTOR_HANDLE FluidSystem::AllocateRtvDescriptor()
+{
+    D3D12_CPU_DESCRIPTOR_HANDLE handle{};
+    if (!m_ssfrRtvHeap)
+    {
+        handle.ptr = 0;
+        return handle;
+    }
+
+    handle = m_ssfrRtvHeap->GetCPUDescriptorHandleForHeapStart();
+    handle.ptr += static_cast<SIZE_T>(m_ssfrRtvCursor) * m_ssfrRtvDescriptorSize;
+    ++m_ssfrRtvCursor;
+    return handle;
+}
+
 bool FluidSystem::ResizeSSFRTargets(UINT width, UINT height)
 {
     auto device = g_Engine->Device();
@@ -769,11 +804,21 @@ bool FluidSystem::ResizeSSFRTargets(UINT width, UINT height)
 
     CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
 
-    auto createTexture = [&](SSFRTarget& target, DXGI_FORMAT format, bool createSrv, bool createUav)
+    auto createTexture = [&](SSFRTarget& target, DXGI_FORMAT format, bool createSrv, bool createUav, bool createRtv)
     {
         if (width == 0 || height == 0)
         {
             return false;
+        }
+
+        D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
+        if (createUav)
+        {
+            flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        }
+        if (createRtv)
+        {
+            flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
         }
 
         D3D12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(
@@ -781,15 +826,37 @@ bool FluidSystem::ResizeSSFRTargets(UINT width, UINT height)
             width,
             height,
             1, 1, 1, 0,
-            createUav ? D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS : D3D12_RESOURCE_FLAG_NONE);
+            flags);
 
-        auto initState = createUav ? D3D12_RESOURCE_STATE_UNORDERED_ACCESS : D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        auto initState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        if (createUav)
+        {
+            initState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        }
+        if (createRtv)
+        {
+            initState = D3D12_RESOURCE_STATE_RENDER_TARGET;
+        }
+
+        D3D12_CLEAR_VALUE clearValue{};
+        const D3D12_CLEAR_VALUE* clearPtr = nullptr;
+        if (createRtv)
+        {
+            clearValue.Format = format;
+            float clearDepth = (format == DXGI_FORMAT_R32_FLOAT) ? kSSFRFarZ : 0.0f;
+            clearValue.Color[0] = clearDepth;
+            clearValue.Color[1] = clearDepth;
+            clearValue.Color[2] = clearDepth;
+            clearValue.Color[3] = clearDepth;
+            clearPtr = &clearValue;
+        }
+
         if (FAILED(device->CreateCommittedResource(
             &heapProps,
             D3D12_HEAP_FLAG_NONE,
             &desc,
             initState,
-            nullptr,
+            clearPtr,
             IID_PPV_ARGS(target.resource.ReleaseAndGetAddressOf()))))
         {
             return false;
@@ -819,6 +886,11 @@ bool FluidSystem::ResizeSSFRTargets(UINT width, UINT height)
             }
             device->CreateUnorderedAccessView(target.resource.Get(), nullptr, &uav, target.uavCpuHandle);
         }
+        else
+        {
+            target.uavHandle = nullptr;
+            target.uavCpuHandle = {};
+        }
 
         if (createSrv)
         {
@@ -839,25 +911,38 @@ bool FluidSystem::ResizeSSFRTargets(UINT width, UINT height)
             }
         }
 
+        if (createRtv)
+        {
+            if (target.rtvHandle.ptr == 0)
+            {
+                target.rtvHandle = AllocateRtvDescriptor();
+            }
+            device->CreateRenderTargetView(target.resource.Get(), nullptr, target.rtvHandle);
+        }
+        else
+        {
+            target.rtvHandle = {};
+        }
+
         return true;
     };
 
-    if (!createTexture(m_rawDepth, DXGI_FORMAT_R32_FLOAT, true, true))
+    if (!createTexture(m_rawDepth, DXGI_FORMAT_R32_FLOAT, true, false, true))
     {
         return false;
     }
 
-    if (!createTexture(m_smoothedDepth, DXGI_FORMAT_R32_FLOAT, true, true))
+    if (!createTexture(m_smoothedDepth, DXGI_FORMAT_R32_FLOAT, true, true, false))
     {
         return false;
     }
 
-    if (!createTexture(m_normal, DXGI_FORMAT_R16G16B16A16_FLOAT, true, true))
+    if (!createTexture(m_normal, DXGI_FORMAT_R16G16B16A16_FLOAT, true, true, false))
     {
         return false;
     }
 
-    if (!createTexture(m_thickness, DXGI_FORMAT_R32_FLOAT, true, true))
+    if (!createTexture(m_thickness, DXGI_FORMAT_R16_FLOAT, true, false, true))
     {
         return false;
     }
@@ -953,8 +1038,8 @@ void FluidSystem::UpdateSSFRConstants(const Camera& camera)
     constant->view = camera.GetViewMatrix();
     constant->proj = camera.GetProjMatrix();
     constant->screenSize = XMFLOAT2(static_cast<float>(m_ssfrWidth), static_cast<float>(m_ssfrHeight));
-    constant->nearZ = 0.1f;
-    constant->farZ = 1000.0f;
+    constant->nearZ = kSSFRNearZ;
+    constant->farZ = kSSFRFarZ;
     constant->iorF0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
     constant->absorb = 1.5f;
     // フル解像度へ戻した合成パス用にバックバッファ解像度を保持し、UV計算での不一致を防ぐ
@@ -980,32 +1065,44 @@ void FluidSystem::TransitionSSFRTarget(ID3D12GraphicsCommandList* cmd, SSFRTarge
     target.currentState = newState;
 }
 
-void FluidSystem::ClearSSFRUAVs(ID3D12GraphicsCommandList* cmd)
+void FluidSystem::ClearSSFRIntermediateUAVs(ID3D12GraphicsCommandList* cmd)
 {
-    UINT clearUint[4] = { 0, 0, 0, 0 };
-    float clearFloat[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    const float clearZero[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
-    auto clearTarget = [&](SSFRTarget& target, bool useFloat)
+    auto clearTarget = [&](SSFRTarget& target)
     {
         if (!target.resource || !target.uavHandle || target.uavCpuHandle.ptr == 0)
         {
             return;
         }
         TransitionSSFRTarget(cmd, target, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        if (useFloat)
-        {
-            cmd->ClearUnorderedAccessViewFloat(target.uavHandle->HandleGPU, target.uavCpuHandle, target.resource.Get(), clearFloat, 0, nullptr);
-        }
-        else
-        {
-            cmd->ClearUnorderedAccessViewUint(target.uavHandle->HandleGPU, target.uavCpuHandle, target.resource.Get(), clearUint, 0, nullptr);
-        }
+        cmd->ClearUnorderedAccessViewFloat(target.uavHandle->HandleGPU, target.uavCpuHandle, target.resource.Get(), clearZero, 0, nullptr);
     };
 
-    clearTarget(m_rawDepth, false);
-    clearTarget(m_thickness, false);
-    clearTarget(m_smoothedDepth, false);
-    clearTarget(m_normal, true);
+    // RTV 化した深度・厚みは別途クリアするため、ここでは UAV のみを 0 へ初期化する
+    clearTarget(m_smoothedDepth);
+    clearTarget(m_normal);
+}
+
+void FluidSystem::ClearSSFROffscreenRenderTargets(ID3D12GraphicsCommandList* cmd, float farDepth)
+{
+    const float depthClear[4] = { farDepth, farDepth, farDepth, farDepth };
+    const float thicknessClear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+    auto clearRtv = [&](SSFRTarget& target, const float color[4])
+    {
+        if (!target.resource || target.rtvHandle.ptr == 0)
+        {
+            return;
+        }
+        TransitionSSFRTarget(cmd, target, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        cmd->ClearRenderTargetView(target.rtvHandle, color, 0, nullptr);
+    };
+
+    // 最小値ブレンドを成立させるため、深度 RTV は遠方値で初期化して粒子の前面を確保する
+    clearRtv(m_rawDepth, depthClear);
+    // 厚み RTV は足し算に備えてゼロ初期化する
+    clearRtv(m_thickness, thicknessClear);
 }
 
 bool FluidSystem::CreateParticlePSO()
@@ -1036,11 +1133,32 @@ bool FluidSystem::CreateParticlePSO()
     desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
     desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    // RTV へ直接深度/厚みを書き込むため、RT0 は最小値ブレンド、RT1 は加算に設定する
+    auto& minBlend = desc.BlendState.RenderTarget[0];
+    minBlend.BlendEnable = TRUE;
+    minBlend.SrcBlend = D3D12_BLEND_ONE;
+    minBlend.DestBlend = D3D12_BLEND_ONE;
+    minBlend.BlendOp = D3D12_BLEND_OP_MIN;
+    minBlend.SrcBlendAlpha = D3D12_BLEND_ONE;
+    minBlend.DestBlendAlpha = D3D12_BLEND_ONE;
+    minBlend.BlendOpAlpha = D3D12_BLEND_OP_MIN;
+    minBlend.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+    auto& addBlend = desc.BlendState.RenderTarget[1];
+    addBlend.BlendEnable = TRUE;
+    addBlend.SrcBlend = D3D12_BLEND_ONE;
+    addBlend.DestBlend = D3D12_BLEND_ONE;
+    addBlend.BlendOp = D3D12_BLEND_OP_ADD;
+    addBlend.SrcBlendAlpha = D3D12_BLEND_ONE;
+    addBlend.DestBlendAlpha = D3D12_BLEND_ONE;
+    addBlend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    addBlend.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
     desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     desc.DepthStencilState.DepthEnable = FALSE;
     desc.DepthStencilState.StencilEnable = FALSE;
-    desc.NumRenderTargets = 1;                       // ※バックバッファRTVが既に結合されているため整合性を取る
-    desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM; // ※RTVフォーマットをスワップチェーンと合わせ#613を解消する
+    desc.NumRenderTargets = 2;
+    desc.RTVFormats[0] = DXGI_FORMAT_R32_FLOAT;
+    desc.RTVFormats[1] = DXGI_FORMAT_R16_FLOAT;
     desc.SampleDesc.Count = 1;
 
     return SUCCEEDED(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(m_ssfrParticlePSO.ReleaseAndGetAddressOf())));
@@ -1118,22 +1236,14 @@ bool FluidSystem::CreateSSFRRootSignatures()
     auto device = g_Engine->Device();
     (void)device;
 
-    // ※粒子描画用のルートシグネチャ（CBV + SRV + UAV）
+    // ※粒子描画用のルートシグネチャ（CBV + SRV のみに簡素化し、RTV 書き込みへ移行）
     {
         CD3DX12_DESCRIPTOR_RANGE srvRange;
         srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
-        CD3DX12_DESCRIPTOR_RANGE uavDepth;
-        uavDepth.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
-
-        CD3DX12_DESCRIPTOR_RANGE uavThickness;
-        uavThickness.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2);
-
-        CD3DX12_ROOT_PARAMETER params[4];
+        CD3DX12_ROOT_PARAMETER params[2];
         params[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_ALL);
         params[1].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_VERTEX);
-        params[2].InitAsDescriptorTable(1, &uavDepth, D3D12_SHADER_VISIBILITY_PIXEL);
-        params[3].InitAsDescriptorTable(1, &uavThickness, D3D12_SHADER_VISIBILITY_PIXEL);
 
         D3D12_ROOT_SIGNATURE_DESC desc{};
         desc.NumParameters = _countof(params);
@@ -1238,10 +1348,19 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
     cmd->RSSetScissorRects(1, &scSSFR);
 
     UpdateSSFRConstants(camera);
-    ClearSSFRUAVs(cmd);
+    ClearSSFROffscreenRenderTargets(cmd, kSSFRFarZ);
+    ClearSSFRIntermediateUAVs(cmd);
 
     UINT frameIndex = g_Engine->CurrentBackBufferIndex();
     auto cbAddress = m_ssfrConstantBuffers[frameIndex]->GetAddress();
+
+    if (m_rawDepth.rtvHandle.ptr == 0 || m_thickness.rtvHandle.ptr == 0)
+    {
+        return; // RTV が生成できていない場合は以降の描画を避ける
+    }
+
+    D3D12_CPU_DESCRIPTOR_HANDLE particleRtvs[] = { m_rawDepth.rtvHandle, m_thickness.rtvHandle };
+    cmd->OMSetRenderTargets(_countof(particleRtvs), particleRtvs, FALSE, nullptr);
 
     // 粒子ビルボード深度 & 厚み生成
     cmd->SetGraphicsRootSignature(m_ssfrParticleRootSig->Get());
@@ -1251,19 +1370,11 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
     {
         cmd->SetGraphicsRootDescriptorTable(1, m_particleBufferSrv->HandleGPU);
     }
-    if (m_rawDepth.uavHandle)
-    {
-        cmd->SetGraphicsRootDescriptorTable(2, m_rawDepth.uavHandle->HandleGPU);
-    }
-    if (m_thickness.uavHandle)
-    {
-        cmd->SetGraphicsRootDescriptorTable(3, m_thickness.uavHandle->HandleGPU);
-    }
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     cmd->DrawInstanced(4, static_cast<UINT>(m_particles.size()), 0, 0);
 
     TransitionSSFRTarget(cmd, m_rawDepth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    TransitionSSFRTarget(cmd, m_thickness, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    TransitionSSFRTarget(cmd, m_thickness, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
     // 深度バイラテラルフィルタ
     if (m_ssfrBilateralPSO)
@@ -1368,6 +1479,8 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
     cmd->RSSetScissorRects(1, &scFull);
 
     // 合成
+    D3D12_CPU_DESCRIPTOR_HANDLE backBufferRtv = g_Engine->CurrentBackBufferView();
+    cmd->OMSetRenderTargets(1, &backBufferRtv, FALSE, nullptr);
     bool canComposite = m_smoothedDepth.srvHandle && m_normal.srvHandle && m_thickness.srvHandle && m_sceneDepthSrv && m_sceneColorCopy.srvHandle;
     if (canComposite)
     {

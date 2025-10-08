@@ -40,20 +40,21 @@ VSOut main(uint vertexID : SV_VertexID, uint instanceID : SV_InstanceID)
 
     // W 補正無しだとスクリーン奥行きでつぶれるため、投影行列からスケールを抽出して視差補正する
     float4 clipCenter = mul(proj, float4(viewPos, 1.0f));
+    float viewDepth = max(viewPos.z, 1e-4f);
     float2 projScale = float2(proj._11, proj._22); // ※FOV 依存の拡縮係数
-    float2 pixelSize = (particle.radius / max(viewPos.z, 1e-4f)) * projScale; // 奥行きに応じて縮小
-    float2 ndcOffset = local * pixelSize;
+    float2 ndcHalf = projScale * (particle.radius / viewDepth);
+    float2 ndcMin = 1.0 / screenSize; // サブピクセル潰れ防止のため 1px 以上に確保
+    ndcHalf = max(abs(ndcHalf), ndcMin) * sign(ndcHalf);
 
-    float4 clipPos;
-    clipPos.xy = clipCenter.xy + ndcOffset * clipCenter.w; // W を掛けてスクリーン空間の歪みを補正
-    clipPos.zw = clipCenter.zw;
+    float4 clipPos = clipCenter;
+    clipPos.xy += local * ndcHalf * clipCenter.w; // W を掛けてスクリーン空間の歪みを補正
 
     output.position    = clipPos;
     output.viewCenter  = viewPos;
     output.radius      = particle.radius;
     output.localOffset = local;
-    // ここで視点手前の粒子を描画しないようにする（ニア面との距離が負なら GPU が自動的に破棄）
-    output.clipNear    = viewPos.z - (nearZ + particle.radius);
+    // ここで視点手前の粒子を描画しないようにする（完全にニア面の後ろなら破棄）
+    output.clipNear    = viewPos.z + particle.radius - nearZ;
 
     return output;
 }
