@@ -1040,7 +1040,8 @@ bool FluidSystem::CreateParticlePSO()
     desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
     desc.DepthStencilState.DepthEnable = FALSE;
     desc.DepthStencilState.StencilEnable = FALSE;
-    desc.NumRenderTargets = 0; // ※UAV のみを更新するため RTV は不要
+    desc.NumRenderTargets = 1;                       // ※バックバッファRTVが既に結合されているため整合性を取る
+    desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM; // ※RTVフォーマットをスワップチェーンと合わせ#613を解消する
     desc.SampleDesc.Count = 1;
 
     return SUCCEEDED(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(m_ssfrParticlePSO.ReleaseAndGetAddressOf())));
@@ -1220,11 +1221,12 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
         return;
     }
 
-    UpdateSSFRConstants(camera);
-    ClearSSFRUAVs(cmd);
-
+    // ※UAVクリア前にシェーダ可視ヒープを必ずバインドし、GPUハンドル無効化エラー(#1314)を防止する
     ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
     cmd->SetDescriptorHeaps(1, heaps);
+
+    UpdateSSFRConstants(camera);
+    ClearSSFRUAVs(cmd);
 
     UINT frameIndex = g_Engine->CurrentBackBufferIndex();
     auto cbAddress = m_ssfrConstantBuffers[frameIndex]->GetAddress();
