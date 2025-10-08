@@ -1,6 +1,6 @@
 #include "SharedStruct.hlsli"
 
-Texture2D<float> g_SmoothedDepthTexture : register(t0);
+Texture2D<uint> g_SmoothedDepthTexture : register(t0);
 RWTexture2D<float4> g_FluidNormalTexture : register(u0);
 
 // ヘルパー関数群はバイラテラルフィルタと同様
@@ -19,12 +19,7 @@ float LoadDepth(int2 pixel)
 {
     int2 extent = GetScreenExtent();
     pixel = clamp(pixel, int2(0, 0), extent - 1);
-    float depth = g_SmoothedDepthTexture.Load(int3(pixel, 0));
-    if (depth >= farZ - 1e-3f)
-    {
-        return 0.0f; // バイラテラル結果のクリア値を無視して欠損扱いにする
-    }
-    return depth;
+    return asfloat(g_SmoothedDepthTexture.Load(int3(pixel, 0)));
 }
 
 float3 ReconstructViewPosition(int2 pixel, float depth)
