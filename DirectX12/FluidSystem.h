@@ -159,7 +159,6 @@ private:
     UINT m_ssfrWidth = 0;  // 半解像度幅
     UINT m_ssfrHeight = 0; // 半解像度高さ
 
-    D3D12_GPU_DESCRIPTOR_HANDLE m_ssfrSrvTableBase{}; // 合成パス用 SRV テーブル先頭
     UINT m_descriptorIncrement = 0; // CBV/SRV/UAV ヒープのインクリメント
 
     void RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camera); // SSFR 描画処理本体

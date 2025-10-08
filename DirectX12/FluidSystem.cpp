@@ -924,12 +924,6 @@ bool FluidSystem::ResizeSSFRTargets(UINT width, UINT height)
         }
     }
 
-    // ※合成パスで使用する SRV テーブルの先頭を更新
-    if (m_smoothedDepth.srvHandle)
-    {
-        m_ssfrSrvTableBase = m_smoothedDepth.srvHandle->HandleGPU;
-    }
-
     m_ssfrWidth = width;
     m_ssfrHeight = height;
 
@@ -1152,14 +1146,21 @@ bool FluidSystem::CreateSSFRRootSignatures()
         }
     }
 
-    // ※合成用ルートシグネチャ（CBV + SRV テーブル + サンプラ）
+    // ※合成用ルートシグネチャ（CBV + 個別SRVテーブル + サンプラ）
     {
-        CD3DX12_DESCRIPTOR_RANGE srvRange;
-        srvRange.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 0);
+        CD3DX12_DESCRIPTOR_RANGE ranges[5];
+        for (UINT i = 0; i < 5; ++i)
+        {
+            ranges[i].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, i);
+        }
 
-        CD3DX12_ROOT_PARAMETER params[2];
+        CD3DX12_ROOT_PARAMETER params[6];
         params[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
-        params[1].InitAsDescriptorTable(1, &srvRange, D3D12_SHADER_VISIBILITY_PIXEL);
+        for (UINT i = 0; i < 5; ++i)
+        {
+            // SRVを連続テーブルへまとめずに個別指定し、ハンドルの非連続性による誤参照を排除する
+            params[1 + i].InitAsDescriptorTable(1, &ranges[i], D3D12_SHADER_VISIBILITY_PIXEL);
+        }
 
         CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_MIP_LINEAR);
         sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
@@ -1224,6 +1225,12 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
     // ※UAVクリア前にシェーダ可視ヒープを必ずバインドし、GPUハンドル無効化エラー(#1314)を防止する
     ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
     cmd->SetDescriptorHeaps(1, heaps);
+
+    // ここで半解像度のビューポートとシザーに切り替えて、半解像度テクスチャ全面へ粒子を書き込めるようにする
+    D3D12_VIEWPORT vpSSFR = { 0.0f, 0.0f, static_cast<float>(m_ssfrWidth), static_cast<float>(m_ssfrHeight), 0.0f, 1.0f };
+    D3D12_RECT scSSFR = { 0, 0, static_cast<LONG>(m_ssfrWidth), static_cast<LONG>(m_ssfrHeight) };
+    cmd->RSSetViewports(1, &vpSSFR);
+    cmd->RSSetScissorRects(1, &scSSFR);
 
     UpdateSSFRConstants(camera);
     ClearSSFRUAVs(cmd);
@@ -1352,10 +1359,25 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
         cmd->SetGraphicsRootSignature(m_ssfrCompositeRootSig->Get());
         cmd->SetPipelineState(m_ssfrCompositePSO.Get());
         cmd->SetGraphicsRootConstantBufferView(0, cbAddress);
-        cmd->SetGraphicsRootDescriptorTable(1, m_ssfrSrvTableBase);
+        // 連続SRVテーブル誤参照を防ぐため、各SRVを個別にバインドする
+        cmd->SetGraphicsRootDescriptorTable(1, m_smoothedDepth.srvHandle->HandleGPU);
+        cmd->SetGraphicsRootDescriptorTable(2, m_normal.srvHandle->HandleGPU);
+        cmd->SetGraphicsRootDescriptorTable(3, m_thickness.srvHandle->HandleGPU);
+        cmd->SetGraphicsRootDescriptorTable(4, m_sceneDepthSrv->HandleGPU);
+        cmd->SetGraphicsRootDescriptorTable(5, m_sceneColorCopy.srvHandle->HandleGPU);
         cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         cmd->DrawInstanced(3, 1, 0, 0);
     }
+
+    // 合成後はバックバッファ描画へ備えてフル解像度のビューポートとシザーへ戻す
+    D3D12_VIEWPORT vpFull = { 0.0f, 0.0f,
+        static_cast<float>(g_Engine->FrameBufferWidth()),
+        static_cast<float>(g_Engine->FrameBufferHeight()), 0.0f, 1.0f };
+    D3D12_RECT scFull = { 0, 0,
+        static_cast<LONG>(g_Engine->FrameBufferWidth()),
+        static_cast<LONG>(g_Engine->FrameBufferHeight()) };
+    cmd->RSSetViewports(1, &vpFull);
+    cmd->RSSetScissorRects(1, &scFull);
 
     // 状態を次フレーム向けに戻す
     if (depthResource)
