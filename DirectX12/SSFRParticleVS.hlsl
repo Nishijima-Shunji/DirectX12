@@ -33,18 +33,23 @@ VSOut main(uint vertexID : SV_VertexID, uint instanceID : SV_InstanceID)
     ParticleData particle = g_Particles[instanceID];
 
     // ビュー空間へ変換してカメラ基準で位置と半径を扱う
-    float4 viewPos = mul(view, float4(particle.position, 1.0f));
+    float4 viewPos4 = mul(view, float4(particle.position, 1.0f));
+    float3 viewPos = viewPos4.xyz;
 
     float2 local = kBillboardCorners[vertexID];
 
-    // ビュー空間 XY 平面で粒子半径分だけ四隅を押し広げる
-    float3 cornerView = viewPos.xyz + float3(local * particle.radius, 0.0f);
+    // W 補正無しだとスクリーン奥行きでつぶれるため、投影行列からスケールを抽出して視差補正する
+    float4 clipCenter = mul(proj, float4(viewPos, 1.0f));
+    float2 projScale = float2(proj._11, proj._22); // ※FOV 依存の拡縮係数
+    float2 pixelSize = (particle.radius / max(viewPos.z, 1e-4f)) * projScale; // 奥行きに応じて縮小
+    float2 ndcOffset = local * pixelSize;
 
-    // 透視投影してクリップ空間へ
-    float4 clipPos = mul(proj, float4(cornerView, 1.0f));
+    float4 clipPos;
+    clipPos.xy = clipCenter.xy + ndcOffset * clipCenter.w; // W を掛けてスクリーン空間の歪みを補正
+    clipPos.zw = clipCenter.zw;
 
     output.position    = clipPos;
-    output.viewCenter  = viewPos.xyz;
+    output.viewCenter  = viewPos;
     output.radius      = particle.radius;
     output.localOffset = local;
     // ここで視点手前の粒子を描画しないようにする（ニア面との距離が負なら GPU が自動的に破棄）
