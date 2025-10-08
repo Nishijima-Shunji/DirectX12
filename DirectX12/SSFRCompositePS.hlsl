@@ -75,18 +75,21 @@ float3 ComputeFoam(float3 baseColor, float thicknessValue, float viewDotN)
 
 float4 main(PSInput input) : SV_TARGET
 {
-    uint2 pixel = uint2(input.position.xy);
+    // 合成パスではビューポートがフル解像度へ戻るため、半解像度バッファ用の画素座標へ変換する
+    float2 ssfrCoord = (input.position.xy + 0.5f) * (screenSize / framebufferSize);
+    uint2 pixel = uint2(ssfrCoord);
+    float2 sceneUV = saturate((input.position.xy + 0.5f) / framebufferSize);
     int2 extent = GetScreenExtent();
     if (pixel.x >= extent.x || pixel.y >= extent.y)
     {
-        return g_SceneColorTexture.SampleLevel(g_LinearClamp, input.uv, 0);
+        return g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0);
     }
 
     float fluidDepth = asfloat(g_FluidDepthTexture.Load(int3(pixel, 0)));
     if (fluidDepth <= 0.0f)
     {
         // 流体が存在しない画素は背景をそのまま返す
-        return g_SceneColorTexture.SampleLevel(g_LinearClamp, input.uv, 0);
+        return g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0);
     }
 
     float sceneDepth = g_SceneDepthTexture.Load(int3(pixel, 0));
@@ -95,7 +98,7 @@ float4 main(PSInput input) : SV_TARGET
     if (sceneViewDepth <= fluidDepth - 1e-3f)
     {
         // シーンジオメトリが手前にある場合は上書きしない
-        return g_SceneColorTexture.SampleLevel(g_LinearClamp, input.uv, 0);
+        return g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0);
     }
 
     float3 normal = DecodeNormal(g_FluidNormalTexture.Load(int3(pixel, 0)));
@@ -121,9 +124,9 @@ float4 main(PSInput input) : SV_TARGET
     bool totalInternalReflection = all(abs(refractDir) < 1e-5f);
     float refractionScale = 0.05f;
     float2 refractOffset = refractDir.xy / max(refractDir.z, 0.1f) * refractionScale;
-    float2 refractUV = clamp(input.uv + refractOffset, float2(0.0f, 0.0f), float2(1.0f, 1.0f));
+    float2 refractUV = clamp(sceneUV + refractOffset, float2(0.0f, 0.0f), float2(1.0f, 1.0f));
 
-    float3 sceneColor = g_SceneColorTexture.SampleLevel(g_LinearClamp, input.uv, 0).rgb;
+    float3 sceneColor = g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0).rgb;
     float3 refractedColor = g_SceneColorTexture.SampleLevel(g_LinearClamp, refractUV, 0).rgb;
 
     // 吸収による減衰を厚みに応じて適用

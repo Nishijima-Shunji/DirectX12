@@ -957,6 +957,11 @@ void FluidSystem::UpdateSSFRConstants(const Camera& camera)
     constant->farZ = 1000.0f;
     constant->iorF0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
     constant->absorb = 1.5f;
+    // フル解像度へ戻した合成パス用にバックバッファ解像度を保持し、UV計算での不一致を防ぐ
+    constant->framebufferSize = XMFLOAT2(
+        static_cast<float>(g_Engine->FrameBufferWidth()),
+        static_cast<float>(g_Engine->FrameBufferHeight()));
+    constant->_pad = XMFLOAT2(0.0f, 0.0f);
 }
 
 void FluidSystem::TransitionSSFRTarget(ID3D12GraphicsCommandList* cmd, SSFRTarget& target, D3D12_RESOURCE_STATES newState)

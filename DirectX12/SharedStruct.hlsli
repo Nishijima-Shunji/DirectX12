@@ -1,7 +1,9 @@
 #ifndef SHARED_STRUCT_HLSLI
 #define SHARED_STRUCT_HLSLI
 
-// ƒJƒƒ‰Œn
+    float2 framebufferSize; // UVvZtğ‘œ“xÖí‚¹
+    float2 _pad;            // è”obt@ÌƒAC
+// ã‚«ãƒ¡ãƒ©ç³»
 cbuffer CameraCB : register(b0)
 {
     float4x4 proj;
@@ -9,11 +11,11 @@ cbuffer CameraCB : register(b0)
     float2 screenSize;
     float nearZ;
     float farZ;
-    float3 iorF0; // —á: (0.02,0.02,0.02)
-    float absorb; // ‹zûŒW”
+    float3 iorF0; // ä¾‹: (0.02,0.02,0.02)
+    float absorb; // å¸åä¿‚æ•°
 }
 
-// —¬‘Ìƒpƒ‰ƒ[ƒ^
+// æµä½“ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿
 cbuffer SPHParamsCB : register(b1)
 {
     float restDensity;

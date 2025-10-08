@@ -111,6 +111,8 @@ private:
         float farZ;                         // カメラの遠クリップ
         DirectX::XMFLOAT3 iorF0;            // Fresnel 計算に使う F0（屈折率 1.33 相当）
         float absorb;                       // Beer-Lambert の吸収係数
+        DirectX::XMFLOAT2 framebufferSize;  // 合成時に使用するフル解像度（UV計算のずれ防止）
+        DirectX::XMFLOAT2 _pad;             // 256byte境界を維持するための余白
     };
 
     struct alignas(256) BilateralParams
