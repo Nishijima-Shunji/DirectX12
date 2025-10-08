@@ -1,4 +1,5 @@
 #pragma once
+#include "ComputePipelineState.h"
 #include "ConstantBuffer.h"
 #include "Engine.h"
 #include "IndexBuffer.h"
@@ -10,6 +11,7 @@
 #include <array>
 #include <memory>
 #include <vector>
+#include <wrl.h>
 
 class Camera;
 
@@ -97,6 +99,81 @@ private:
     float m_drag = 0.1f;            // 簡易減衰係数
     float m_supportRadius = 0.18f;  // 粒子同士の相互作用半径
     float m_maxVelocity = 6.0f;     // 速度クランプ値
+
+    bool m_useSSFR = true;          // SSFR を使用するかどうか（既定で ON にして球メッシュ描画を置き換える）
+
+    struct alignas(256) SSFRConstant
+    {
+        DirectX::XMMATRIX view;             // ビュー行列（スクリーンスペース再構成用）
+        DirectX::XMMATRIX proj;             // プロジェクション行列
+        DirectX::XMFLOAT2 screenSize;       // 流体バッファの解像度
+        float nearZ;                        // カメラの近クリップ
+        float farZ;                         // カメラの遠クリップ
+        DirectX::XMFLOAT3 iorF0;            // Fresnel 計算に使う F0（屈折率 1.33 相当）
+        float absorb;                       // Beer-Lambert の吸収係数
+    };
+
+    struct alignas(256) BilateralParams
+    {
+        float spatialSigma; // 画素距離のガウス係数
+        float depthSigma;   // 深度差のガウス係数
+        float normalSigma;  // 法線差の鋭さ
+        uint32_t kernelRadius; // サンプル半径
+    };
+
+    struct SSFRTarget
+    {
+        Microsoft::WRL::ComPtr<ID3D12Resource> resource; // GPU リソース
+        DescriptorHandle* srvHandle = nullptr;            // SRV ディスクリプタ
+        DescriptorHandle* uavHandle = nullptr;            // UAV ディスクリプタ
+        D3D12_CPU_DESCRIPTOR_HANDLE uavCpuHandle{};       // Clear 用 CPU ディスクリプタ
+        D3D12_RESOURCE_STATES currentState = D3D12_RESOURCE_STATE_COMMON; // 現在のリソース状態
+    };
+
+    std::array<std::unique_ptr<ConstantBuffer>, Engine::FRAME_BUFFER_COUNT> m_ssfrConstantBuffers; // SSFR 用定数バッファ
+    std::unique_ptr<ConstantBuffer> m_bilateralParamsBuffer; // バイラテラルフィルタ用定数
+
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_ssfrParticlePSO; // ビルボード粒子描画 PSO
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> m_ssfrCompositePSO; // 合成 PSO
+    std::unique_ptr<ComputePipelineState> m_ssfrBilateralPSO; // 深度平滑化 CS
+    std::unique_ptr<ComputePipelineState> m_ssfrNormalPSO;    // 法線再構成 CS
+    std::unique_ptr<RootSignature> m_ssfrParticleRootSig;     // 粒子描画用ルートシグネチャ
+    std::unique_ptr<RootSignature> m_ssfrCompositeRootSig;    // 合成用ルートシグネチャ
+    std::unique_ptr<RootSignature> m_ssfrComputeRootSig;      // コンピュート用ルートシグネチャ
+
+    SSFRTarget m_rawDepth;        // 粒子スプラット結果（深度）
+    SSFRTarget m_smoothedDepth;   // バイラテラル平滑化後の深度
+    SSFRTarget m_thickness;       // 粒子厚み積算
+    SSFRTarget m_normal;          // 法線バッファ
+
+    SSFRTarget m_sceneColorCopy;  // 背景カラー退避用（SRV のみ使用）
+    DescriptorHandle* m_sceneDepthSrv = nullptr; // シーン深度 SRV
+    ID3D12Resource* m_cachedSceneDepth = nullptr; // 深度バッファのリソースキャッシュ（リサイズ検出用）
+
+    DescriptorHandle* m_particleBufferSrv = nullptr; // 粒子インスタンス SRV
+
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_ssfrCpuDescriptorHeap; // UAV クリア用 CPU ヒープ
+    UINT m_ssfrCpuDescriptorSize = 0; // CPU ヒープのインクリメント
+    UINT m_ssfrCpuDescriptorCursor = 0; // 次に割り当てる CPU ディスクリプタ位置
+
+    UINT m_ssfrWidth = 0;  // 半解像度幅
+    UINT m_ssfrHeight = 0; // 半解像度高さ
+
+    D3D12_GPU_DESCRIPTOR_HANDLE m_ssfrSrvTableBase{}; // 合成パス用 SRV テーブル先頭
+    UINT m_descriptorIncrement = 0; // CBV/SRV/UAV ヒープのインクリメント
+
+    void RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camera); // SSFR 描画処理本体
+    bool EnsureSSFRResources(); // SSFR リソース初期化
+    bool CreateSSFRRootSignatures(); // SSFR 用ルートシグネチャ生成
+    bool CreateSSFROnce(); // 初回初期化をまとめる
+    bool ResizeSSFRTargets(UINT width, UINT height); // 解像度変更対応
+    void UpdateSSFRConstants(const Camera& camera); // 定数バッファ更新
+    void ClearSSFRUAVs(ID3D12GraphicsCommandList* cmd); // UAV を毎フレームクリア
+    void TransitionSSFRTarget(ID3D12GraphicsCommandList* cmd, SSFRTarget& target, D3D12_RESOURCE_STATES newState); // 状態遷移
+    D3D12_CPU_DESCRIPTOR_HANDLE AllocateCpuDescriptor(); // CPU ヒープから UAV 用ディスクリプタを確保
+    bool CreateParticlePSO(); // 粒子 PSO 生成
+    bool CreateCompositePSO(); // 合成 PSO 生成
+    bool CreateComputePSO(); // コンピュート PSO 生成
 
     struct GridNode
     {
