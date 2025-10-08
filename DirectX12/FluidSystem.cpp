@@ -1547,6 +1547,12 @@ void FluidSystem::Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera)
         RenderSSFR(cmd, camera); // ※SSFR を使う場合はスクリーンスペース流体描画へ切り替え
         cmd->SetGraphicsRootSignature(m_rootSignature->Get());
         cmd->SetGraphicsRootConstantBufferView(0, cb->GetAddress()); // ※SSFR 内でルートシグネチャが変わるため再設定
+        {
+            D3D12_CPU_DESCRIPTOR_HANDLE rtv = g_Engine->CurrentBackBufferView();
+            D3D12_CPU_DESCRIPTOR_HANDLE dsv = g_Engine->DepthStencilView();
+            cmd->OMSetRenderTargets(1, &rtv, FALSE, &dsv);
+            // ※SSFR 合成で深度ステンシルを SRV 化しているため、ここで DSV を再結合して D32 要求 PSO の #615 警告を解消
+        }
     }
     else if (m_sphereVertexBuffer && m_sphereIndexBuffer && m_indexCount > 0)
     {
