@@ -248,6 +248,8 @@ void FluidSystem::Update(float deltaTime)
     {
         if (node.mass <= 1e-6f)
         {
+            node.pressure = 0.0f;
+            node.pressureGradient = XMFLOAT3(0.0f, 0.0f, 0.0f);
             continue;
         }
 
@@ -255,6 +257,46 @@ void FluidSystem::Update(float deltaTime)
         node.velocity.x = node.velocity.x * invMass;
         node.velocity.y = (node.velocity.y * invMass) + gravityStep;
         node.velocity.z = node.velocity.z * invMass;
+
+        // 粒子が密集し過ぎた節点に圧力を設定し、後段で押し戻す力を計算する
+        const float density = node.mass;
+        const float compression = std::max(density - m_restDensity, 0.0f);
+        node.pressure = compression * m_pressureStiffness;
+    }
+
+    const float safeSpacing = std::max(m_gridSpacing, 1e-4f);
+    auto samplePressure = [this](int x, int y, int z)
+    {
+        return m_gridNodes[GridIndex(x, y, z)].pressure;
+    };
+
+    for (int z = 0; z < m_gridResolution.z; ++z)
+    {
+        for (int y = 0; y < m_gridResolution.y; ++y)
+        {
+            for (int x = 0; x < m_gridResolution.x; ++x)
+            {
+                auto& node = m_gridNodes[GridIndex(x, y, z)];
+                if (node.mass <= 1e-6f)
+                {
+                    node.pressureGradient = XMFLOAT3(0.0f, 0.0f, 0.0f);
+                    continue;
+                }
+
+                const float pxPlus = samplePressure(x + 1, y, z);
+                const float pxMinus = samplePressure(x - 1, y, z);
+                const float pyPlus = samplePressure(x, y + 1, z);
+                const float pyMinus = samplePressure(x, y - 1, z);
+                const float pzPlus = samplePressure(x, y, z + 1);
+                const float pzMinus = samplePressure(x, y, z - 1);
+
+                const float gradScale = 0.5f / safeSpacing;
+                node.pressureGradient = XMFLOAT3(
+                    (pxPlus - pxMinus) * gradScale,
+                    (pyPlus - pyMinus) * gradScale,
+                    (pzPlus - pzMinus) * gradScale);
+            }
+        }
     }
 
     for (auto& particle : m_particles)
@@ -279,6 +321,8 @@ void FluidSystem::Update(float deltaTime)
         const float weightZ[2] = { 1.0f - fracZ, fracZ };
 
         XMFLOAT3 newVelocity{ 0.0f, 0.0f, 0.0f };
+        XMFLOAT3 pressureGradient{ 0.0f, 0.0f, 0.0f };
+        float density = 0.0f;
 
         for (int ix = 0; ix < 2; ++ix)
         {
@@ -301,8 +345,21 @@ void FluidSystem::Update(float deltaTime)
                     newVelocity.x += node.velocity.x * weight;
                     newVelocity.y += node.velocity.y * weight;
                     newVelocity.z += node.velocity.z * weight;
+                    pressureGradient.x += node.pressureGradient.x * weight;
+                    pressureGradient.y += node.pressureGradient.y * weight;
+                    pressureGradient.z += node.pressureGradient.z * weight;
+                    density += node.mass * weight;
                 }
             }
+        }
+
+        if (density > 1e-4f)
+        {
+            const float invDensity = 1.0f / density;
+            // 圧力勾配に基づく反力を速度へ加算して粒子同士の押し戻しを再現する
+            newVelocity.x += (-pressureGradient.x * invDensity) * dt;
+            newVelocity.y += (-pressureGradient.y * invDensity) * dt;
+            newVelocity.z += (-pressureGradient.z * invDensity) * dt;
         }
 
         particle.velocity.x = std::clamp(newVelocity.x * dragFactor, -m_maxVelocity, m_maxVelocity);
@@ -418,7 +475,9 @@ void FluidSystem::InitializeGrid()
 
     m_gridResolution = XMINT3(cellsX, cellsY, cellsZ);
     m_gridOrigin = m_bounds.min;
-    m_gridNodes.assign(static_cast<size_t>(cellsX) * static_cast<size_t>(cellsY) * static_cast<size_t>(cellsZ), GridNode{ XMFLOAT3(0.0f, 0.0f, 0.0f), 0.0f });
+    m_gridNodes.assign(
+        static_cast<size_t>(cellsX) * static_cast<size_t>(cellsY) * static_cast<size_t>(cellsZ),
+        GridNode{ XMFLOAT3(0.0f, 0.0f, 0.0f), 0.0f, 0.0f, XMFLOAT3(0.0f, 0.0f, 0.0f) });
 }
 
 void FluidSystem::ClearGridNodes()
@@ -428,6 +487,8 @@ void FluidSystem::ClearGridNodes()
     {
         node.velocity = XMFLOAT3(0.0f, 0.0f, 0.0f);
         node.mass = 0.0f;
+        node.pressure = 0.0f;
+        node.pressureGradient = XMFLOAT3(0.0f, 0.0f, 0.0f);
     }
 }
 
