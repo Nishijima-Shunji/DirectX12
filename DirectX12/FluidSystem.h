@@ -102,6 +102,8 @@ private:
     {
         DirectX::XMFLOAT3 velocity; // 節点速度（粒子の重心速度を蓄積）
         float mass;                 // 節点質量（MLS-MPM での重み合計）
+        float pressure;             // 節点圧力（密度超過に応じた押し返し力）
+        DirectX::XMFLOAT3 pressureGradient; // 圧力勾配（粒子へ伝搬する反力ベクトル）
     };
 
     DirectX::XMFLOAT3 m_gridOrigin{ 0.0f, 0.0f, 0.0f }; // グリッド原点
@@ -109,4 +111,6 @@ private:
     float m_gridSpacing = 0.1f;                         // グリッドセル間隔
     std::vector<GridNode> m_gridNodes;                  // MLS-MPM 用の節点データ
     float m_ssfrResolutionScale = 0.5f;                 // SSFR を半解像度で回すスケール
+    float m_restDensity = 1.0f;                         // 静止密度（圧力計算の基準値）
+    float m_pressureStiffness = 6.0f;                   // 圧力係数（反発力の強さを制御）
 };
