@@ -1159,6 +1159,7 @@ bool FluidSystem::CreateParticlePSO()
     desc.NumRenderTargets = 2;
     desc.RTVFormats[0] = DXGI_FORMAT_R32_FLOAT;
     desc.RTVFormats[1] = DXGI_FORMAT_R16_FLOAT;
+    desc.DSVFormat = DXGI_FORMAT_UNKNOWN; // 深度を使わないレンダーターゲットなので DSV 未バインドでも正しく描けるよう UNKNOWN を宣言する
     desc.SampleDesc.Count = 1;
 
     return SUCCEEDED(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(m_ssfrParticlePSO.ReleaseAndGetAddressOf())));
@@ -1197,6 +1198,7 @@ bool FluidSystem::CreateCompositePSO()
     desc.DepthStencilState.StencilEnable = FALSE;
     desc.NumRenderTargets = 1;
     desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.DSVFormat = DXGI_FORMAT_UNKNOWN; // 合成パスでも深度を使用しないため DSV を UNKNOWN にして PSO と描画設定を一致させる
     desc.SampleDesc.Count = 1;
 
     return SUCCEEDED(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(m_ssfrCompositePSO.ReleaseAndGetAddressOf())));
