@@ -11,10 +11,11 @@ StructuredBuffer<ParticleData> g_Particles : register(t0);
 
 struct VSOut
 {
-    float4 position    : SV_POSITION; // クリップ空間座標
-    float3 viewCenter  : TEXCOORD0;   // ビュー空間での粒子中心
-    float  radius      : TEXCOORD1;   // 粒子半径（ビュー空間スケール）
-    float2 localOffset : TEXCOORD2;   // ビルボード内でのローカル座標（-1〜1）
+    float4 position    : SV_POSITION;     // クリップ空間座標
+    float3 viewCenter  : TEXCOORD0;       // ビュー空間での粒子中心
+    float  radius      : TEXCOORD1;       // 粒子半径（ビュー空間スケール）
+    float2 localOffset : TEXCOORD2;       // ビルボード内でのローカル座標（-1〜1）
+    float  clipNear    : SV_ClipDistance0;// ニア面より手前の粒子は全部捨てるためのクリップ距離
 };
 
 static const float2 kBillboardCorners[4] =
@@ -46,6 +47,8 @@ VSOut main(uint vertexID : SV_VertexID, uint instanceID : SV_InstanceID)
     output.viewCenter  = viewPos.xyz;
     output.radius      = particle.radius;
     output.localOffset = local;
+    // ここで視点手前の粒子を描画しないようにする（ニア面との距離が負なら GPU が自動的に破棄）
+    output.clipNear    = viewPos.z - (nearZ + particle.radius);
 
     return output;
 }

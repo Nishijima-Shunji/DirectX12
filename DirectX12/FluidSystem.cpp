@@ -1352,6 +1352,16 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
         cmd->ResourceBarrier(1, &toSrv);
     }
 
+    // ここで合成描画へ移る前にフル解像度へ戻す（半解像度のままだとフルスクリーン三角形が左上だけになるため）
+    D3D12_VIEWPORT vpFull = { 0.0f, 0.0f,
+        static_cast<float>(g_Engine->FrameBufferWidth()),
+        static_cast<float>(g_Engine->FrameBufferHeight()), 0.0f, 1.0f };
+    D3D12_RECT scFull = { 0, 0,
+        static_cast<LONG>(g_Engine->FrameBufferWidth()),
+        static_cast<LONG>(g_Engine->FrameBufferHeight()) };
+    cmd->RSSetViewports(1, &vpFull);
+    cmd->RSSetScissorRects(1, &scFull);
+
     // 合成
     bool canComposite = m_smoothedDepth.srvHandle && m_normal.srvHandle && m_thickness.srvHandle && m_sceneDepthSrv && m_sceneColorCopy.srvHandle;
     if (canComposite)
@@ -1368,16 +1378,6 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
         cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         cmd->DrawInstanced(3, 1, 0, 0);
     }
-
-    // 合成後はバックバッファ描画へ備えてフル解像度のビューポートとシザーへ戻す
-    D3D12_VIEWPORT vpFull = { 0.0f, 0.0f,
-        static_cast<float>(g_Engine->FrameBufferWidth()),
-        static_cast<float>(g_Engine->FrameBufferHeight()), 0.0f, 1.0f };
-    D3D12_RECT scFull = { 0, 0,
-        static_cast<LONG>(g_Engine->FrameBufferWidth()),
-        static_cast<LONG>(g_Engine->FrameBufferHeight()) };
-    cmd->RSSetViewports(1, &vpFull);
-    cmd->RSSetScissorRects(1, &scFull);
 
     // 状態を次フレーム向けに戻す
     if (depthResource)
