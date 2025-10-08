@@ -1035,8 +1035,8 @@ void FluidSystem::UpdateSSFRConstants(const Camera& camera)
     }
 
     auto* constant = cb->GetPtr<SSFRConstant>();
-    constant->proj = camera.GetProjMatrix();
     constant->view = camera.GetViewMatrix();
+    constant->proj = camera.GetProjMatrix();
     constant->screenSize = XMFLOAT2(static_cast<float>(m_ssfrWidth), static_cast<float>(m_ssfrHeight));
     constant->nearZ = kSSFRNearZ;
     constant->farZ = kSSFRFarZ;
@@ -1397,9 +1397,6 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
         UINT groupY = (m_ssfrHeight + 7) / 8;
         cmd->Dispatch(groupX, groupY, 1);
 
-        // 連続する UAV アクセス間で書き込み順序を保証し、ちらつきを抑制する
-        cmd->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
-
         TransitionSSFRTarget(cmd, m_smoothedDepth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     }
 
@@ -1423,9 +1420,6 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
         UINT groupX = (m_ssfrWidth + 7) / 8;
         UINT groupY = (m_ssfrHeight + 7) / 8;
         cmd->Dispatch(groupX, groupY, 1);
-
-        // 法線書き込み完了を後続パスへ可視化し、読み取り時の不安定さを防止する
-        cmd->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
 
         TransitionSSFRTarget(cmd, m_normal, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     }

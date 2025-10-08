@@ -104,8 +104,8 @@ private:
 
     struct alignas(256) SSFRConstant
     {
-        DirectX::XMMATRIX proj;             // プロジェクション行列（HLSL 側と順序を合わせる）
         DirectX::XMMATRIX view;             // ビュー行列（スクリーンスペース再構成用）
+        DirectX::XMMATRIX proj;             // プロジェクション行列
         DirectX::XMFLOAT2 screenSize;       // 流体バッファの解像度
         float nearZ;                        // カメラの近クリップ
         float farZ;                         // カメラの遠クリップ

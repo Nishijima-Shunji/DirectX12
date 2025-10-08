@@ -76,7 +76,6 @@ float3 ComputeFoam(float3 baseColor, float thicknessValue, float viewDotN)
 float4 main(PSInput input) : SV_TARGET
 {
     // 合成パスではビューポートがフル解像度へ戻るため、半解像度バッファ用の画素座標へ変換する
-    // （左上 1/4 へ縮む現象を防ぐため、framebufferSize から適切な UV を計算）
     float2 ssfrCoord = (input.position.xy + 0.5f) * (screenSize / framebufferSize);
     uint2 pixel = uint2(ssfrCoord);
     float2 sceneUV = saturate((input.position.xy + 0.5f) / framebufferSize);
