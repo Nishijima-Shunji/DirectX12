@@ -52,8 +52,13 @@ VSOut main(uint vertexID : SV_VertexID, uint instanceID : SV_InstanceID)
     output.viewCenter  = viewCenter;
     output.radius      = radius;
     output.localOffset = local;
-    // ここで視点手前の粒子を描画しないようにする（ニア面との距離が負なら GPU が自動的に破棄）
-    output.clipNear    = viewCenter.z - (nearZ + radius);
+    // 近傍クリップの境界計算を球前面の射影に差し替え（ニア面と衝突したときの欠けを防止するため）
+    float2 sphereXY = local * radius;
+    float  radiusSq = radius * radius;
+    float  insideSq = max(radiusSq - dot(sphereXY, sphereXY), 0.0f);
+    float  zFront   = viewCenter.z - sqrt(insideSq);
+    float4 clipFront = mul(proj, float4(viewCenter.xy, zFront, 1.0f));
+    output.clipNear = clipFront.z;
 
     return output;
 }
