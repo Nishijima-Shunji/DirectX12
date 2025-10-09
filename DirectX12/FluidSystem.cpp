@@ -1846,6 +1846,7 @@ void FluidSystem::Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera)
     constant->World = m_world;
     constant->View = camera.GetViewMatrix();
     constant->Proj = camera.GetProjMatrix();
+    constant->CameraPos = camera.GetPosition(); // 液体を軽やかに見せるハイライト計算に視線を使うためカメラ位置を渡す
 
     cmd->SetGraphicsRootSignature(m_rootSignature->Get());
     cmd->SetGraphicsRootConstantBufferView(0, cb->GetAddress());

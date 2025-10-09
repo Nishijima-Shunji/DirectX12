@@ -55,6 +55,8 @@ private:
         DirectX::XMMATRIX World; // ワールド行列
         DirectX::XMMATRIX View;  // ビュー行列
         DirectX::XMMATRIX Proj;  // プロジェクション行列
+        DirectX::XMFLOAT3 CameraPos; // ピクセルシェーダーで視線方向を求めるためのカメラ位置
+        float _padding = 0.0f;       // 16バイト境界を維持するためのパディング
     };
 
     void InitializeParticles(UINT particleCount);
