@@ -15,7 +15,7 @@ struct VSOutput
 {
     float4 svpos      : SV_POSITION;
     float4 color      : COLOR0;
-    float  pointSize  : SV_PointSize;
+    float  pointSize  : PSIZE; // DirectX 12 の VS では SV_PointSize が使えないため互換セマンティクスに変更
 };
 
 VSOutput VSMain(VSInput input)
