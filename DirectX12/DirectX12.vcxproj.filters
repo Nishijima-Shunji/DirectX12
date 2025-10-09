@@ -320,12 +320,6 @@
     <FxCompile Include="SSFRParticleVS.hlsl">
       <Filter>リソース ファイル\VertexShader</Filter>
     </FxCompile>
-    <FxCompile Include="SSFRBilateralCS.hlsl">
-      <Filter>リソース ファイル\ComputeShader</Filter>
-    </FxCompile>
-    <FxCompile Include="SSFRNormalCS.hlsl">
-      <Filter>リソース ファイル\ComputeShader</Filter>
-    </FxCompile>
     <FxCompile Include="GridLinePS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>

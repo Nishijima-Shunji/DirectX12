@@ -148,7 +148,6 @@ bool FluidSystem::Init(ID3D12Device* device, const Bounds& initialBounds, UINT p
     if (auto* heap = g_Engine->CbvSrvUavHeap())
     {
         // ※粒子インスタンス情報を SRV として参照できるよう登録（SSFR で StructuredBuffer を読むため）
-        m_descriptorIncrement = g_Engine->Device()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
         if (!m_particleBufferSrv)
         {
             m_particleBufferSrv = heap->RegisterBuffer(
@@ -953,7 +952,7 @@ bool FluidSystem::CreateSSFROnce()
         return false;
     }
 
-    if (!m_ssfrParticleRootSig || !m_ssfrCompositeRootSig || !m_ssfrComputeRootSig)
+    if (!m_ssfrParticleRootSig || !m_ssfrCompositeRootSig)
     {
         if (!CreateSSFRRootSignatures())
         {
@@ -977,14 +976,6 @@ bool FluidSystem::CreateSSFROnce()
         }
     }
 
-    if (!m_ssfrBilateralPSO || !m_ssfrNormalPSO)
-    {
-        if (!CreateComputePSO())
-        {
-            return false;
-        }
-    }
-
     for (auto& cb : m_ssfrConstantBuffers)
     {
         if (!cb)
@@ -995,20 +986,6 @@ bool FluidSystem::CreateSSFROnce()
                 return false;
             }
         }
-    }
-
-    if (!m_ssfrCpuDescriptorHeap)
-    {
-        D3D12_DESCRIPTOR_HEAP_DESC desc{};
-        desc.NumDescriptors = 32; // ※深度・厚み・法線など複数 UAV をまとめて扱うため十分な数を確保
-        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        if (FAILED(device->CreateDescriptorHeap(&desc, IID_PPV_ARGS(m_ssfrCpuDescriptorHeap.ReleaseAndGetAddressOf()))))
-        {
-            return false;
-        }
-        m_ssfrCpuDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-        m_ssfrCpuDescriptorCursor = 0;
     }
 
     if (!m_ssfrRtvDescriptorHeap)
@@ -1061,21 +1038,6 @@ bool FluidSystem::EnsureSSFRResources()
     return true;
 }
 
-D3D12_CPU_DESCRIPTOR_HANDLE FluidSystem::AllocateCpuDescriptor()
-{
-    D3D12_CPU_DESCRIPTOR_HANDLE handle{};
-    if (!m_ssfrCpuDescriptorHeap)
-    {
-        handle.ptr = 0;
-        return handle;
-    }
-
-    handle = m_ssfrCpuDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-    handle.ptr += static_cast<SIZE_T>(m_ssfrCpuDescriptorCursor) * m_ssfrCpuDescriptorSize;
-    ++m_ssfrCpuDescriptorCursor;
-    return handle;
-}
-
 D3D12_CPU_DESCRIPTOR_HANDLE FluidSystem::AllocateRtvDescriptor()
 {
     D3D12_CPU_DESCRIPTOR_HANDLE handle{};
@@ -1102,7 +1064,7 @@ bool FluidSystem::ResizeSSFRTargets(UINT width, UINT height)
 
     CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
 
-    auto createTexture = [&](SSFRTarget& target, DXGI_FORMAT format, bool createSrv, bool createUav, bool createRtv, D3D12_RESOURCE_STATES initialState, const float* clearColor)
+    auto createTexture = [&](SSFRTarget& target, DXGI_FORMAT format, bool createSrv, bool createRtv, D3D12_RESOURCE_STATES initialState, const float* clearColor)
     {
         if (width == 0 || height == 0)
         {
@@ -1110,10 +1072,6 @@ bool FluidSystem::ResizeSSFRTargets(UINT width, UINT height)
         }
 
         D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
-        if (createUav)
-        {
-            flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-        }
         if (createRtv)
         {
             flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
@@ -1150,36 +1108,6 @@ bool FluidSystem::ResizeSSFRTargets(UINT width, UINT height)
         }
         target.currentState = initialState;
 
-        if (!createUav)
-        {
-            target.uavHandle = nullptr;
-            target.uavCpuHandle.ptr = 0;
-        }
-
-        if (createUav)
-        {
-            D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
-            uav.Format = format;
-            uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-            uav.Texture2D.MipSlice = 0;
-            uav.Texture2D.PlaneSlice = 0;
-
-            if (!target.uavHandle)
-            {
-                target.uavHandle = heap->RegisterTextureUAV(target.resource.Get(), format);
-            }
-            else
-            {
-                device->CreateUnorderedAccessView(target.resource.Get(), nullptr, &uav, target.uavHandle->HandleCPU);
-            }
-
-            if (target.uavCpuHandle.ptr == 0)
-            {
-                target.uavCpuHandle = AllocateCpuDescriptor();
-            }
-            device->CreateUnorderedAccessView(target.resource.Get(), nullptr, &uav, target.uavCpuHandle);
-        }
-
         if (createRtv)
         {
             if (target.rtvHandle.ptr == 0)
@@ -1215,23 +1143,13 @@ bool FluidSystem::ResizeSSFRTargets(UINT width, UINT height)
     };
 
     const float depthClear[4] = { 1000000.0f, 0.0f, 0.0f, 0.0f }; // ※MINブレンド用に十分大きな値で初期化し遠方値を表現
-    if (!createTexture(m_rawDepth, DXGI_FORMAT_R32_FLOAT, true, false, true, D3D12_RESOURCE_STATE_RENDER_TARGET, depthClear))
-    {
-        return false;
-    }
-
-    if (!createTexture(m_smoothedDepth, DXGI_FORMAT_R32_FLOAT, true, true, false, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr))
-    {
-        return false;
-    }
-
-    if (!createTexture(m_normal, DXGI_FORMAT_R16G16B16A16_FLOAT, true, true, false, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr))
+    if (!createTexture(m_rawDepth, DXGI_FORMAT_R32_FLOAT, true, true, D3D12_RESOURCE_STATE_RENDER_TARGET, depthClear))
     {
         return false;
     }
 
     const float thicknessClear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    if (!createTexture(m_thickness, DXGI_FORMAT_R16_FLOAT, true, false, true, D3D12_RESOURCE_STATE_RENDER_TARGET, thicknessClear))
+    if (!createTexture(m_thickness, DXGI_FORMAT_R16_FLOAT, true, true, D3D12_RESOURCE_STATE_RENDER_TARGET, thicknessClear))
     {
         return false;
     }
@@ -1336,10 +1254,12 @@ void FluidSystem::UpdateSSFRConstants(const Camera& camera)
     constant->framebufferSize = XMFLOAT2(
         static_cast<float>(g_Engine->FrameBufferWidth()),
         static_cast<float>(g_Engine->FrameBufferHeight()));
-    // バイラテラルフィルタ係数も b0 に収納して RS の不一致警告 (#5337) を封じる
-    constant->bilateralSigma = XMFLOAT2(m_bilateralSpatialSigma, m_bilateralDepthSigma);
-    constant->bilateralNormalKernel = XMFLOAT2(m_bilateralNormalSigma, m_bilateralKernelRadius);
-    constant->_pad = XMFLOAT2(0.0f, 0.0f);
+    constant->refractionScale = m_refractionStrength;
+    constant->thicknessScale = m_thicknessAttenuation;
+    const float invWidth = (m_ssfrWidth > 0) ? 1.0f / static_cast<float>(m_ssfrWidth) : 0.0f;
+    const float invHeight = (m_ssfrHeight > 0) ? 1.0f / static_cast<float>(m_ssfrHeight) : 0.0f;
+    constant->invScreenSize = XMFLOAT2(invWidth, invHeight);
+    constant->padding = XMFLOAT2(0.0f, 0.0f);
 }
 
 void FluidSystem::TransitionSSFRTarget(ID3D12GraphicsCommandList* cmd, SSFRTarget& target, D3D12_RESOURCE_STATES newState)
@@ -1365,7 +1285,7 @@ void FluidSystem::PrepareSSFRTargets(ID3D12GraphicsCommandList* cmd)
         return;
     }
 
-    // ※MRT に書き込む深度/厚みは毎フレーム既知の値へ初期化し、古い情報によるチラつきを防ぐ
+    // ※深度と厚みを毎フレーム既知の値で初期化し、前フレームの情報が残らないようにする
     constexpr float kDepthClearValue = 1000000.0f;
     const float depthClear[4] = { kDepthClearValue, 0.0f, 0.0f, 0.0f };
     if (m_rawDepth.resource && m_rawDepth.rtvHandle.ptr != 0)
@@ -1380,21 +1300,6 @@ void FluidSystem::PrepareSSFRTargets(ID3D12GraphicsCommandList* cmd)
         TransitionSSFRTarget(cmd, m_thickness, D3D12_RESOURCE_STATE_RENDER_TARGET);
         cmd->ClearRenderTargetView(m_thickness.rtvHandle, thicknessClear, 0, nullptr);
     }
-
-    // ※コンピュート用の UAV もゼロ初期化し、残像ノイズを抑制する
-    const float clearFloat[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-    auto clearUav = [&](SSFRTarget& target)
-    {
-        if (!target.resource || !target.uavHandle || target.uavCpuHandle.ptr == 0)
-        {
-            return;
-        }
-        TransitionSSFRTarget(cmd, target, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        cmd->ClearUnorderedAccessViewFloat(target.uavHandle->HandleGPU, target.uavCpuHandle, target.resource.Get(), clearFloat, 0, nullptr);
-    };
-
-    clearUav(m_smoothedDepth);
-    clearUav(m_normal);
 }
 
 bool FluidSystem::CreateParticlePSO()
@@ -1491,35 +1396,6 @@ bool FluidSystem::CreateCompositePSO()
     return SUCCEEDED(device->CreateGraphicsPipelineState(&desc, IID_PPV_ARGS(m_ssfrCompositePSO.ReleaseAndGetAddressOf())));
 }
 
-bool FluidSystem::CreateComputePSO()
-{
-    auto device = g_Engine->Device();
-    if (!device || !m_ssfrComputeRootSig)
-    {
-        return false;
-    }
-
-    m_ssfrBilateralPSO = std::make_unique<ComputePipelineState>();
-    m_ssfrBilateralPSO->SetDevice(device);
-    m_ssfrBilateralPSO->SetRootSignature(m_ssfrComputeRootSig->Get());
-    m_ssfrBilateralPSO->SetCS(L"SSFRBilateralCS.cso");
-    if (!m_ssfrBilateralPSO->Create())
-    {
-        return false;
-    }
-
-    m_ssfrNormalPSO = std::make_unique<ComputePipelineState>();
-    m_ssfrNormalPSO->SetDevice(device);
-    m_ssfrNormalPSO->SetRootSignature(m_ssfrComputeRootSig->Get());
-    m_ssfrNormalPSO->SetCS(L"SSFRNormalCS.cso");
-    if (!m_ssfrNormalPSO->Create())
-    {
-        return false;
-    }
-
-    return true;
-}
-
 bool FluidSystem::CreateSSFRRootSignatures()
 {
     auto device = g_Engine->Device();
@@ -1552,15 +1428,15 @@ bool FluidSystem::CreateSSFRRootSignatures()
 
     // ※合成用ルートシグネチャ（CBV + 個別SRVテーブル + サンプラ）
     {
-        CD3DX12_DESCRIPTOR_RANGE ranges[5];
-        for (UINT i = 0; i < 5; ++i)
+        CD3DX12_DESCRIPTOR_RANGE ranges[4];
+        for (UINT i = 0; i < 4; ++i)
         {
             ranges[i].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, i);
         }
 
-        CD3DX12_ROOT_PARAMETER params[6];
+        CD3DX12_ROOT_PARAMETER params[5];
         params[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
-        for (UINT i = 0; i < 5; ++i)
+        for (UINT i = 0; i < 4; ++i)
         {
             // SRVを連続テーブルへまとめずに個別指定し、ハンドルの非連続性による誤参照を排除する
             params[1 + i].InitAsDescriptorTable(1, &ranges[i], D3D12_SHADER_VISIBILITY_PIXEL);
@@ -1588,34 +1464,6 @@ bool FluidSystem::CreateSSFRRootSignatures()
         }
     }
 
-    // ※バイラテラル & 法線計算用ルートシグネチャ（CBV b0 + SRV + UAV）
-    //    ┗ フィルタ係数も b0 へ統一し、RS スロット不一致による GPU エラー (#1314) を撲滅
-    {
-        CD3DX12_DESCRIPTOR_RANGE ranges[2];
-        ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
-        ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
-
-        CD3DX12_ROOT_PARAMETER params[3];
-        params[0].InitAsConstantBufferView(0);
-        params[1].InitAsDescriptorTable(1, &ranges[0]);
-        params[2].InitAsDescriptorTable(1, &ranges[1]);
-
-        D3D12_ROOT_SIGNATURE_DESC desc{};
-        desc.NumParameters = _countof(params);
-        desc.pParameters = params;
-        desc.NumStaticSamplers = 0;
-        desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE;
-
-        if (!m_ssfrComputeRootSig)
-        {
-            m_ssfrComputeRootSig = std::make_unique<RootSignature>();
-        }
-        if (!m_ssfrComputeRootSig->Init(desc))
-        {
-            return false;
-        }
-    }
-
     return true;
 }
 
@@ -1626,11 +1474,10 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
         return;
     }
 
-    // ※UAVクリア前にシェーダ可視ヒープを必ずバインドし、GPUハンドル無効化エラー(#1314)を防止する
     ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
     cmd->SetDescriptorHeaps(1, heaps);
 
-    // ここで半解像度のビューポートとシザーに切り替えて、半解像度テクスチャ全面へ粒子を書き込めるようにする
+    // ※半解像度で粒子をスプラットし、ピクセル当たりの描画コストを抑える
     D3D12_VIEWPORT vpSSFR = { 0.0f, 0.0f, static_cast<float>(m_ssfrWidth), static_cast<float>(m_ssfrHeight), 0.0f, 1.0f };
     D3D12_RECT scSSFR = { 0, 0, static_cast<LONG>(m_ssfrWidth), static_cast<LONG>(m_ssfrHeight) };
     cmd->RSSetViewports(1, &vpSSFR);
@@ -1641,7 +1488,6 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
 
     if (m_rawDepth.rtvHandle.ptr != 0 && m_thickness.rtvHandle.ptr != 0)
     {
-        // ※粒子スプラットは半解像度のMRTへ直接出力し、UAV競合を避ける
         D3D12_CPU_DESCRIPTOR_HANDLE rtvs[] = { m_rawDepth.rtvHandle, m_thickness.rtvHandle };
         cmd->OMSetRenderTargets(2, rtvs, FALSE, nullptr);
     }
@@ -1649,7 +1495,7 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
     UINT frameIndex = g_Engine->CurrentBackBufferIndex();
     auto cbAddress = m_ssfrConstantBuffers[frameIndex]->GetAddress();
 
-    // 粒子ビルボード深度 & 厚み生成
+    // 粒子をビルボードとして描画し、線形深度と厚みを蓄積
     cmd->SetGraphicsRootSignature(m_ssfrParticleRootSig->Get());
     cmd->SetPipelineState(m_ssfrParticlePSO.Get());
     cmd->SetGraphicsRootConstantBufferView(0, cbAddress);
@@ -1660,69 +1506,10 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
     cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
     cmd->DrawInstanced(4, static_cast<UINT>(m_particles.size()), 0, 0);
 
-    TransitionSSFRTarget(cmd, m_rawDepth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    TransitionSSFRTarget(cmd, m_rawDepth, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     TransitionSSFRTarget(cmd, m_thickness, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 
-    // 深度バイラテラルフィルタ
-    if (m_ssfrBilateralPSO)
-    {
-        TransitionSSFRTarget(cmd, m_smoothedDepth, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        cmd->SetComputeRootSignature(m_ssfrComputeRootSig->Get());
-        cmd->SetPipelineState(m_ssfrBilateralPSO->Get());
-        cmd->SetComputeRootConstantBufferView(0, cbAddress);
-        if (m_rawDepth.srvHandle)
-        {
-            cmd->SetComputeRootDescriptorTable(1, m_rawDepth.srvHandle->HandleGPU);
-        }
-        if (m_smoothedDepth.uavHandle)
-        {
-            cmd->SetComputeRootDescriptorTable(2, m_smoothedDepth.uavHandle->HandleGPU);
-        }
-
-        UINT groupX = (m_ssfrWidth + 7) / 8;
-        UINT groupY = (m_ssfrHeight + 7) / 8;
-        cmd->Dispatch(groupX, groupY, 1);
-
-        {
-            auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(nullptr); // ※UAV 書き込みの完了を保証
-            cmd->ResourceBarrier(1, &uavBarrier);
-        }
-
-        TransitionSSFRTarget(cmd, m_smoothedDepth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    }
-
-    // 法線再構成
-    if (m_ssfrNormalPSO)
-    {
-        TransitionSSFRTarget(cmd, m_normal, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        cmd->SetComputeRootSignature(m_ssfrComputeRootSig->Get());
-        cmd->SetPipelineState(m_ssfrNormalPSO->Get());
-        cmd->SetComputeRootConstantBufferView(0, cbAddress);
-        if (m_smoothedDepth.srvHandle)
-        {
-            cmd->SetComputeRootDescriptorTable(1, m_smoothedDepth.srvHandle->HandleGPU);
-        }
-        if (m_normal.uavHandle)
-        {
-            cmd->SetComputeRootDescriptorTable(2, m_normal.uavHandle->HandleGPU);
-        }
-
-        UINT groupX = (m_ssfrWidth + 7) / 8;
-        UINT groupY = (m_ssfrHeight + 7) / 8;
-        cmd->Dispatch(groupX, groupY, 1);
-
-        {
-            auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(nullptr); // ※UAV 書き込みの完了を保証
-            cmd->ResourceBarrier(1, &uavBarrier);
-        }
-
-        TransitionSSFRTarget(cmd, m_normal, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-    }
-
-    TransitionSSFRTarget(cmd, m_smoothedDepth, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-    TransitionSSFRTarget(cmd, m_thickness, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-
-    // 背景カラーを退避
+    // 背景カラーを退避して屈折用の参照にする
     ID3D12Resource* backBuffer = g_Engine->CurrentRenderTargetResource();
     if (backBuffer && m_sceneColorCopy.resource)
     {
@@ -1759,11 +1546,11 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
             m_cachedSceneDepth = depthResource;
         }
 
-        auto toSrv = CD3DX12_RESOURCE_BARRIER::Transition(depthResource, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        auto toSrv = CD3DX12_RESOURCE_BARRIER::Transition(depthResource, D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         cmd->ResourceBarrier(1, &toSrv);
     }
 
-    // ここで合成描画へ移る前にフル解像度へ戻す（半解像度のままだとフルスクリーン三角形が左上だけになるため）
+    // 合成はフル解像度で行うため、ビューポートを戻す
     D3D12_VIEWPORT vpFull = { 0.0f, 0.0f,
         static_cast<float>(g_Engine->FrameBufferWidth()),
         static_cast<float>(g_Engine->FrameBufferHeight()), 0.0f, 1.0f };
@@ -1776,31 +1563,26 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
     D3D12_CPU_DESCRIPTOR_HANDLE backBufferRtv = g_Engine->CurrentBackBufferView();
     if (backBufferRtv.ptr != 0)
     {
-        // ※合成パスではバックバッファへ描くため、RTV を明示的に結合して不定状態を回避
         cmd->OMSetRenderTargets(1, &backBufferRtv, FALSE, nullptr);
     }
 
-    // 合成
-    bool canComposite = m_smoothedDepth.srvHandle && m_normal.srvHandle && m_thickness.srvHandle && m_sceneDepthSrv && m_sceneColorCopy.srvHandle;
+    bool canComposite = m_rawDepth.srvHandle && m_thickness.srvHandle && m_sceneDepthSrv && m_sceneColorCopy.srvHandle;
     if (canComposite)
     {
         cmd->SetGraphicsRootSignature(m_ssfrCompositeRootSig->Get());
         cmd->SetPipelineState(m_ssfrCompositePSO.Get());
         cmd->SetGraphicsRootConstantBufferView(0, cbAddress);
-        // 連続SRVテーブル誤参照を防ぐため、各SRVを個別にバインドする
-        cmd->SetGraphicsRootDescriptorTable(1, m_smoothedDepth.srvHandle->HandleGPU);
-        cmd->SetGraphicsRootDescriptorTable(2, m_normal.srvHandle->HandleGPU);
-        cmd->SetGraphicsRootDescriptorTable(3, m_thickness.srvHandle->HandleGPU);
-        cmd->SetGraphicsRootDescriptorTable(4, m_sceneDepthSrv->HandleGPU);
-        cmd->SetGraphicsRootDescriptorTable(5, m_sceneColorCopy.srvHandle->HandleGPU);
+        cmd->SetGraphicsRootDescriptorTable(1, m_rawDepth.srvHandle->HandleGPU);
+        cmd->SetGraphicsRootDescriptorTable(2, m_thickness.srvHandle->HandleGPU);
+        cmd->SetGraphicsRootDescriptorTable(3, m_sceneDepthSrv->HandleGPU);
+        cmd->SetGraphicsRootDescriptorTable(4, m_sceneColorCopy.srvHandle->HandleGPU);
         cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         cmd->DrawInstanced(3, 1, 0, 0);
     }
 
-    // 状態を次フレーム向けに戻す
     if (depthResource)
     {
-        auto toDepth = CD3DX12_RESOURCE_BARRIER::Transition(depthResource, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+        auto toDepth = CD3DX12_RESOURCE_BARRIER::Transition(depthResource, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
         cmd->ResourceBarrier(1, &toDepth);
     }
 
@@ -1814,7 +1596,6 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
     {
         D3D12_CPU_DESCRIPTOR_HANDLE rtv = g_Engine->CurrentBackBufferView();
         D3D12_CPU_DESCRIPTOR_HANDLE dsv = g_Engine->DepthStencilView();
-        // ※グリッドや通常ジオメトリへ戻る前に DSV を再結合し、#615 の描画不具合を防止
         if (rtv.ptr != 0)
         {
             if (dsv.ptr != 0)

@@ -6,16 +6,17 @@ cbuffer CameraCB : register(b0)
 {
     float4x4 proj;
     float4x4 view;
-    float4x4 world;            // ワールド行列を共有して描画位置のズレを防ぐ
-    float2 screenSize;
-    float nearZ;
-    float farZ;
-    float3 iorF0;                // 例: (0.02,0.02,0.02)
-    float absorb;                // 吸収係数
-    float2 framebufferSize;      // 合成用のフル解像度
-    float2 bilateralSigma;       // バイラテラルフィルタの空間＆深度シグマ
-    float2 bilateralNormalKernel;// 法線シグマとカーネル半径
-    float2 _pad;                 // 16byte 境界を維持
+    float4x4 world;             // ワールド行列を共有して描画位置のズレを防ぐ
+    float2 screenSize;          // 流体バッファの解像度（半解像度）
+    float nearZ;                // カメラ近クリップ
+    float farZ;                 // カメラ遠クリップ
+    float3 iorF0;               // フレネル計算用の F0
+    float absorb;               // Beer-Lambert の吸収係数
+    float2 framebufferSize;     // フル解像度のフレームバッファ
+    float refractionScale;      // 屈折オフセットの強さ
+    float thicknessScale;       // 厚みに対する減衰係数
+    float2 invScreenSize;       // 流体バッファの逆解像度
+    float2 _pad;                // 16byte 境界を維持
 }
 
 // 流体パラメータ
