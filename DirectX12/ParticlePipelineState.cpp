@@ -9,20 +9,36 @@ ParticlePipelineState::ParticlePipelineState()
 {
     // パイプラインステートの初期設定
     desc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-    desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+    desc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE; // 背面を描かない粒子なのでカリング無効にするため
     desc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
     desc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     desc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-    desc.DepthStencilState.DepthEnable = FALSE;
+    desc.DepthStencilState.DepthEnable = FALSE;                     // スプラットは深度テスト不要のため無効化
+    desc.DepthStencilState.StencilEnable = FALSE;                    // ステンシルも使用しないため無効化
     desc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
     desc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
     desc.SampleMask = UINT_MAX;
     desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-    desc.NumRenderTargets = 1;
-    desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-    desc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+    desc.NumRenderTargets = 2;                                      // 深度と厚みを同時出力するためRTVを2つ使用
+    desc.RTVFormats[0] = DXGI_FORMAT_R32_FLOAT;                     // 前面線形深度を保持するフォーマット
+    desc.RTVFormats[1] = DXGI_FORMAT_R16_FLOAT;                     // 粒子厚みを蓄積するフォーマット
+    desc.DSVFormat = DXGI_FORMAT_UNKNOWN;                           // 深度バッファを使わないためDSVは未使用
     desc.SampleDesc.Count = 1;
     desc.SampleDesc.Quality = 0;
+
+    // RTV0: 最前面の深度を取得するため最小値ブレンドを設定
+    auto& r0 = desc.BlendState.RenderTarget[0];
+    r0.BlendEnable = TRUE;
+    r0.SrcBlend = D3D12_BLEND_ONE;
+    r0.DestBlend = D3D12_BLEND_ONE;
+    r0.BlendOp = D3D12_BLEND_OP_MIN;
+
+    // RTV1: 粒子厚みを積算するため加算ブレンドを設定
+    auto& r1 = desc.BlendState.RenderTarget[1];
+    r1.BlendEnable = TRUE;
+    r1.SrcBlend = D3D12_BLEND_ONE;
+    r1.DestBlend = D3D12_BLEND_ONE;
+    r1.BlendOp = D3D12_BLEND_OP_ADD;
 }
 
 bool ParticlePipelineState::IsValid()
