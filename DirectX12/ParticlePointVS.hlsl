@@ -15,7 +15,7 @@ struct VSOutput
 {
     float4 svpos      : SV_POSITION;
     float4 color      : COLOR0;
-    float pointSize : PSIZE;
+    float  pointSize  : SV_PointSize;
 };
 
 VSOutput VSMain(VSInput input)
