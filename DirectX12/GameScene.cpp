@@ -191,7 +191,7 @@ bool GameScene::Init()
     g_Engine->RegisterObj<Camera>("Camera", camera);
 
     m_fluid = std::make_unique<FluidSystem>();
-    if (!m_fluid || !m_fluid->Init(g_Engine->Device(), m_initialBounds, 10000, kRenderMode))
+    if (!m_fluid || !m_fluid->Init(g_Engine->Device(), m_initialBounds, 1000, kRenderMode))
     {
         return false;
     }

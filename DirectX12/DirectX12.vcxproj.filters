@@ -266,9 +266,6 @@
     <FxCompile Include="ParticleVS.hlsl">
       <Filter>リソース ファイル\VertexShader</Filter>
     </FxCompile>
-    <FxCompile Include="ParticlePointVS.hlsl">
-      <Filter>リソース ファイル\VertexShader</Filter>
-    </FxCompile>
     <FxCompile Include="SimpleVS.hlsl">
       <Filter>リソース ファイル\VertexShader</Filter>
     </FxCompile>
@@ -282,9 +279,6 @@
       <Filter>リソース ファイル\ComputeShader</Filter>
     </FxCompile>
     <FxCompile Include="AccumBillboardPS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
-    <FxCompile Include="ParticlePointPS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
     <FxCompile Include="AccumBillboardVS.hlsl">

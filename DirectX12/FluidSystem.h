@@ -91,7 +91,6 @@ private:
     UINT m_indexCount = 0;                              // 球メッシュのインデックス数
     std::unique_ptr<RootSignature> m_rootSignature;  // 粒子描画用ルートシグネチャ
     std::unique_ptr<PipelineState> m_pipelineState;  // 粒子描画用PSO
-    std::unique_ptr<PipelineState> m_pointPipelineState; // 粒子位置確認用の点描画PSO
     std::unique_ptr<PipelineState> m_gridPipelineState; // グリッド描画用PSO
     std::array<std::unique_ptr<ConstantBuffer>, Engine::FRAME_BUFFER_COUNT> m_constantBuffers; // 定数バッファ
 
@@ -110,7 +109,6 @@ private:
 
     RenderMode m_renderMode = RenderMode::SSFR; // 描画モード
     bool m_useSSFR = true;          // SSFR を使用するかどうか（既定で ON にして球メッシュ描画を置き換える）
-    bool m_drawParticlePoints = true; // SSFR と並行して粒子位置を点で可視化するかどうか
 
     struct MarchingVertex
     {

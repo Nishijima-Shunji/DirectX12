@@ -93,25 +93,6 @@ bool FluidSystem::Init(ID3D12Device* device, const Bounds& initialBounds, UINT p
         return false;
     }
 
-    m_pointPipelineState = std::make_unique<PipelineState>();
-    if (!m_pointPipelineState)
-    {
-        return false;
-    }
-    D3D12_INPUT_LAYOUT_DESC pointLayout{};
-    pointLayout.pInputElementDescs = kPointInputElements;
-    pointLayout.NumElements = _countof(kPointInputElements);
-    m_pointPipelineState->SetInputLayout(pointLayout);
-    m_pointPipelineState->SetRootSignature(m_rootSignature->Get());
-    m_pointPipelineState->SetVS(L"ParticlePointVS.cso");
-    m_pointPipelineState->SetPS(L"ParticlePointPS.cso");
-    m_pointPipelineState->SetDepthStencilFormat(DXGI_FORMAT_D32_FLOAT);
-    m_pointPipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT);
-    if (!m_pointPipelineState->IsValid())
-    {
-        return false;
-    }
-
     MeshData sphereMesh = CreateLowPolySphere(1.0f, 1);
     std::vector<SphereVertex> sphereVertices;
     sphereVertices.reserve(sphereMesh.vertices.size());
@@ -1877,16 +1858,6 @@ void FluidSystem::Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera)
         cmd->IASetVertexBuffers(0, static_cast<UINT>(vbViews.size()), vbViews.data());
         cmd->IASetIndexBuffer(&ibView);
         cmd->DrawIndexedInstanced(m_indexCount, static_cast<UINT>(m_particles.size()), 0, 0, 0);
-    }
-
-    if (m_drawParticlePoints && m_pointPipelineState && m_pointPipelineState->IsValid() && m_instanceBuffer)
-    {
-        // SSFR の結果に粒子中心を重ねて表示し、位置整合性を目視で検証できるようにする
-        cmd->SetPipelineState(m_pointPipelineState->Get());
-        auto pointVb = m_instanceBuffer->View();
-        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
-        cmd->IASetVertexBuffers(0, 1, &pointVb);
-        cmd->DrawInstanced(static_cast<UINT>(m_particles.size()), 1, 0, 0);
     }
 
     if (m_gridPipelineState && m_gridPipelineState->IsValid() && m_gridLineBuffer && m_gridLineVertexCount > 0)
