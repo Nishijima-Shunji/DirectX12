@@ -8,6 +8,7 @@
 #include "SharedStruct.h"
 #include "VertexBuffer.h"
 #include <DirectXMath.h>
+#include <cstdint>
 #include <array>
 #include <memory>
 #include <vector>
@@ -28,7 +29,13 @@ public:
     FluidSystem();
     ~FluidSystem() = default;
 
-    bool Init(ID3D12Device* device, const Bounds& initialBounds, UINT particleCount);
+    enum class RenderMode
+    {
+        SSFR,            // スクリーンスペース流体描画
+        MarchingCubes,   // マーチングキューブによるサーフェス生成
+    };
+
+    bool Init(ID3D12Device* device, const Bounds& initialBounds, UINT particleCount, RenderMode renderMode = RenderMode::SSFR);
     void Update(float deltaTime);
     void Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera);
 
@@ -101,8 +108,24 @@ private:
     float m_supportRadius = 0.18f;  // 粒子同士の相互作用半径
     float m_maxVelocity = 6.0f;     // 速度クランプ値
 
+    RenderMode m_renderMode = RenderMode::SSFR; // 描画モード
     bool m_useSSFR = true;          // SSFR を使用するかどうか（既定で ON にして球メッシュ描画を置き換える）
     bool m_drawParticlePoints = true; // SSFR と並行して粒子位置を点で可視化するかどうか
+
+    struct MarchingVertex
+    {
+        DirectX::XMFLOAT3 position; // サーフェス頂点位置
+        DirectX::XMFLOAT3 normal;   // サーフェス法線
+    };
+
+    std::vector<MarchingVertex> m_marchingVertices;      // マーチングキューブ頂点
+    std::vector<uint32_t> m_marchingIndices;             // マーチングキューブインデックス
+    std::unique_ptr<VertexBuffer> m_marchingVertexBuffer; // マーチングキューブVB
+    std::unique_ptr<IndexBuffer> m_marchingIndexBuffer;   // マーチングキューブIB
+    size_t m_marchingVertexCapacity = 0;                  // VB確保済みサイズ
+    size_t m_marchingIndexCapacity = 0;                   // IB確保済みサイズ
+    UINT m_marchingIndexCount = 0;                        // 描画インデックス数
+    std::unique_ptr<PipelineState> m_marchingPipelineState; // マーチングキューブ描画PSO
 
     struct alignas(256) SSFRConstant
     {
@@ -175,6 +198,10 @@ private:
     bool CreateParticlePSO(); // 粒子 PSO 生成
     bool CreateCompositePSO(); // 合成 PSO 生成
     bool CreateComputePSO(); // コンピュート PSO 生成
+    void GenerateMarchingCubesMesh(); // マーチングキューブメッシュ生成
+    void UpdateMarchingBuffers(); // マーチングキューブ用VB/IB更新
+    float SampleGridDensity(const DirectX::XMFLOAT3& position) const; // 格子密度サンプル
+    DirectX::XMFLOAT3 SampleGridGradient(const DirectX::XMFLOAT3& position) const; // 密度勾配サンプル
 
     struct GridNode
     {

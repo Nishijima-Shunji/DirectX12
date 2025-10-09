@@ -9,6 +9,11 @@
 
 using namespace DirectX;
 
+namespace
+{
+    constexpr FluidSystem::RenderMode kRenderMode = FluidSystem::RenderMode::MarchingCubes; // 初期描画モード（マーチングキューブ）
+}
+
 namespace GameSceneDetail
 {
     struct WallVertex
@@ -186,7 +191,7 @@ bool GameScene::Init()
     g_Engine->RegisterObj<Camera>("Camera", camera);
 
     m_fluid = std::make_unique<FluidSystem>();
-    if (!m_fluid || !m_fluid->Init(g_Engine->Device(), m_initialBounds, 10000))
+    if (!m_fluid || !m_fluid->Init(g_Engine->Device(), m_initialBounds, 10000, kRenderMode))
     {
         return false;
     }

@@ -332,6 +332,12 @@
     <FxCompile Include="GridLineVS.hlsl">
       <Filter>リソース ファイル\VertexShader</Filter>
     </FxCompile>
+    <FxCompile Include="MarchingCubesPS.hlsl">
+      <Filter>リソース ファイル\PixelShader</Filter>
+    </FxCompile>
+    <FxCompile Include="MarchingCubesVS.hlsl">
+      <Filter>リソース ファイル\VertexShader</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FullscreenPSO.h">

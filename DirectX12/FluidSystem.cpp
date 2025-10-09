@@ -42,7 +42,14 @@ namespace
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
         { "TEXCOORD", 0, DXGI_FORMAT_R32_FLOAT,        0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
+
+    constexpr D3D12_INPUT_ELEMENT_DESC kMarchingInputElements[] =
+    {
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+    };
 }
+
 
 FluidSystem::FluidSystem()
     : m_world(XMMatrixIdentity())
@@ -51,11 +58,13 @@ FluidSystem::FluidSystem()
     m_gridSpacing = std::max(m_supportRadius, 0.01f);
 }
 
-bool FluidSystem::Init(ID3D12Device* device, const Bounds& initialBounds, UINT particleCount)
+bool FluidSystem::Init(ID3D12Device* device, const Bounds& initialBounds, UINT particleCount, RenderMode renderMode)
 {
     (void)device; // DirectXリソース生成は Engine 内のヘルパーを利用するため未使用
 
     m_bounds = initialBounds;
+    m_renderMode = renderMode;
+    m_useSSFR = (m_renderMode == RenderMode::SSFR);
     InitializeParticles(particleCount);
     InitializeGrid();
 
@@ -181,7 +190,26 @@ bool FluidSystem::Init(ID3D12Device* device, const Bounds& initialBounds, UINT p
         }
     }
 
-    if (!EnsureSSFRResources())
+    m_marchingPipelineState = std::make_unique<PipelineState>();
+    if (!m_marchingPipelineState)
+    {
+        return false;
+    }
+    D3D12_INPUT_LAYOUT_DESC marchingLayout{};
+    marchingLayout.pInputElementDescs = kMarchingInputElements;
+    marchingLayout.NumElements = _countof(kMarchingInputElements);
+    m_marchingPipelineState->SetInputLayout(marchingLayout);
+    m_marchingPipelineState->SetRootSignature(m_rootSignature->Get());
+    m_marchingPipelineState->SetVS(L"MarchingCubesVS.cso");
+    m_marchingPipelineState->SetPS(L"MarchingCubesPS.cso");
+    m_marchingPipelineState->SetDepthStencilFormat(DXGI_FORMAT_D32_FLOAT);
+    m_marchingPipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+    if (!m_marchingPipelineState->IsValid())
+    {
+        return false;
+    }
+
+    if (m_useSSFR && !EnsureSSFRResources())
     {
         return false; // ※SSFR 初期化に失敗した場合は描画へ進めない
     }
@@ -426,6 +454,7 @@ void FluidSystem::Update(float deltaTime)
     }
 
     UpdateInstanceBuffer();
+    GenerateMarchingCubesMesh(); // マーチングキューブ用メッシュを更新して粒子表面を再構築する
     UpdateGridLines();
 }
 
@@ -511,6 +540,271 @@ void FluidSystem::UpdateInstanceBuffer()
         memcpy(mapped, m_instances.data(), sizeof(ParticleInstance) * m_instances.size());
         resource->Unmap(0, nullptr);
     }
+}
+
+float FluidSystem::SampleGridDensity(const XMFLOAT3& position) const
+{
+    if (m_gridNodes.empty())
+    {
+        return 0.0f;
+    }
+
+    const float safeSpacing = std::max(m_gridSpacing, 1e-4f);
+    const float invSpacing = 1.0f / safeSpacing;
+    const int maxX = std::max(m_gridResolution.x - 1, 0);
+    const int maxY = std::max(m_gridResolution.y - 1, 0);
+    const int maxZ = std::max(m_gridResolution.z - 1, 0);
+
+    const float fx = std::clamp((position.x - m_gridOrigin.x) * invSpacing, 0.0f, static_cast<float>(maxX));
+    const float fy = std::clamp((position.y - m_gridOrigin.y) * invSpacing, 0.0f, static_cast<float>(maxY));
+    const float fz = std::clamp((position.z - m_gridOrigin.z) * invSpacing, 0.0f, static_cast<float>(maxZ));
+
+    const int x0 = std::clamp(static_cast<int>(std::floor(fx)), 0, maxX);
+    const int y0 = std::clamp(static_cast<int>(std::floor(fy)), 0, maxY);
+    const int z0 = std::clamp(static_cast<int>(std::floor(fz)), 0, maxZ);
+    const int x1 = std::min(x0 + 1, maxX);
+    const int y1 = std::min(y0 + 1, maxY);
+    const int z1 = std::min(z0 + 1, maxZ);
+
+    const float tx = fx - static_cast<float>(x0);
+    const float ty = fy - static_cast<float>(y0);
+    const float tz = fz - static_cast<float>(z0);
+
+    auto density = [&](int x, int y, int z)
+    {
+        return m_gridNodes[GridIndex(x, y, z)].mass;
+    };
+
+    const float c000 = density(x0, y0, z0);
+    const float c100 = density(x1, y0, z0);
+    const float c010 = density(x0, y1, z0);
+    const float c110 = density(x1, y1, z0);
+    const float c001 = density(x0, y0, z1);
+    const float c101 = density(x1, y0, z1);
+    const float c011 = density(x0, y1, z1);
+    const float c111 = density(x1, y1, z1);
+
+    const float c00 = c000 * (1.0f - tx) + c100 * tx;
+    const float c10 = c010 * (1.0f - tx) + c110 * tx;
+    const float c01 = c001 * (1.0f - tx) + c101 * tx;
+    const float c11 = c011 * (1.0f - tx) + c111 * tx;
+
+    const float c0 = c00 * (1.0f - ty) + c10 * ty;
+    const float c1 = c01 * (1.0f - ty) + c11 * ty;
+
+    return c0 * (1.0f - tz) + c1 * tz;
+}
+
+XMFLOAT3 FluidSystem::SampleGridGradient(const XMFLOAT3& position) const
+{
+    const float safeSpacing = std::max(m_gridSpacing, 1e-3f);
+    const float h = safeSpacing * 0.5f;
+
+    const float dx = SampleGridDensity(XMFLOAT3(position.x + h, position.y, position.z)) -
+        SampleGridDensity(XMFLOAT3(position.x - h, position.y, position.z));
+    const float dy = SampleGridDensity(XMFLOAT3(position.x, position.y + h, position.z)) -
+        SampleGridDensity(XMFLOAT3(position.x, position.y - h, position.z));
+    const float dz = SampleGridDensity(XMFLOAT3(position.x, position.y, position.z + h)) -
+        SampleGridDensity(XMFLOAT3(position.x, position.y, position.z - h));
+
+    XMVECTOR grad = XMVectorSet(dx, dy, dz, 0.0f);
+    grad = XMVector3Normalize(grad);
+
+    XMFLOAT3 normal{};
+    XMStoreFloat3(&normal, grad);
+    if (std::isnan(normal.x) || std::isnan(normal.y) || std::isnan(normal.z))
+    {
+        normal = XMFLOAT3(0.0f, 1.0f, 0.0f);
+    }
+    return normal;
+}
+
+void FluidSystem::UpdateMarchingBuffers()
+{
+    m_marchingIndexCount = static_cast<UINT>(m_marchingIndices.size());
+    const size_t vbSize = m_marchingVertices.size() * sizeof(MarchingVertex);
+    const size_t ibSize = m_marchingIndices.size() * sizeof(uint32_t);
+
+    if (vbSize == 0 || ibSize == 0)
+    {
+        m_marchingVertexBuffer.reset();
+        m_marchingIndexBuffer.reset();
+        m_marchingVertexCapacity = 0;
+        m_marchingIndexCapacity = 0;
+        return;
+    }
+
+    if (!m_marchingVertexBuffer || vbSize > m_marchingVertexCapacity)
+    {
+        m_marchingVertexCapacity = vbSize;
+        m_marchingVertexBuffer = std::make_unique<VertexBuffer>(vbSize, sizeof(MarchingVertex), m_marchingVertices.data());
+        if (!m_marchingVertexBuffer || !m_marchingVertexBuffer->IsValid())
+        {
+            return;
+        }
+    }
+    else
+    {
+        void* mapped = nullptr;
+        if (auto* resource = m_marchingVertexBuffer->GetResource(); resource && SUCCEEDED(resource->Map(0, nullptr, &mapped)))
+        {
+            memcpy(mapped, m_marchingVertices.data(), vbSize);
+            resource->Unmap(0, nullptr);
+        }
+    }
+
+    m_marchingIndexCapacity = ibSize;
+    m_marchingIndexBuffer = std::make_unique<IndexBuffer>(ibSize, m_marchingIndices.data());
+    if (!m_marchingIndexBuffer || !m_marchingIndexBuffer->IsValid())
+    {
+        return;
+    }
+}
+
+void FluidSystem::GenerateMarchingCubesMesh()
+{
+    if (m_renderMode != RenderMode::MarchingCubes)
+    {
+        return;
+    }
+
+    m_marchingVertices.clear();
+    m_marchingIndices.clear();
+    m_marchingIndexCount = 0;
+
+    if (m_gridResolution.x < 2 || m_gridResolution.y < 2 || m_gridResolution.z < 2)
+    {
+        UpdateMarchingBuffers();
+        return;
+    }
+
+    const float isoLevel = std::max(m_restDensity * 0.5f, 0.05f); // 静止密度の半分を閾値にしてノイズを抑制
+    const float spacing = std::max(m_gridSpacing, 1e-4f);
+
+    // 立方体を 6 個のテトラへ分割し、簡易テーブルでマーチングキューブ相当の面生成を行う
+    static constexpr int tetrahedra[6][4] =
+    {
+        { 0, 5, 1, 6 },
+        { 0, 1, 2, 6 },
+        { 0, 2, 3, 6 },
+        { 0, 3, 7, 6 },
+        { 0, 7, 4, 6 },
+        { 0, 4, 5, 6 },
+    };
+
+    static constexpr int tetraEdgeCorners[6][2] =
+    {
+        { 0, 1 },
+        { 1, 2 },
+        { 2, 0 },
+        { 0, 3 },
+        { 1, 3 },
+        { 2, 3 },
+    };
+
+    static constexpr int tetraTriTable[16][7] =
+    {
+        { -1, -1, -1, -1, -1, -1, -1 },
+        { 0, 3, 2, -1, -1, -1, -1 },
+        { 0, 1, 4, -1, -1, -1, -1 },
+        { 1, 4, 2, 2, 4, 3, -1 },
+        { 1, 2, 5, -1, -1, -1, -1 },
+        { 0, 3, 5, 0, 5, 1, -1 },
+        { 0, 2, 5, 0, 5, 4, -1 },
+        { 5, 4, 3, -1, -1, -1, -1 },
+        { 5, 4, 3, -1, -1, -1, -1 },
+        { 0, 5, 4, 0, 2, 5, -1 },
+        { 1, 5, 3, 1, 3, 0, -1 },
+        { 5, 2, 1, -1, -1, -1, -1 },
+        { 1, 4, 3, 1, 3, 2, -1 },
+        { 0, 4, 1, -1, -1, -1, -1 },
+        { 0, 3, 2, -1, -1, -1, -1 },
+        { -1, -1, -1, -1, -1, -1, -1 },
+    };
+
+    const int cellsX = m_gridResolution.x - 1;
+    const int cellsY = m_gridResolution.y - 1;
+    const int cellsZ = m_gridResolution.z - 1;
+
+    for (int z = 0; z < cellsZ; ++z)
+    {
+        for (int y = 0; y < cellsY; ++y)
+        {
+            for (int x = 0; x < cellsX; ++x)
+            {
+                XMFLOAT3 cornerPos[8];
+                float cornerValue[8];
+
+                for (int i = 0; i < 8; ++i)
+                {
+                    const int dx = (i & 1) ? 1 : 0;
+                    const int dy = (i & 2) ? 1 : 0;
+                    const int dz = (i & 4) ? 1 : 0;
+
+                    const float px = m_gridOrigin.x + (static_cast<float>(x + dx) * spacing);
+                    const float py = m_gridOrigin.y + (static_cast<float>(y + dy) * spacing);
+                    const float pz = m_gridOrigin.z + (static_cast<float>(z + dz) * spacing);
+
+                    cornerPos[i] = XMFLOAT3(px, py, pz);
+                    cornerValue[i] = m_gridNodes[GridIndex(x + dx, y + dy, z + dz)].mass;
+                }
+
+                for (const auto& tetra : tetrahedra)
+                {
+                    XMFLOAT3 tetraPos[4];
+                    float tetraValue[4];
+                    int caseIndex = 0;
+
+                    for (int i = 0; i < 4; ++i)
+                    {
+                        const int cornerIdx = tetra[i];
+                        tetraPos[i] = cornerPos[cornerIdx];
+                        tetraValue[i] = cornerValue[cornerIdx];
+                        if (tetraValue[i] > isoLevel)
+                        {
+                            caseIndex |= (1 << i);
+                        }
+                    }
+
+                    const int* edges = tetraTriTable[caseIndex];
+                    for (int e = 0; edges[e] != -1; e += 3)
+                    {
+                        MarchingVertex tri[3];
+                        for (int j = 0; j < 3; ++j)
+                        {
+                            const int edge = edges[e + j];
+                            const int ia = tetraEdgeCorners[edge][0];
+                            const int ib = tetraEdgeCorners[edge][1];
+                            const float va = tetraValue[ia];
+                            const float vb = tetraValue[ib];
+                            const float denom = vb - va;
+                            float t = 0.5f;
+                            if (std::fabs(denom) > 1e-6f)
+                            {
+                                t = std::clamp((isoLevel - va) / denom, 0.0f, 1.0f);
+                            }
+
+                            tri[j].position.x = tetraPos[ia].x + (tetraPos[ib].x - tetraPos[ia].x) * t;
+                            tri[j].position.y = tetraPos[ia].y + (tetraPos[ib].y - tetraPos[ia].y) * t;
+                            tri[j].position.z = tetraPos[ia].z + (tetraPos[ib].z - tetraPos[ia].z) * t;
+                            tri[j].normal = SampleGridGradient(tri[j].position);
+                        }
+
+                        const uint32_t baseIndex = static_cast<uint32_t>(m_marchingVertices.size());
+                        m_marchingVertices.push_back(tri[0]);
+                        m_marchingVertices.push_back(tri[1]);
+                        m_marchingVertices.push_back(tri[2]);
+
+                        m_marchingIndices.push_back(baseIndex);
+                        m_marchingIndices.push_back(baseIndex + 1);
+                        m_marchingIndices.push_back(baseIndex + 2);
+                    }
+                }
+            }
+        }
+    }
+
+    UpdateMarchingBuffers();
 }
 
 void FluidSystem::InitializeGrid()
@@ -1556,11 +1850,23 @@ void FluidSystem::Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera)
     cmd->SetGraphicsRootSignature(m_rootSignature->Get());
     cmd->SetGraphicsRootConstantBufferView(0, cb->GetAddress());
 
-    if (m_useSSFR)
+    if (m_renderMode == RenderMode::SSFR && m_useSSFR)
     {
         RenderSSFR(cmd, camera); // ※SSFR を使う場合はスクリーンスペース流体描画へ切り替え
         cmd->SetGraphicsRootSignature(m_rootSignature->Get());
         cmd->SetGraphicsRootConstantBufferView(0, cb->GetAddress()); // ※SSFR 内でルートシグネチャが変わるため再設定
+    }
+    else if (m_renderMode == RenderMode::MarchingCubes && m_marchingPipelineState && m_marchingPipelineState->IsValid() &&
+        m_marchingVertexBuffer && m_marchingIndexBuffer && m_marchingIndexCount > 0)
+    {
+        // グリッド密度を元に生成したサーフェスを描画する
+        cmd->SetPipelineState(m_marchingPipelineState->Get());
+        auto vbView = m_marchingVertexBuffer->View();
+        auto ibView = m_marchingIndexBuffer->View();
+        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        cmd->IASetVertexBuffers(0, 1, &vbView);
+        cmd->IASetIndexBuffer(&ibView);
+        cmd->DrawIndexedInstanced(m_marchingIndexCount, 1, 0, 0, 0);
     }
     else if (m_sphereVertexBuffer && m_sphereIndexBuffer && m_indexCount > 0)
     {
@@ -1602,6 +1908,7 @@ void FluidSystem::SetBounds(const Bounds& bounds)
         ResolveCollisions(particle);
     }
     UpdateInstanceBuffer();
+    GenerateMarchingCubesMesh(); // 境界変更時もサーフェスを再構築して破綻を防止する
     UpdateGridLines();
 }
 
