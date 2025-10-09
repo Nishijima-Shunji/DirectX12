@@ -16,7 +16,8 @@ cbuffer CameraCB : register(b0)
     float refractionScale;      // 屈折オフセットの強さ
     float thicknessScale;       // 厚みに対する減衰係数
     float2 invScreenSize;       // 流体バッファの逆解像度
-    float2 _pad;                // 16byte 境界を維持
+    float2 bilateralSigma;      // バイラテラルフィルタ用の空間/深度シグマ
+    float2 bilateralNormalKernel;// 法線ウェイト指数とカーネル半径
 }
 
 // 流体パラメータ

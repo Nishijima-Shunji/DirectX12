@@ -141,13 +141,15 @@ private:
         float refractionScale;              // 屈折オフセット量
         float thicknessScale;               // 厚み減衰スケール
         DirectX::XMFLOAT2 invScreenSize;    // 流体ターゲットの逆解像度
-        DirectX::XMFLOAT2 padding;          // 16byte 境界を維持する余白
+        DirectX::XMFLOAT2 bilateralSigma;   // バイラテラルフィルタの空間/深度シグマ
+        DirectX::XMFLOAT2 bilateralNormalKernel; // 法線重み指数とカーネル半径
     };
 
     struct SSFRTarget
     {
         Microsoft::WRL::ComPtr<ID3D12Resource> resource; // GPU リソース
         DescriptorHandle* srvHandle = nullptr;            // SRV ディスクリプタ
+        DescriptorHandle* uavHandle = nullptr;            // UAV ディスクリプタ
         D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle{};          // RTV 用 CPU ディスクリプタ
         D3D12_RESOURCE_STATES currentState = D3D12_RESOURCE_STATE_COMMON; // 現在のリソース状態
     };
@@ -158,9 +160,14 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_ssfrCompositePSO; // 合成 PSO
     std::unique_ptr<RootSignature> m_ssfrParticleRootSig;     // 粒子描画用ルートシグネチャ
     std::unique_ptr<RootSignature> m_ssfrCompositeRootSig;    // 合成用ルートシグネチャ
+    std::unique_ptr<RootSignature> m_ssfrComputeRootSig;      // バイラテラル/法線共有ルートシグネチャ
+    std::unique_ptr<ComputePipelineState> m_ssfrBilateralCS;  // 深度平滑化 CS
+    std::unique_ptr<ComputePipelineState> m_ssfrNormalCS;     // 法線再構築 CS
 
     SSFRTarget m_rawDepth;        // 粒子スプラット結果（深度）
     SSFRTarget m_thickness;       // 粒子厚み積算
+    SSFRTarget m_smoothedDepth;   // 平滑化済み深度
+    SSFRTarget m_fluidNormal;     // スクリーンスペース法線
 
     SSFRTarget m_sceneColorCopy;  // 背景カラー退避用（SRV のみ使用）
     DescriptorHandle* m_sceneDepthSrv = nullptr; // シーン深度 SRV
@@ -186,6 +193,9 @@ private:
     D3D12_CPU_DESCRIPTOR_HANDLE AllocateRtvDescriptor(); // RTV 用ヒープからディスクリプタを確保
     bool CreateParticlePSO(); // 粒子 PSO 生成
     bool CreateCompositePSO(); // 合成 PSO 生成
+    bool CreateComputePSOs(); // バイラテラル/法線 CS 生成
+    void DispatchBilateralFilter(ID3D12GraphicsCommandList* cmd, D3D12_GPU_VIRTUAL_ADDRESS cbAddress); // 深度平滑化
+    void DispatchNormalReconstruction(ID3D12GraphicsCommandList* cmd, D3D12_GPU_VIRTUAL_ADDRESS cbAddress); // 法線生成
     void GenerateMarchingCubesMesh(); // マーチングキューブメッシュ生成
     void UpdateMarchingBuffers(); // マーチングキューブ用VB/IB更新
     float SampleGridDensity(const DirectX::XMFLOAT3& position) const; // 格子密度サンプル
@@ -208,4 +218,8 @@ private:
     float m_pressureStiffness = 6.0f;                   // 圧力係数（反発力の強さを制御）
     float m_refractionStrength = 0.05f;                 // 屈折オフセットの強さ
     float m_thicknessAttenuation = 1.2f;                // 厚みを使った減衰係数
+    float m_bilateralSigmaSpatial = 2.0f;               // 深度平滑化の空間シグマ
+    float m_bilateralSigmaDepth = 0.05f;                // 深度平滑化の深度シグマ
+    float m_bilateralNormalExponent = 32.0f;            // 法線ウェイト指数
+    float m_bilateralKernelRadius = 3.0f;               // フィルタ半径
 };
