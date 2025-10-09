@@ -3,14 +3,6 @@
 Texture2D<float> g_RawDepthTexture        : register(t0); // 粒子スプラット直後の線形深度
 RWTexture2D<float> g_SmoothedDepthTexture : register(u0); // 平滑化後の深度を出力
 
-cbuffer BilateralParams : register(b1)
-{
-    float spatialSigma; // 画素距離に対するガウシアン係数
-    float depthSigma;   // 深度差に対する感度
-    float normalSigma;  // 法線差に対する感度（指数として利用）
-    uint  kernelRadius; // フィルタ半径（ピクセル単位）
-}
-
 // スクリーンサイズを整数で扱う際の補助（画素外アクセス防止）
 int2 GetScreenExtent()
 {
@@ -105,13 +97,15 @@ void main(uint3 dispatchThreadID : SV_DispatchThreadID)
     float weightSum = 0.0f;
     float depthSum = 0.0f;
 
-    float sigmaS = max(spatialSigma, 1e-4f);
-    float sigmaD = max(depthSigma, 1e-4f);
-    float sigmaN = max(normalSigma, 1e-4f);
+    // ※係数は b0 へ集約し、ルートシグネチャの CBV スロット競合を解消
+    float sigmaS = max(bilateralSigma.x, 1e-4f);
+    float sigmaD = max(bilateralSigma.y, 1e-4f);
+    float sigmaN = max(bilateralNormalKernel.x, 1e-4f);
+    int radius = max(int(bilateralNormalKernel.y + 0.5f), 0); // ※浮動小数で渡された半径を整数へ丸める
 
-    for (int y = -int(kernelRadius); y <= int(kernelRadius); ++y)
+    for (int y = -radius; y <= radius; ++y)
     {
-        for (int x = -int(kernelRadius); x <= int(kernelRadius); ++x)
+        for (int x = -radius; x <= radius; ++x)
         {
             int2 offset = int2(x, y);
             int2 samplePixel = clamp(int2(pixel) + offset, int2(0, 0), extent - 1);

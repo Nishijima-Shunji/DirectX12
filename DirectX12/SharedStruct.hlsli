@@ -9,10 +9,12 @@ cbuffer CameraCB : register(b0)
     float2 screenSize;
     float nearZ;
     float farZ;
-    float3 iorF0;           // 例: (0.02,0.02,0.02)
-    float absorb;           // 吸収係数
-    float2 framebufferSize; // 合成用のフル解像度を保持（b2 参照エラー防止のため移動）
-    float2 _pad;            // 16byte 境界を維持
+    float3 iorF0;                // 例: (0.02,0.02,0.02)
+    float absorb;                // 吸収係数
+    float2 framebufferSize;      // 合成用のフル解像度
+    float2 bilateralSigma;       // バイラテラルフィルタの空間＆深度シグマ
+    float2 bilateralNormalKernel;// 法線シグマとカーネル半径
+    float2 _pad;                 // 16byte 境界を維持
 }
 
 // 流体パラメータ

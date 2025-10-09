@@ -111,16 +111,10 @@ private:
         float farZ;                         // カメラの遠クリップ
         DirectX::XMFLOAT3 iorF0;            // Fresnel 計算に使う F0（屈折率 1.33 相当）
         float absorb;                       // Beer-Lambert の吸収係数
-        DirectX::XMFLOAT2 framebufferSize;  // 合成時に使用するフル解像度（UV計算のずれ防止）
-        DirectX::XMFLOAT2 _pad;             // 256byte境界を維持するための余白
-    };
-
-    struct alignas(256) BilateralParams
-    {
-        float spatialSigma; // 画素距離のガウス係数
-        float depthSigma;   // 深度差のガウス係数
-        float normalSigma;  // 法線差の鋭さ
-        uint32_t kernelRadius; // サンプル半径
+        DirectX::XMFLOAT2 framebufferSize;     // 合成時に使用するフル解像度（UV計算のずれ防止）
+        DirectX::XMFLOAT2 bilateralSigma;      // 空間シグマと深度シグマ
+        DirectX::XMFLOAT2 bilateralNormalKernel; // 法線シグマとカーネル半径
+        DirectX::XMFLOAT2 _pad;                // 256byte境界を維持するための余白
     };
 
     struct SSFRTarget
@@ -134,7 +128,6 @@ private:
     };
 
     std::array<std::unique_ptr<ConstantBuffer>, Engine::FRAME_BUFFER_COUNT> m_ssfrConstantBuffers; // SSFR 用定数バッファ
-    std::unique_ptr<ConstantBuffer> m_bilateralParamsBuffer; // バイラテラルフィルタ用定数
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_ssfrParticlePSO; // ビルボード粒子描画 PSO
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_ssfrCompositePSO; // 合成 PSO
@@ -196,4 +189,8 @@ private:
     float m_ssfrResolutionScale = 0.5f;                 // SSFR を半解像度で回すスケール
     float m_restDensity = 1.0f;                         // 静止密度（圧力計算の基準値）
     float m_pressureStiffness = 6.0f;                   // 圧力係数（反発力の強さを制御）
+    float m_bilateralSpatialSigma = 2.0f;               // バイラテラルフィルタの空間シグマ
+    float m_bilateralDepthSigma = 0.05f;                // バイラテラルフィルタの深度シグマ
+    float m_bilateralNormalSigma = 16.0f;               // 法線一致性の鋭さ
+    float m_bilateralKernelRadius = 2.0f;               // サンプル半径（ピクセル単位）
 };

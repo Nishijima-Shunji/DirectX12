@@ -678,21 +678,6 @@ bool FluidSystem::CreateSSFROnce()
         }
     }
 
-    if (!m_bilateralParamsBuffer)
-    {
-        m_bilateralParamsBuffer = std::make_unique<ConstantBuffer>(sizeof(BilateralParams));
-        if (!m_bilateralParamsBuffer || !m_bilateralParamsBuffer->IsValid())
-        {
-            return false;
-        }
-
-        auto* params = m_bilateralParamsBuffer->GetPtr<BilateralParams>();
-        params->spatialSigma = 2.0f;
-        params->depthSigma = 0.05f;
-        params->normalSigma = 16.0f;
-        params->kernelRadius = 2;
-    }
-
     if (!m_ssfrCpuDescriptorHeap)
     {
         D3D12_DESCRIPTOR_HEAP_DESC desc{};
@@ -1031,6 +1016,9 @@ void FluidSystem::UpdateSSFRConstants(const Camera& camera)
     constant->framebufferSize = XMFLOAT2(
         static_cast<float>(g_Engine->FrameBufferWidth()),
         static_cast<float>(g_Engine->FrameBufferHeight()));
+    // バイラテラルフィルタ係数も b0 に収納して RS の不一致警告 (#5337) を封じる
+    constant->bilateralSigma = XMFLOAT2(m_bilateralSpatialSigma, m_bilateralDepthSigma);
+    constant->bilateralNormalKernel = XMFLOAT2(m_bilateralNormalSigma, m_bilateralKernelRadius);
     constant->_pad = XMFLOAT2(0.0f, 0.0f);
 }
 
@@ -1280,17 +1268,17 @@ bool FluidSystem::CreateSSFRRootSignatures()
         }
     }
 
-    // ※バイラテラル & 法線計算用ルートシグネチャ（CBV2 + SRV + UAV）
+    // ※バイラテラル & 法線計算用ルートシグネチャ（CBV b0 + SRV + UAV）
+    //    ┗ フィルタ係数も b0 へ統一し、RS スロット不一致による GPU エラー (#1314) を撲滅
     {
         CD3DX12_DESCRIPTOR_RANGE ranges[2];
         ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
         ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
 
-        CD3DX12_ROOT_PARAMETER params[4];
+        CD3DX12_ROOT_PARAMETER params[3];
         params[0].InitAsConstantBufferView(0);
-        params[1].InitAsConstantBufferView(1);
-        params[2].InitAsDescriptorTable(1, &ranges[0]);
-        params[3].InitAsDescriptorTable(1, &ranges[1]);
+        params[1].InitAsDescriptorTable(1, &ranges[0]);
+        params[2].InitAsDescriptorTable(1, &ranges[1]);
 
         D3D12_ROOT_SIGNATURE_DESC desc{};
         desc.NumParameters = _countof(params);
@@ -1362,14 +1350,13 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
         cmd->SetComputeRootSignature(m_ssfrComputeRootSig->Get());
         cmd->SetPipelineState(m_ssfrBilateralPSO->Get());
         cmd->SetComputeRootConstantBufferView(0, cbAddress);
-        cmd->SetComputeRootConstantBufferView(1, m_bilateralParamsBuffer->GetAddress());
         if (m_rawDepth.srvHandle)
         {
-            cmd->SetComputeRootDescriptorTable(2, m_rawDepth.srvHandle->HandleGPU);
+            cmd->SetComputeRootDescriptorTable(1, m_rawDepth.srvHandle->HandleGPU);
         }
         if (m_smoothedDepth.uavHandle)
         {
-            cmd->SetComputeRootDescriptorTable(3, m_smoothedDepth.uavHandle->HandleGPU);
+            cmd->SetComputeRootDescriptorTable(2, m_smoothedDepth.uavHandle->HandleGPU);
         }
 
         UINT groupX = (m_ssfrWidth + 7) / 8;
@@ -1391,14 +1378,13 @@ void FluidSystem::RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camer
         cmd->SetComputeRootSignature(m_ssfrComputeRootSig->Get());
         cmd->SetPipelineState(m_ssfrNormalPSO->Get());
         cmd->SetComputeRootConstantBufferView(0, cbAddress);
-        cmd->SetComputeRootConstantBufferView(1, m_bilateralParamsBuffer->GetAddress());
         if (m_smoothedDepth.srvHandle)
         {
-            cmd->SetComputeRootDescriptorTable(2, m_smoothedDepth.srvHandle->HandleGPU);
+            cmd->SetComputeRootDescriptorTable(1, m_smoothedDepth.srvHandle->HandleGPU);
         }
         if (m_normal.uavHandle)
         {
-            cmd->SetComputeRootDescriptorTable(3, m_normal.uavHandle->HandleGPU);
+            cmd->SetComputeRootDescriptorTable(2, m_normal.uavHandle->HandleGPU);
         }
 
         UINT groupX = (m_ssfrWidth + 7) / 8;
