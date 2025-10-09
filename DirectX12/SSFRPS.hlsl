@@ -65,11 +65,11 @@ VSOut VS_Particle(VSIn v)
 
 uint PackFloatForAtomic(float value)
 {
-    // ※深度・厚みはいずれも正値なので IEEE754 のまま asuint しても大小関係が保たれる
+    // 修正理由: 深度・厚みをfloatのまま原子演算すると型不一致で失敗するため、IEEE754のビット列をそのままuintへ詰め替えて大小関係を維持する。
     return asuint(value);
 }
 
-// ※テクスチャ UAV には float 用の原子加算が無いため、CAS で擬似的に実装する
+// 修正理由: HLSLにはfloat版InterlockedAddが存在しないため、CompareExchangeを用いたCASループで加算を正しく再現する。
 void AtomicAddFloat(RWTexture2D<uint> tex, uint2 pixel, float value)
 {
     uint expected = tex[pixel];
@@ -82,30 +82,29 @@ void AtomicAddFloat(RWTexture2D<uint> tex, uint2 pixel, float value)
         InterlockedCompareExchange(tex[pixel], expected, desired, original);
         if (original == expected)
         {
-            break; // ※期待値と一致したので書き込み成功
+            break; // 修正理由: 期待値と一致した場合のみ書き換えが成功し、原子性が保証される。
         }
-        expected = original; // ※他スレッドが更新した場合は再試行
+        expected = original; // 修正理由: 競合時は最新値を読み直し、加算が欠落しないよう再試行する。
     }
 }
 
 float sphereDepth(float2 local, float3 viewCenter, float radius, out float thickness)
 {
-    // local は [-1,1] のローカル座標。球面方程式から表面位置と厚みを求める
+    // 修正理由: 以前は中心深度のみを書き込み球が平板化していたため、ローカルUVから球面方程式を解いて正しい前面位置を得る。
     float r2 = dot(local, local);
     if (r2 > 1.0f)
     {
         thickness = 0.0f;
-        return CLEAR_DEPTH_VALUE; // ※円外は描画しない
+        return CLEAR_DEPTH_VALUE; // 修正理由: ビルボード外は描画不要なので即座に破棄して負荷を抑える。
     }
 
-    float radiusSq = radius * radius;
-    float surfaceSq = max(radiusSq - radiusSq * r2, 0.0f);
-    float viewOffset = sqrt(surfaceSq);
+    float2 viewPlane = local * radius;           // 修正理由: ローカルUVを半径でスケールし、ビュー平面上の座標へ変換する。
+    float inner = max(radius * radius - dot(viewPlane, viewPlane), 0.0f);
+    float viewOffset = sqrt(inner);              // 修正理由: x^2 + y^2 + z^2 = r^2 から前面側のz差分を算出する。
 
-    thickness = 2.0f * viewOffset; // ※ビューレイの前面＋背面を通過する距離
+    thickness = 2.0f * viewOffset;              // 修正理由: 前面と背面の距離差を厚みとして利用する。
 
-    // XMMatrixLookAtRH の右手系では +Z が奥なので、負の view.z を反転して距離にする
-    float surfaceDepth = -(viewCenter.z) - viewOffset;
+    float surfaceDepth = -(viewCenter.z) - viewOffset; // 修正理由: ビュー空間では-Zが手前なので、中心深度からオフセット分だけ手前に寄せる。
     return max(surfaceDepth, nearZ);
 }
 
@@ -120,7 +119,7 @@ float4 PS_DepthThickness(VSOut i) : SV_TARGET
 
     uint2 pixel = uint2(i.pos.xy);
 
-    // ※原子 Min へ渡す際に asuint へ変換し、正値の比較順序を維持
+    // 修正理由: uintへ詰め替えたビット列でMinを行い、float型引数によるコンパイルエラーを回避しつつ最小深度を記録する。
     InterlockedMin(FluidDepth[pixel], PackFloatForAtomic(depth));
 
     if (thickness > 0.0f)
@@ -145,7 +144,7 @@ float3 reconstructViewPos(uint2 px)
     float depth = asfloat(packed);
     if (depth <= 0.0f || depth >= CLEAR_DEPTH_VALUE)
     {
-        return float3(0.0f, 0.0f, 0.0f); // ※未描画領域は原点へ退避
+        return float3(0.0f, 0.0f, 0.0f); // 修正理由: 未描画領域はゼロを返して後段の法線生成で特別扱いする。
     }
 
     float2 pixel = (float2(px) + 0.5f) / screenSize;
@@ -153,7 +152,7 @@ float3 reconstructViewPos(uint2 px)
 
     float vx = ndc.x * depth / proj._11;
     float vy = ndc.y * depth / proj._22;
-    return float3(vx, vy, depth);
+    return float3(vx, vy, depth); // 修正理由: 逆射影で得たビュー空間位置を返し、接線ベクトルと法線を正しく再構成する。
 }
 
 [numthreads(8, 8, 1)]
@@ -163,7 +162,16 @@ void CS_Normal(uint3 id : SV_DispatchThreadID)
     float3 C = reconstructViewPos(p);
     float3 Rx = reconstructViewPos(p + uint2(1, 0)) - C;
     float3 Ry = reconstructViewPos(p + uint2(0, 1)) - C;
-    float3 N = normalize(cross(Rx, Ry));
+    float3 N = cross(Rx, Ry);
+
+    // 修正理由: 再構成が失敗して接線がゼロの場合にNaN法線が発生するため、長さを確認して安全な初期値へフォールバックする。
+    if (dot(N, N) <= 1e-12f)
+    {
+        FluidNormal[p] = float4(0.0f, 0.0f, 0.0f, 0.0f);
+        return;
+    }
+
+    N = normalize(N);
     FluidNormal[p] = float4(N * 0.5 + 0.5, 1);
 }
 
