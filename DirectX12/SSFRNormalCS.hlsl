@@ -76,7 +76,7 @@ float3 ReconstructNormal(int2 pixel)
 }
 
 [numthreads(8, 8, 1)]
-void CSMain(uint3 dispatchThreadID : SV_DispatchThreadID)
+void main(uint3 dispatchThreadID : SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadID.xy;
     int2 extent = GetScreenExtent();

@@ -2,11 +2,10 @@
 
 SamplerState g_LinearClamp : register(s0);
 
-Texture2D<float>   g_SmoothedDepthTexture  : register(t0); // バイラテラルフィルタ後の線形深度
+Texture2D<float>   g_FluidDepthTexture     : register(t0); // 粒子スプラットで得た線形深度
 Texture2D<float>   g_FluidThicknessTexture : register(t1); // 粒子厚み積算
-Texture2D<float4>  g_FluidNormalTexture    : register(t2); // スクリーンスペース法線
-Texture2D<float>   g_SceneDepthTexture     : register(t3); // シーン深度バッファ（0〜1）
-Texture2D<float4>  g_SceneColorTexture     : register(t4); // シーンカラー
+Texture2D<float>   g_SceneDepthTexture     : register(t2); // シーン深度バッファ（0〜1）
+Texture2D<float4>  g_SceneColorTexture     : register(t3); // シーンカラー
 
 struct PSInput
 {
@@ -43,7 +42,7 @@ float SampleFluidDepth(int2 pixel)
 {
     int2 extent = GetScreenExtent();
     pixel = clamp(pixel, int2(0, 0), extent - 1);
-    float depth = g_SmoothedDepthTexture.Load(int3(pixel, 0));
+    float depth = g_FluidDepthTexture.Load(int3(pixel, 0));
     const float emptyDepth = 999999.0f;
     return (depth >= emptyDepth) ? 0.0f : depth;
 }
@@ -134,17 +133,7 @@ float4 main(PSInput input) : SV_TARGET
 
     float3 viewPos = ReconstructViewPosition(pixel, fluidDepth);
     float3 viewDir = normalize(-viewPos);
-    float4 normalSample = g_FluidNormalTexture.Load(int3(pixel, 0)); // ※CSで生成した法線を優先的に利用
-    float3 normal = normalSample.xyz;
-    if (normalSample.w < 0.5f)
-    {
-        normal = ComputeViewNormal(pixel, fluidDepth); // ※計算結果が無効な場合は深度勾配から再構築
-    }
-    normal = normalize(normal);
-    if (!all(isfinite(normal)))
-    {
-        normal = float3(0.0f, 0.0f, -1.0f);
-    }
+    float3 normal = ComputeViewNormal(pixel, fluidDepth);
     if (dot(normal, viewDir) < 0.0f)
     {
         normal *= -1.0f; // ※視線ベクトルと法線が逆向きだと屈折率計算で常に反射100%となり流体が見えないため矯正する
