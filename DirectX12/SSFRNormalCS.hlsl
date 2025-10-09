@@ -3,9 +3,7 @@
 Texture2D<float> g_SmoothedDepthTexture : register(t0);
 RWTexture2D<float4> g_FluidNormalTexture : register(u0);
 
-static const float CLEAR_DEPTH_VALUE = 1000000.0f; // 深度テクスチャ初期化値
-
-// ヘルパー関数群はバイラテラルフィルタ版と揃えて扱う
+// ヘルパー関数群はバイラテラルフィルタと同様
 int2 GetScreenExtent()
 {
     return int2(screenSize);
@@ -20,13 +18,11 @@ float2 PixelToNDC(int2 pixel)
 float LoadDepth(int2 pixel)
 {
     int2 extent = GetScreenExtent();
-    if (any(pixel < int2(0, 0)) || any(pixel >= extent))
-    {
-        return 0.0f;
-    }
-
+    pixel = clamp(pixel, int2(0, 0), extent - 1);
     float depth = g_SmoothedDepthTexture.Load(int3(pixel, 0));
-    return depth >= CLEAR_DEPTH_VALUE ? 0.0f : depth;
+    const float emptyDepth = 999999.0f;
+    // ※平滑化前と同様に未描画領域は 0 扱いへ変換して計算を安定化
+    return depth >= emptyDepth ? 0.0f : depth;
 }
 
 float3 ReconstructViewPosition(int2 pixel, float depth)
@@ -61,7 +57,6 @@ float3 ReconstructNormal(int2 pixel)
     float3 pU = ReconstructViewPosition(pixel + int2(0, -1), depthU);
     float3 pD = ReconstructViewPosition(pixel + int2(0, 1), depthD);
 
-    // 2 辺差分を交差させて法線を復元する
     float3 dx = pR - pL;
     float3 dy = pD - pU;
 
@@ -71,7 +66,7 @@ float3 ReconstructNormal(int2 pixel)
         normal = float3(0.0f, 0.0f, -1.0f);
     }
 
-    // ビュー空間では +Z が奥向きなので、常にカメラ側を向ける
+    // カメラ側に向くように符号を調整（ビュー空間 +Z が前方）
     if (normal.z > 0.0f)
     {
         normal *= -1.0f;

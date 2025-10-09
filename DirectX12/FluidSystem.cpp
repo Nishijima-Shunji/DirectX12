@@ -1337,8 +1337,7 @@ void FluidSystem::UpdateSSFRConstants(const Camera& camera)
         static_cast<float>(g_Engine->FrameBufferHeight()));
     // バイラテラルフィルタ係数も b0 に収納して RS の不一致警告 (#5337) を封じる
     constant->bilateralSigma = XMFLOAT2(m_bilateralSpatialSigma, m_bilateralDepthSigma);
-    // 深度フィルタの再設計に合わせ、半径と深度閾値をまとめて渡す
-    constant->bilateralKernel = XMFLOAT2(m_bilateralKernelRadius, m_bilateralDepthThreshold);
+    constant->bilateralNormalKernel = XMFLOAT2(m_bilateralNormalSigma, m_bilateralKernelRadius);
     constant->_pad = XMFLOAT2(0.0f, 0.0f);
 }
 

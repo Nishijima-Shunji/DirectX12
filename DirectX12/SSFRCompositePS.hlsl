@@ -78,11 +78,12 @@ float3 ComputeFoam(float3 baseColor, float thicknessValue, float viewDotN)
 float4 main(PSInput input) : SV_TARGET
 {
     float2 sceneUV = input.position.xy / framebufferSize;
-    sceneUV = saturate(sceneUV); // 画面外サンプリングを防ぐ
-
-    float2 fluidCoord = sceneUV * screenSize;
-    fluidCoord = clamp(fluidCoord, float2(0.0f, 0.0f), screenSize - 1.0f);
-    uint2 pixel = uint2(fluidCoord);
+    // ※SV_Position をフル解像度で正規化し、UVのズレによる左上描画のみの不具合を解消
+    sceneUV = saturate(sceneUV);
+    float2 halfResCoord = input.position.xy * (screenSize / framebufferSize);
+    // ※半解像度の流体バッファへ座標を写像し、インデックスずれを防止
+    halfResCoord = clamp(halfResCoord, float2(0.0f, 0.0f), screenSize - 1.0f);
+    uint2 pixel = uint2(halfResCoord);
     int2 extent = GetScreenExtent();
     if (pixel.x >= extent.x || pixel.y >= extent.y)
     {
@@ -92,52 +93,58 @@ float4 main(PSInput input) : SV_TARGET
     float fluidDepth = g_FluidDepthTexture.Load(int3(pixel, 0));
     if (fluidDepth <= 0.0f)
     {
-        // 流体が無い画素は背景をそのまま返す
+        // 流体が存在しない画素は背景をそのまま返す
         return g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0);
     }
 
     float sceneDepth = g_SceneDepthTexture.SampleLevel(g_LinearClamp, sceneUV, 0);
     float sceneViewDepth = LinearizeDepth(sceneDepth);
+
     if (sceneViewDepth <= fluidDepth - 1e-3f)
     {
-        // 既存ジオメトリが手前にある場合は SSFR を重ねない
+        // シーンジオメトリが手前にある場合は上書きしない
         return g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0);
     }
 
     float3 normal = DecodeNormal(g_FluidNormalTexture.Load(int3(pixel, 0)));
     if (normal.z > 0.0f)
     {
-        normal *= -1.0f; // 常にカメラへ向けておく
+        normal *= -1.0f; // カメラ側に向ける
     }
 
     float thickness = g_FluidThicknessTexture.Load(int3(pixel, 0));
+
     float3 viewPos = ReconstructViewPosition(int2(pixel), fluidDepth);
     float3 viewDir = normalize(-viewPos);
+
     float cosTheta = saturate(dot(normal, viewDir));
 
     float ior = ReconstructIOR();
+
+    // Schlick 近似によるフレネル反射率
     float3 fresnel = iorF0 + (1.0f - iorF0) * pow(1.0f - cosTheta, 5.0f);
 
-    float3 sceneColor = g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0).rgb;
-
+    // 屈折ベクトル（ビュー空間）を求め、スクリーンオフセットに変換
     float3 refractDir = refract(-viewDir, normal, 1.0f / ior);
-    bool totalInternalReflection = dot(refractDir, refractDir) < 1e-5f;
-
-    // 屈折オフセットは PDF の近似式を踏襲し、法線傾きと厚みで強さを調整
-    float baseRefraction = 0.03f;
-    float thicknessScale = saturate(thickness * 0.25f);
-    float2 refractOffset = refractDir.xy / max(-refractDir.z, 0.1f) * (baseRefraction + thicknessScale * 0.02f);
+    bool totalInternalReflection = all(abs(refractDir) < 1e-5f);
+    float refractionScale = 0.05f;
+    float2 refractOffset = refractDir.xy / max(refractDir.z, 0.1f) * refractionScale;
     float2 refractUV = clamp(sceneUV + refractOffset, float2(0.0f, 0.0f), float2(1.0f, 1.0f));
 
+    float3 sceneColor = g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0).rgb;
     float3 refractedColor = g_SceneColorTexture.SampleLevel(g_LinearClamp, refractUV, 0).rgb;
+
+    // 吸収による減衰を厚みに応じて適用
     float3 transmitted = ApplyBeerLambert(refractedColor, thickness);
+
+    // 泡のハイライト
     float3 foamAdjusted = ComputeFoam(transmitted, thickness, cosTheta);
 
+    // 全反射時は屈折成分を使わず背景を反射として利用
+    float3 reflectionColor = sceneColor;
     float3 refractionContribution = totalInternalReflection ? float3(0.0f, 0.0f, 0.0f) : foamAdjusted;
-    float3 reflectionContribution = sceneColor;
 
-    // 反射と屈折をフレネル係数で合成し、指定 PDF に沿った水らしい見た目へ
-    float3 color = lerp(refractionContribution, reflectionContribution, fresnel);
+    float3 color = lerp(refractionContribution, reflectionColor, fresnel);
 
     return float4(color, 1.0f);
 }

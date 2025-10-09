@@ -13,7 +13,7 @@ cbuffer CameraCB : register(b0)
     float absorb;                // 吸収係数
     float2 framebufferSize;      // 合成用のフル解像度
     float2 bilateralSigma;       // バイラテラルフィルタの空間＆深度シグマ
-    float2 bilateralKernel;      // カーネル半径と深度カットオフ
+    float2 bilateralNormalKernel;// 法線シグマとカーネル半径
     float2 _pad;                 // 16byte 境界を維持
 }
 

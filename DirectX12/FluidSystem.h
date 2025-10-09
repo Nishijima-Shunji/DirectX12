@@ -138,7 +138,7 @@ private:
         float absorb;                       // Beer-Lambert の吸収係数
         DirectX::XMFLOAT2 framebufferSize;     // 合成時に使用するフル解像度（UV計算のずれ防止）
         DirectX::XMFLOAT2 bilateralSigma;      // 空間シグマと深度シグマ
-        DirectX::XMFLOAT2 bilateralKernel;     // カーネル半径と深度カットオフ
+        DirectX::XMFLOAT2 bilateralNormalKernel; // 法線シグマとカーネル半径
         DirectX::XMFLOAT2 _pad;                // 256byte境界を維持するための余白
     };
 
@@ -220,6 +220,6 @@ private:
     float m_pressureStiffness = 6.0f;                   // 圧力係数（反発力の強さを制御）
     float m_bilateralSpatialSigma = 2.0f;               // バイラテラルフィルタの空間シグマ
     float m_bilateralDepthSigma = 0.05f;                // バイラテラルフィルタの深度シグマ
-    float m_bilateralDepthThreshold = 0.25f;            // 深度差が大きい画素を無視するための閾値
+    float m_bilateralNormalSigma = 16.0f;               // 法線一致性の鋭さ
     float m_bilateralKernelRadius = 2.0f;               // サンプル半径（ピクセル単位）
 };
