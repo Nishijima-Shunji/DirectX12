@@ -20,7 +20,7 @@ Texture2D SceneColor : register(t0);
 Texture2D SceneDepth : register(t1);
 Texture2D<float> ThicknessTex : register(t3);
 RWTexture2D<uint> FluidDepth : register(u1); // R32_FLOAT
-RWTexture2D<uint> Thickness : register(u2); // R16_FLOAT or R32_FLOAT
+RWTexture2D<float> Thickness : register(u2); // R16_FLOAT or R32_FLOAT
 RWTexture2D<float4> FluidNormal : register(u3); // 8:8:8:8_UNORM でも可
 
 // 1 粒子スプラット（VS/PS 最小）
@@ -59,8 +59,12 @@ float4 PS_DepthThickness(VSOut i) : SV_TARGET
 {
     float2 uv = i.pos.xy * 0.5 / float2(screenSize.x * 0.5, screenSize.y * 0.5); // 略
     float d = sphereDepth(uv, i.viewPos, i.radius);
-    InterlockedMin(FluidDepth[uint2(i.pos.xy)], d);             // 近い方の深度
-    InterlockedAdd(Thickness[uint2(i.pos.xy)], i.radius * 0.5); // 簡易厚み
+    uint2 pixel = uint2(i.pos.xy);
+    uint encodedDepth = asuint(d);
+    InterlockedMin(FluidDepth[pixel], encodedDepth);            // 近い方の深度
+    // ※InterlockedMinはuintのみ受け付けるため、float深度をasuintで再解釈して原子化する
+    InterlockedAdd(Thickness[pixel], i.radius * 0.5);           // 簡易厚み
+    // ※厚みはfloat型UAVへ直接加算し、浮動小数のまま積算して精度を守る
     return 0;
 }
 
