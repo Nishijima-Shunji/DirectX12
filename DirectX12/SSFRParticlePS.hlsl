@@ -31,18 +31,18 @@ PSOut main(PSIn input)
     }
 
     float radiusSq = radius * radius;
-    float surfaceSq = max(radiusSq - radiusSq * r2, 0.0f);
+    float2 spritePos = local * radius;
+    float surfaceSq = max(radiusSq - dot(spritePos, spritePos), 0.0f);
     float viewOffset = sqrt(surfaceSq);
 
-    // ビュー空間の最近接深度を算出（カメラは +Z 方向を見ている想定）
+    // 板ポリを球として描くための前面深度（球の最近点）を計算する
     float surfaceDepth = input.viewCenter.z - viewOffset;
-    surfaceDepth = max(surfaceDepth, nearZ);
 
-    // 厚みはビューレイ方向の通過距離（前面＋背面）
+    // 板ポリが球に見えるように、ビューレイ方向の通過厚みを算出する
     float thickness = 2.0f * viewOffset;
 
     output.depth = surfaceDepth;
-    output.thickness = max(thickness, 0.0f);
+    output.thickness = thickness;
 
     return output;
 }
