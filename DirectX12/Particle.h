@@ -7,7 +7,6 @@
 #include "RootSignature.h"
 #include "PipelineState.h"
 #include "ConstantBuffer.h"
-#include "IndexBuffer.h"
 
 struct Point {
 	DirectX::XMFLOAT3 position = {};
@@ -19,18 +18,16 @@ class Particle : public Object
 private:
 	std::vector<Point>		m_Particles;
 	VertexBuffer* m_VertexBuffer = nullptr;
-	// NAbhLpﾌイfbNXobt@
-	IndexBuffer* m_IndexBuffer = nullptr;
 	RootSignature* m_RootSignature = nullptr;
 	PipelineState* m_PipelineState = nullptr;
 	ConstantBuffer* m_ConstantBuffer[Engine::FRAME_BUFFER_COUNT] = {};
 
-	// 繧ｰ繝ｩ繝輔ぅ繝�繧ｯ繧ｹ謠冗判逕ｨ
+	// グラフィックス描画用
 	ComPtr<ID3D12RootSignature>    m_graphicsRS;
 	PipelineState*				   m_graphicsPS;
 	ComPtr<ID3D12Resource>         m_graphicsCB;
 
-	// 繧ｳ繝ｳ繝斐Η繝ｼ繝育畑
+	// コンピュート用
 	ComPtr<ID3D12RootSignature>    m_computeRS;
 	PipelineState*				   m_computePS;
 	ComPtr<ID3D12Resource>         m_computeUAV;

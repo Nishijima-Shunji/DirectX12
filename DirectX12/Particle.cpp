@@ -22,19 +22,11 @@ bool Particle::Init() {
 		vertices[i].position = m_Particles[i].position;
 	}
 
-        m_VertexBuffer = new VertexBuffer(sizeof(ParticleVertex) * vertices.size(), sizeof(ParticleVertex), vertices.data());
-        if (!m_VertexBuffer) {
-                printf("VertexBuffer失敗\n");
-                return false;
-        }
-
-        // ※クアッドを三角形2枚で共有するためのインデックス（描画が「線」になる不具合対策）
-        static const uint32_t indices[6] = { 0, 1, 2, 2, 1, 3 };
-        m_IndexBuffer = new IndexBuffer(sizeof(indices), indices);
-        if (!m_IndexBuffer || !m_IndexBuffer->IsValid()) {
-                printf("IndexBuffer失敗\n");
-                return false;
-        }
+	m_VertexBuffer = new VertexBuffer(sizeof(ParticleVertex) * vertices.size(), sizeof(ParticleVertex), vertices.data());
+	if (!m_VertexBuffer) {
+		printf("VertexBuffer失敗\n");
+		return false;
+	}
 
 	// 
 	for (size_t i = 0; i < Engine::FRAME_BUFFER_COUNT; i++)
@@ -68,8 +60,7 @@ bool Particle::Init() {
 	m_PipelineState->SetPS(L"ParticlePS.cso");
 
 
-        // ※ビルボードを三角形リストで描くためトポロジを TRIANGLE に変更
-        m_PipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+	m_PipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT);
 	if (!m_PipelineState->IsValid()) {
 		printf("PipelineState失敗\n");
 		return false;
@@ -101,14 +92,11 @@ void Particle::Draw() {
 
 	commandList->SetGraphicsRootConstantBufferView(0, m_ConstantBuffer[frameIndex]->GetAddress()); // CBV
 
-        auto vbView = m_VertexBuffer->View();
-        auto ibView = m_IndexBuffer->View();
-        commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        commandList->IASetVertexBuffers(0, 1, &vbView);
-        commandList->IASetIndexBuffer(&ibView);
+	auto vbView = m_VertexBuffer->View();
+	commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
+	commandList->IASetVertexBuffers(0, 1, &vbView);
 
-        // ※四隅を VS で生成するため、インデックス6個×粒子数で描画する
-        commandList->DrawIndexedInstanced(6, static_cast<UINT>(m_Particles.size()), 0, 0, 0);
+	commandList->DrawInstanced(m_Particles.size(), 1, 0, 0);
 }
 
 
