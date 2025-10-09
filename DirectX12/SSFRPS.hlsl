@@ -50,9 +50,32 @@ VSOut VS_Particle(VSIn v)
 
 float sphereDepth(float2 uv, float3 viewCenter, float radius)
 {
-    // 画面上で球の深度を近似（スプライト内のZを求める）
-    // ここでは簡略化：中心深度を採用（実運用はUVから球面方程式でZ補正）
-    return -viewCenter.z;
+    // スクリーン座標(0-1)を射影空間(-1～1)へ戻し、視線方向の位置を推定
+    // 1. viewCenter.zを用いて現在ピクセルの視空間位置(xy)を復元
+    float2 ndc = float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
+    float viewZ = viewCenter.z;
+    float2 viewPosXY;
+    viewPosXY.x = (ndc.x * viewZ) / proj._11;
+    viewPosXY.y = (ndc.y * viewZ) / proj._22;
+
+    // 2. 球中心との差分から画面上の半径内か判定
+    float2 offset = viewPosXY - viewCenter.xy;
+    float rr = radius * radius;
+    float len2 = dot(offset, offset);
+    if (len2 > rr)
+    {
+        // 半径外は球に当たらないためピクセル破棄
+        clip(-1);
+    }
+
+    // 3. 球面方程式 (x^2 + y^2 + z^2 = r^2) から z 成分を解き、手前側の解を採用
+    float zOffset = sqrt(rr - len2);
+    float zNear = viewCenter.z - zOffset;
+    float zFar = viewCenter.z + zOffset;
+    float bestZ = (abs(zNear) < abs(zFar)) ? zNear : zFar;
+
+    // 4. InterlockedMin 用に距離は正数深度として返却
+    return abs(bestZ);
 }
 
 float4 PS_DepthThickness(VSOut i) : SV_TARGET
