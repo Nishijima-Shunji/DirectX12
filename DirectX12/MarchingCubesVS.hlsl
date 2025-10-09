@@ -4,6 +4,8 @@ cbuffer Transform : register(b0)
     matrix World;
     matrix View;
     matrix Proj;
+    float3 CameraPos; // PS 側と定数バッファを揃えるためにカメラ位置も保持
+    float _padding;   // 16バイト境界を守るためのダミー
 }
 
 struct VSInput
