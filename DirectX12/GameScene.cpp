@@ -11,7 +11,8 @@ using namespace DirectX;
 
 namespace
 {
-    constexpr FluidSystem::RenderMode kRenderMode = FluidSystem::RenderMode::MarchingCubes; // 初期描画モード（マーチングキューブ）
+    // ※初期モードを SSFR に統一してスクリーンスペース流体描画を確実に有効化する（マーチングキューブのままだと SSFR が初期化されず描画されないため）
+    constexpr FluidSystem::RenderMode kRenderMode = FluidSystem::RenderMode::SSFR; // 初期描画モード（SSFR でスクリーンスペース描画を有効化）
 }
 
 namespace GameSceneDetail

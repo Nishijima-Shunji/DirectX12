@@ -1324,8 +1324,9 @@ void FluidSystem::UpdateSSFRConstants(const Camera& camera)
     }
 
     auto* constant = cb->GetPtr<SSFRConstant>();
-    constant->view = camera.GetViewMatrix();
-    constant->proj = camera.GetProjMatrix();
+    // ※シェーダー側では行列を列優先で解釈するため、ビュー・プロジェクションは転置して書き込んでSSFR描画の姿勢ずれを防ぐ
+    constant->view = XMMatrixTranspose(camera.GetViewMatrix());
+    constant->proj = XMMatrixTranspose(camera.GetProjMatrix());
     constant->screenSize = XMFLOAT2(static_cast<float>(m_ssfrWidth), static_cast<float>(m_ssfrHeight));
     constant->nearZ = 0.1f;
     constant->farZ = 1000.0f;
