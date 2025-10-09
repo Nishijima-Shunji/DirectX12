@@ -52,8 +52,9 @@ VSOut main(uint vertexID : SV_VertexID, uint instanceID : SV_InstanceID)
     output.viewCenter  = viewCenter;
     output.radius      = radius;
     output.localOffset = local;
-    // ここで視点手前の粒子を描画しないようにする（ニア面との距離が負なら GPU が自動的に破棄）
-    output.clipNear    = viewCenter.z - (nearZ + radius);
+    // 右手系ビュー空間では Z 軸の正方向が後方なので、ニア面判定では符号を反転して手前側を確実に捨てる
+    // （修正理由: 既存コードだと常時カリングされるため、右手系カメラに合わせて判定式を調整）
+    output.clipNear    = -viewCenter.z - (nearZ + radius);
 
     return output;
 }
