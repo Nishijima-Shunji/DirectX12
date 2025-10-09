@@ -72,11 +72,39 @@ void CS_Bilateral(uint3 id : SV_DispatchThreadID)
     // FluidDepth[...] = blurredDepth;
 }
 
+// FluidDepth に蓄積したビュー空間深度からビュー座標を復元する補助関数
+// 引数 px : 画素インデックス（整数ピクセル）。FluidDepth の読み出しと NDC 変換に使用。
+// 戻り値   : ビュー空間位置（z 成分は正の深度値）を返却し、長さ 0 の場合は未初期化画素を示す。
 float3 reconstructViewPos(uint2 px)
 {
-    float z = FluidDepth[px];
-    // 逆射影でview座標を戻す（省略：実装は既存の逆射影関数を）
-    return float3(0, 0, z);
+    // FluidDepth は R32_FLOAT を asuint で格納しているため、Load → asfloat で復元する。
+    uint rawDepth = FluidDepth.Load(int3(px, 0));
+    float viewDepth = asfloat(rawDepth);
+    if (viewDepth <= 0.0f)
+    {
+        // 深度 0 は初期値（流体未ヒット）を表すため、ゼロベクトルを返す。
+        return float3(0.0f, 0.0f, 0.0f);
+    }
+
+    // ピクセル中心座標を 0〜1 の UV に正規化し、DirectX 規約に合わせて NDC（-1〜1）へ写像する。
+    float2 pixelCenter = (float2(px) + 0.5f) * invScreenSize;
+    float2 ndc;
+    ndc.x = pixelCenter.x * 2.0f - 1.0f;
+    ndc.y = 1.0f - pixelCenter.y * 2.0f;
+
+    // 射影行列の逆行列を使ってクリップ空間からビュー空間へ戻す。
+    // クリップ座標の Z=1 平面上の位置を逆射影し、得られた方向ベクトルを深度でスケールする。
+    float4x4 invProj = inverse(proj);
+    float4 clipPos = float4(ndc, 1.0f, 1.0f);
+    float4 viewRay = mul(invProj, clipPos);
+    viewRay.xyz /= viewRay.w;
+
+    // viewRay.z は Z=1 面での距離なので、実際のビュー深度に合わせてスケールする。
+    float scale = viewDepth / max(viewRay.z, 1e-6f);
+    float3 viewPos = viewRay.xyz * scale;
+    viewPos.z = viewDepth; // Z は視線方向の正の深度として保持する。
+
+    return viewPos;
 }
 
 [numthreads(8, 8, 1)]
@@ -106,8 +134,16 @@ float4 PS_Composite(float4 svpos : SV_POSITION, float2 uv : TEXCOORD) : SV_TARGE
 
     float3 N = normalize(FluidNormal.Load(int3(p, 0)).xyz * 2 - 1);
 
+    // ビュー座標を再構成して視線方向を得る。流体の各画素に固有の入射角を反映するための更新。
+    float3 viewPos = reconstructViewPos(p);
+    float3 V = float3(0.0f, 0.0f, 1.0f);
+    if (any(viewPos))
+    {
+        // viewPos が有効な場合はカメラからの視線ベクトルを正規化して利用する。
+        V = normalize(-viewPos);
+    }
+
     // Fresnel（Schlick）
-    float3 V = float3(0, 0, 1); // 簡易。実際は view 空間の -normalize(viewPos) 推奨
     float cosT = saturate(dot(N, V));
     float3 F = iorF0 + (1 - iorF0) * pow(1 - cosT, 5);
 
