@@ -130,25 +130,26 @@ private:
     struct alignas(256) SSFRConstant
     {
         DirectX::XMMATRIX proj;             // プロジェクション行列
-        DirectX::XMMATRIX view;             // ビュー行列
-        DirectX::XMMATRIX world;            // ワールド行列（粒子とスクリーンスペース結果の整合用）
-        DirectX::XMFLOAT2 screenSize;       // 流体用レンダーターゲットの解像度
-        float nearZ;                        // 近クリップ
-        float farZ;                         // 遠クリップ
-        DirectX::XMFLOAT3 iorF0;            // Fresnel 計算に利用する F0
-        float absorb;                       // Beer-Lambert 減衰係数
-        DirectX::XMFLOAT2 framebufferSize;  // フル解像度のバックバッファサイズ
-        float refractionScale;              // 屈折オフセット量
-        float thicknessScale;               // 厚み減衰スケール
-        DirectX::XMFLOAT2 invScreenSize;    // 流体ターゲットの逆解像度
-        DirectX::XMFLOAT2 padding;          // 16byte 境界を維持する余白
+        DirectX::XMMATRIX view;             // ビュー行列（スクリーンスペース再構成用）
+        DirectX::XMMATRIX world;            // ワールド行列（点描とサーフェスの整合用）
+        DirectX::XMFLOAT2 screenSize;       // 流体バッファの解像度
+        float nearZ;                        // カメラの近クリップ
+        float farZ;                         // カメラの遠クリップ
+        DirectX::XMFLOAT3 iorF0;            // Fresnel 計算に使う F0（屈折率 1.33 相当）
+        float absorb;                       // Beer-Lambert の吸収係数
+        DirectX::XMFLOAT2 framebufferSize;     // 合成時に使用するフル解像度（UV計算のずれ防止）
+        DirectX::XMFLOAT2 bilateralSigma;      // 空間シグマと深度シグマ
+        DirectX::XMFLOAT2 bilateralNormalKernel; // 法線シグマとカーネル半径
+        DirectX::XMFLOAT2 _pad;                // 256byte境界を維持するための余白
     };
 
     struct SSFRTarget
     {
         Microsoft::WRL::ComPtr<ID3D12Resource> resource; // GPU リソース
         DescriptorHandle* srvHandle = nullptr;            // SRV ディスクリプタ
-        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle{};          // RTV 用 CPU ディスクリプタ
+        DescriptorHandle* uavHandle = nullptr;            // UAV ディスクリプタ
+        D3D12_CPU_DESCRIPTOR_HANDLE uavCpuHandle{};       // Clear 用 CPU ディスクリプタ
+        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle{};          // RTV 用 CPU ディスクリプタ（粒子スプラットのMRT用）
         D3D12_RESOURCE_STATES currentState = D3D12_RESOURCE_STATE_COMMON; // 現在のリソース状態
     };
 
@@ -156,11 +157,16 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_ssfrParticlePSO; // ビルボード粒子描画 PSO
     Microsoft::WRL::ComPtr<ID3D12PipelineState> m_ssfrCompositePSO; // 合成 PSO
+    std::unique_ptr<ComputePipelineState> m_ssfrBilateralPSO; // 深度平滑化 CS
+    std::unique_ptr<ComputePipelineState> m_ssfrNormalPSO;    // 法線再構成 CS
     std::unique_ptr<RootSignature> m_ssfrParticleRootSig;     // 粒子描画用ルートシグネチャ
     std::unique_ptr<RootSignature> m_ssfrCompositeRootSig;    // 合成用ルートシグネチャ
+    std::unique_ptr<RootSignature> m_ssfrComputeRootSig;      // コンピュート用ルートシグネチャ
 
     SSFRTarget m_rawDepth;        // 粒子スプラット結果（深度）
+    SSFRTarget m_smoothedDepth;   // バイラテラル平滑化後の深度
     SSFRTarget m_thickness;       // 粒子厚み積算
+    SSFRTarget m_normal;          // 法線バッファ
 
     SSFRTarget m_sceneColorCopy;  // 背景カラー退避用（SRV のみ使用）
     DescriptorHandle* m_sceneDepthSrv = nullptr; // シーン深度 SRV
@@ -168,12 +174,17 @@ private:
 
     DescriptorHandle* m_particleBufferSrv = nullptr; // 粒子インスタンス SRV
 
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_ssfrCpuDescriptorHeap; // UAV クリア用 CPU ヒープ
+    UINT m_ssfrCpuDescriptorSize = 0; // CPU ヒープのインクリメント
+    UINT m_ssfrCpuDescriptorCursor = 0; // 次に割り当てる CPU ディスクリプタ位置
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_ssfrRtvDescriptorHeap; // RTV 用 CPU ヒープ
     UINT m_ssfrRtvDescriptorSize = 0;  // RTV ヒープのインクリメント
     UINT m_ssfrRtvDescriptorCursor = 0; // 次に割り当てる RTV ディスクリプタ位置
 
     UINT m_ssfrWidth = 0;  // 半解像度幅
     UINT m_ssfrHeight = 0; // 半解像度高さ
+
+    UINT m_descriptorIncrement = 0; // CBV/SRV/UAV ヒープのインクリメント
 
     void RenderSSFR(ID3D12GraphicsCommandList* cmd, const Camera& camera); // SSFR 描画処理本体
     bool EnsureSSFRResources(); // SSFR リソース初期化
@@ -183,9 +194,11 @@ private:
     void UpdateSSFRConstants(const Camera& camera); // 定数バッファ更新
     void PrepareSSFRTargets(ID3D12GraphicsCommandList* cmd); // RTV/UAV を毎フレーム準備
     void TransitionSSFRTarget(ID3D12GraphicsCommandList* cmd, SSFRTarget& target, D3D12_RESOURCE_STATES newState); // 状態遷移
+    D3D12_CPU_DESCRIPTOR_HANDLE AllocateCpuDescriptor(); // CPU ヒープから UAV 用ディスクリプタを確保
     D3D12_CPU_DESCRIPTOR_HANDLE AllocateRtvDescriptor(); // RTV 用ヒープからディスクリプタを確保
     bool CreateParticlePSO(); // 粒子 PSO 生成
     bool CreateCompositePSO(); // 合成 PSO 生成
+    bool CreateComputePSO(); // コンピュート PSO 生成
     void GenerateMarchingCubesMesh(); // マーチングキューブメッシュ生成
     void UpdateMarchingBuffers(); // マーチングキューブ用VB/IB更新
     float SampleGridDensity(const DirectX::XMFLOAT3& position) const; // 格子密度サンプル
@@ -206,6 +219,8 @@ private:
     float m_ssfrResolutionScale = 0.5f;                 // SSFR を半解像度で回すスケール
     float m_restDensity = 1.0f;                         // 静止密度（圧力計算の基準値）
     float m_pressureStiffness = 6.0f;                   // 圧力係数（反発力の強さを制御）
-    float m_refractionStrength = 0.05f;                 // 屈折オフセットの強さ
-    float m_thicknessAttenuation = 1.2f;                // 厚みを使った減衰係数
+    float m_bilateralSpatialSigma = 2.0f;               // バイラテラルフィルタの空間シグマ
+    float m_bilateralDepthSigma = 0.05f;                // バイラテラルフィルタの深度シグマ
+    float m_bilateralNormalSigma = 16.0f;               // 法線一致性の鋭さ
+    float m_bilateralKernelRadius = 2.0f;               // サンプル半径（ピクセル単位）
 };
