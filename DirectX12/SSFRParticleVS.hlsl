@@ -26,31 +26,33 @@ VSOut main(uint vertexID : SV_VertexID, uint instanceID : SV_InstanceID)
 
     float radius = particle.radius;
 
-    float4 worldPos = mul(world, float4(particle.position, 1.0f));
+    float4 worldPos = float4(particle.position, 1.0f);
     float4 viewPos = mul(view, worldPos);
+    float4 clipPos = mul(proj, viewPos);
 
-    // ※行列内の行ベクトルからカメラの右・上方向（ビュー空間基底）を取得し、矩形を正しく構築する
-    float3 viewRight = normalize(float3(view._11, view._12, view._13));
-    float3 viewUp = normalize(float3(view._21, view._22, view._23));
+    float3 viewCenter = viewPos.xyz;
 
-    // ※ローカル空間の球半径へワールド行列のスケールを反映させ、ドット描画と同一スケールにそろえる
-    float3 axisX = float3(world._11, world._12, world._13);
-    float3 axisY = float3(world._21, world._22, world._23);
-    float3 axisZ = float3(world._31, world._32, world._33);
-    float radiusScale = (length(axisX) + length(axisY) + length(axisZ)) / 3.0f;
-    float scaledRadius = max(radius * radiusScale, 1e-6f);
+    // ビュー行列の列ベクトルからカメラの右・上方向を取り出し、粒子クアッドを常に正対させる
+    float3 camRight = normalize(float3(view._11, view._21, view._31));
+    float3 camUp = normalize(float3(view._12, view._22, view._32));
 
-    // ※頂点IDからコーナー（-1〜+1）を求め、ビュー空間上で正しくオフセットしてから射影する
+    // 頂点IDからスクリーン内のコーナー（-1〜+1）を作り、ローカル座標にも流用する
     float2 local = float2((vertexID & 1) ? +1.0f : -1.0f, (vertexID & 2) ? +1.0f : -1.0f);
-    float3 cornerView = viewPos.xyz + (viewRight * local.x + viewUp * local.y) * scaledRadius;
-    float4 clipPos = mul(proj, float4(cornerView, 1.0f));
+    float3 billboardDir = camRight * local.x + camUp * local.y;
+
+    // NDC 半径へ変換する際に w で正しくスケールし、距離に応じた見かけの大きさのずれを抑える
+    float2 ndcRadius = (radius * float2(proj._11, proj._22)) / max(clipPos.w, 1e-6f);
+    ndcRadius = max(ndcRadius, 1.0f / screenSize); // 画素より小さい場合の潰れ防止
+
+    clipPos.xy += local * ndcRadius * clipPos.w;
 
     output.position    = clipPos;
-    output.viewCenter  = viewPos.xyz;
-    output.radius      = scaledRadius;
-    output.localOffset = local;
-    // ※ワールド半径を反映した距離でニア面判定を行い、点群と同じ位置関係を保つ
-    output.clipNear    = viewPos.z - (nearZ + scaledRadius);
+    output.viewCenter  = viewCenter;
+    output.radius      = radius;
+    // ビルボードの向きをカメラ基準で保持し、PS での円判定が常に正しく働くようにする
+    output.localOffset = float2(dot(billboardDir, camRight), dot(billboardDir, camUp));
+    // ここで視点手前の粒子を描画しないようにする（ニア面との距離が負なら GPU が自動的に破棄）
+    output.clipNear    = viewCenter.z - (nearZ + radius);
 
     return output;
 }

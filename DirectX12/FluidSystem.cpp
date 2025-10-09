@@ -1324,9 +1324,8 @@ void FluidSystem::UpdateSSFRConstants(const Camera& camera)
     }
 
     auto* constant = cb->GetPtr<SSFRConstant>();
-    constant->proj = camera.GetProjMatrix();
     constant->view = camera.GetViewMatrix();
-    constant->world = m_world; // ワールド行列も共有して SSFR と点描の座標を一致させる
+    constant->proj = camera.GetProjMatrix();
     constant->screenSize = XMFLOAT2(static_cast<float>(m_ssfrWidth), static_cast<float>(m_ssfrHeight));
     constant->nearZ = 0.1f;
     constant->farZ = 1000.0f;
