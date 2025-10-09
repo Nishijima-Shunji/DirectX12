@@ -34,8 +34,8 @@ PSOut main(PSIn input)
     float surfaceSq = max(radiusSq - radiusSq * r2, 0.0f);
     float viewOffset = sqrt(surfaceSq);
 
-    // ビュー空間の最近接深度を算出（カメラは +Z 方向を見ている想定）
-    float surfaceDepth = input.viewCenter.z - viewOffset;
+    // XMMatrixLookAtRH ではカメラが -Z 方向を向くため、深度は -viewCenter.z を基準にする
+    float surfaceDepth = -(input.viewCenter.z) - viewOffset;
     surfaceDepth = max(surfaceDepth, nearZ);
 
     // 厚みはビューレイ方向の通過距離（前面＋背面）
