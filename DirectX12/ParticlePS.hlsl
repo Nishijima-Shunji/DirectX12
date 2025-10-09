@@ -1,18 +1,16 @@
 struct VSOutput
 {
-    float4 svpos   : SV_POSITION;
-    float3 normal  : NORMAL;
-    float3 worldPos : TEXCOORD0;
+    float4 svpos : SV_POSITION;
+    float2 uv    : TEXCOORD0;
 };
 
 float4 PSMain(VSOutput input) : SV_TARGET
 {
-    const float3 lightDir = normalize(float3(0.3f, 0.8f, 0.4f)); // 粒子を立体的に見せる簡易平行光源
-    const float3 baseColor = float3(0.2f, 0.6f, 1.0f);
+    // ※UV を円形フェードに変換してアルファを作成
+    float2 centered = input.uv * 2.0f - 1.0f;
+    float dist = dot(centered, centered);
+    float alpha = saturate(1.0f - dist);
 
-    float diffuse = saturate(dot(normalize(input.normal), lightDir));
-    float ambient = 0.25f;
-    float lighting = ambient + diffuse * 0.75f;
-
-    return float4(baseColor * lighting, 1.0f);
+    float3 baseColor = float3(0.2f, 0.6f, 1.0f);
+    return float4(baseColor, alpha);
 }
