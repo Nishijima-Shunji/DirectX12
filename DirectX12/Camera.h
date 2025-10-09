@@ -16,12 +16,19 @@ private:
 	DirectX::XMVECTOR upward;
 	float fov;
 	float aspect;
+
+	float yaw = 0.0f;
+	float pitch = 0.0f;
+
+	DirectX::XMMATRIX viewMatrix;
+	DirectX::XMMATRIX projMatrix;
+
 	DirectX::XMVECTOR GetEyePos() const { return eyePos; };
 	DirectX::XMVECTOR GetTargetPos() const { return targetPos; };
 	DirectX::XMVECTOR GetUpward() const { return upward; };
 	float GetFov() const { return fov; };
 	float GetAspect() const { return aspect; };
-	DirectX::XMFLOAT3   GetPosition() const; // constJoRłʒu擾ł悤ɃQb^[const
+	//DirectX::XMFLOAT3   GetPosition() const;
 public:
 	Camera();
 	bool Init();
@@ -35,6 +42,6 @@ public:
 	DirectX::XMMATRIX GetViewMatrix() const { return viewMatrix; }
 	DirectX::XMMATRIX GetProjMatrix() const { return projMatrix; }
 	DirectX::XMFLOAT4X4 GetInvViewProj() const;
-	DirectX::XMFLOAT3   GetPosition();
+	DirectX::XMFLOAT3   GetPosition() const;
 };
 
