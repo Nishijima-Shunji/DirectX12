@@ -2,9 +2,9 @@
 
 SamplerState g_LinearClamp : register(s0);
 
-Texture2D<uint>    g_FluidDepthTexture     : register(t0); // 平滑化済み流体深度（asuint 格納）
+Texture2D<float>   g_FluidDepthTexture     : register(t0); // 平滑化済み流体深度
 Texture2D<float4>  g_FluidNormalTexture    : register(t1); // ビュー空間法線
-Texture2D<uint>    g_FluidThicknessTexture : register(t2); // 粒子厚み（asuint 格納）
+Texture2D<float>   g_FluidThicknessTexture : register(t2); // 粒子厚み
 Texture2D<float>   g_SceneDepthTexture     : register(t3); // シーン深度バッファ（0〜1）
 Texture2D<float4>  g_SceneColorTexture     : register(t4); // シーンカラー
 
@@ -33,9 +33,11 @@ float3 ReconstructViewPosition(int2 pixel, float depth)
     return float3(vx, vy, depth);
 }
 
-float ViewDepthFromDeviceDepth(float deviceDepth)
+// ※シーン深度をビュー空間へ揃えて流体深度との比較誤差を抑える
+float LinearizeDepth(float deviceDepth)
 {
-    return (nearZ * farZ) / max(farZ - deviceDepth * (farZ - nearZ), 1e-4f);
+    float denominator = farZ - deviceDepth * (farZ - nearZ);
+    return (nearZ * farZ) / max(denominator, 1e-4f);
 }
 
 float3 DecodeNormal(float4 encodedNormal)
@@ -75,25 +77,28 @@ float3 ComputeFoam(float3 baseColor, float thicknessValue, float viewDotN)
 
 float4 main(PSInput input) : SV_TARGET
 {
-    // 合成パスではビューポートがフル解像度へ戻るため、半解像度バッファ用の画素座標へ変換する
-    float2 ssfrCoord = (input.position.xy + 0.5f) * (screenSize / framebufferSize);
-    uint2 pixel = uint2(ssfrCoord);
-    float2 sceneUV = saturate((input.position.xy + 0.5f) / framebufferSize);
+    float2 sceneUV = input.position.xy / framebufferSize;
+    // ※SV_Position をフル解像度で正規化し、UVのズレによる左上描画のみの不具合を解消
+    sceneUV = saturate(sceneUV);
+    float2 halfResCoord = input.position.xy * (screenSize / framebufferSize);
+    // ※半解像度の流体バッファへ座標を写像し、インデックスずれを防止
+    halfResCoord = clamp(halfResCoord, float2(0.0f, 0.0f), screenSize - 1.0f);
+    uint2 pixel = uint2(halfResCoord);
     int2 extent = GetScreenExtent();
     if (pixel.x >= extent.x || pixel.y >= extent.y)
     {
         return g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0);
     }
 
-    float fluidDepth = asfloat(g_FluidDepthTexture.Load(int3(pixel, 0)));
+    float fluidDepth = g_FluidDepthTexture.Load(int3(pixel, 0));
     if (fluidDepth <= 0.0f)
     {
         // 流体が存在しない画素は背景をそのまま返す
         return g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0);
     }
 
-    float sceneDepth = g_SceneDepthTexture.Load(int3(pixel, 0));
-    float sceneViewDepth = ViewDepthFromDeviceDepth(sceneDepth);
+    float sceneDepth = g_SceneDepthTexture.SampleLevel(g_LinearClamp, sceneUV, 0);
+    float sceneViewDepth = LinearizeDepth(sceneDepth);
 
     if (sceneViewDepth <= fluidDepth - 1e-3f)
     {
@@ -107,7 +112,7 @@ float4 main(PSInput input) : SV_TARGET
         normal *= -1.0f; // カメラ側に向ける
     }
 
-    float thickness = asfloat(g_FluidThicknessTexture.Load(int3(pixel, 0)));
+    float thickness = g_FluidThicknessTexture.Load(int3(pixel, 0));
 
     float3 viewPos = ReconstructViewPosition(int2(pixel), fluidDepth);
     float3 viewDir = normalize(-viewPos);

@@ -1,8 +1,5 @@
 #include "SharedStruct.hlsli"
 
-RWTexture2D<uint> g_FluidDepthUAV    : register(u1); // SV_Target0 と衝突しないよう UAV は u1 から割り当てる
-RWTexture2D<uint> g_FluidThicknessUAV : register(u2); // 厚みも同様に float ビット列で蓄積
-
 struct PSIn
 {
     float4 position    : SV_POSITION;
@@ -11,62 +8,18 @@ struct PSIn
     float2 localOffset : TEXCOORD2;
 };
 
-// float を保持している UAV に対して最小値を書き込むヘルパー
-void StoreMinDepth(uint2 pixel, float depth)
+struct PSOut
 {
-    uint newBits = asuint(depth);
-    uint oldBits = g_FluidDepthUAV[pixel];
+    float depth     : SV_Target0;
+    float thickness : SV_Target1;
+};
 
-    // 既存値が 0（未初期化）の場合は優先的に書き込む
-    if (oldBits == 0)
-    {
-        uint exchanged;
-        InterlockedCompareExchange(g_FluidDepthUAV[pixel], 0, newBits, exchanged);
-        if (exchanged == 0)
-        {
-            return;
-        }
-        oldBits = exchanged;
-    }
-
-    // 既存の深度より近い場合のみ更新する（0 は未使用として扱う）
-    [loop]
-    while (asfloat(oldBits) > depth)
-    {
-        uint exchanged;
-        InterlockedCompareExchange(g_FluidDepthUAV[pixel], oldBits, newBits, exchanged);
-        if (exchanged == oldBits)
-        {
-            break;
-        }
-        oldBits = exchanged;
-    }
-}
-
-// 厚みを float として蓄積する（CAS で競合を解消）
-void AccumulateThickness(uint2 pixel, float thickness)
+PSOut main(PSIn input)
 {
-    uint oldBits = g_FluidThicknessUAV[pixel];
+    PSOut output;
+    output.depth = 1000000.0f;     // ※MINブレンドに備えて十分大きな初期値を設定
+    output.thickness = 0.0f;
 
-    [loop]
-    while (true)
-    {
-        float oldValue = asfloat(oldBits);
-        float newValue = oldValue + thickness;
-        uint newBits = asuint(newValue);
-
-        uint exchanged;
-        InterlockedCompareExchange(g_FluidThicknessUAV[pixel], oldBits, newBits, exchanged);
-        if (exchanged == oldBits)
-        {
-            break;
-        }
-        oldBits = exchanged;
-    }
-}
-
-float4 main(PSIn input) : SV_TARGET
-{
     // 補間されたローカル座標（-1〜1）からスプライト内の位置を求める
     float2 local = input.localOffset;
     float radius = input.radius;
@@ -88,10 +41,8 @@ float4 main(PSIn input) : SV_TARGET
     // 厚みはビューレイ方向の通過距離（前面＋背面）
     float thickness = 2.0f * viewOffset;
 
-    uint2 pixel = uint2(input.position.xy);
-    StoreMinDepth(pixel, surfaceDepth);
-    AccumulateThickness(pixel, thickness);
+    output.depth = surfaceDepth;
+    output.thickness = max(thickness, 0.0f);
 
-    // 本シェーダーでは UAV 書き込みのみを行い、RT には出力しない
-    return float4(0, 0, 0, 0);
+    return output;
 }

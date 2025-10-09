@@ -129,6 +129,7 @@ private:
         DescriptorHandle* srvHandle = nullptr;            // SRV ディスクリプタ
         DescriptorHandle* uavHandle = nullptr;            // UAV ディスクリプタ
         D3D12_CPU_DESCRIPTOR_HANDLE uavCpuHandle{};       // Clear 用 CPU ディスクリプタ
+        D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle{};          // RTV 用 CPU ディスクリプタ（粒子スプラットのMRT用）
         D3D12_RESOURCE_STATES currentState = D3D12_RESOURCE_STATE_COMMON; // 現在のリソース状態
     };
 
@@ -157,6 +158,9 @@ private:
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_ssfrCpuDescriptorHeap; // UAV クリア用 CPU ヒープ
     UINT m_ssfrCpuDescriptorSize = 0; // CPU ヒープのインクリメント
     UINT m_ssfrCpuDescriptorCursor = 0; // 次に割り当てる CPU ディスクリプタ位置
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_ssfrRtvDescriptorHeap; // RTV 用 CPU ヒープ
+    UINT m_ssfrRtvDescriptorSize = 0;  // RTV ヒープのインクリメント
+    UINT m_ssfrRtvDescriptorCursor = 0; // 次に割り当てる RTV ディスクリプタ位置
 
     UINT m_ssfrWidth = 0;  // 半解像度幅
     UINT m_ssfrHeight = 0; // 半解像度高さ
@@ -169,9 +173,10 @@ private:
     bool CreateSSFROnce(); // 初回初期化をまとめる
     bool ResizeSSFRTargets(UINT width, UINT height); // 解像度変更対応
     void UpdateSSFRConstants(const Camera& camera); // 定数バッファ更新
-    void ClearSSFRUAVs(ID3D12GraphicsCommandList* cmd); // UAV を毎フレームクリア
+    void PrepareSSFRTargets(ID3D12GraphicsCommandList* cmd); // RTV/UAV を毎フレーム準備
     void TransitionSSFRTarget(ID3D12GraphicsCommandList* cmd, SSFRTarget& target, D3D12_RESOURCE_STATES newState); // 状態遷移
     D3D12_CPU_DESCRIPTOR_HANDLE AllocateCpuDescriptor(); // CPU ヒープから UAV 用ディスクリプタを確保
+    D3D12_CPU_DESCRIPTOR_HANDLE AllocateRtvDescriptor(); // RTV 用ヒープからディスクリプタを確保
     bool CreateParticlePSO(); // 粒子 PSO 生成
     bool CreateCompositePSO(); // 合成 PSO 生成
     bool CreateComputePSO(); // コンピュート PSO 生成
