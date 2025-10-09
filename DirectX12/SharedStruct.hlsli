@@ -6,6 +6,7 @@ cbuffer CameraCB : register(b0)
 {
     float4x4 proj;
     float4x4 view;
+    float4x4 world;            // ワールド行列を共有して描画位置のズレを防ぐ
     float2 screenSize;
     float nearZ;
     float farZ;
