@@ -88,10 +88,10 @@ DirectX::XMFLOAT4X4 Camera::GetInvViewProj() const
         return out;
 }
 
-DirectX::XMFLOAT3 Camera::GetPosition()
+DirectX::XMFLOAT3 Camera::GetPosition() const
 {
-        XMVECTOR eye = GetEyePos();
+        // constQƂĂяoĂG[ɂȂȂ悤Ɉʒu擾const
         DirectX::XMFLOAT3 pos;
-        XMStoreFloat3(&pos, eye);
+        XMStoreFloat3(&pos, eyePos);
         return pos;
 }
