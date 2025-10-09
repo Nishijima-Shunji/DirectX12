@@ -78,10 +78,6 @@ float3 ComputeViewNormal(int2 pixel, float centerDepth)
     {
         normal = float3(0.0f, 0.0f, -1.0f);
     }
-    if (normal.z > 0.0f)
-    {
-        normal *= -1.0f; // カメラ側へ向ける
-    }
     return normal;
 }
 
@@ -135,11 +131,15 @@ float4 main(PSInput input) : SV_TARGET
         return g_SceneColorTexture.SampleLevel(g_LinearClamp, sceneUV, 0);
     }
 
-    float3 normal = ComputeViewNormal(pixel, fluidDepth);
-    float thickness = g_FluidThicknessTexture.Load(int3(pixel, 0));
-
     float3 viewPos = ReconstructViewPosition(pixel, fluidDepth);
     float3 viewDir = normalize(-viewPos);
+    float3 normal = ComputeViewNormal(pixel, fluidDepth);
+    if (dot(normal, viewDir) < 0.0f)
+    {
+        normal *= -1.0f; // ※視線ベクトルと法線が逆向きだと屈折率計算で常に反射100%となり流体が見えないため矯正する
+    }
+
+    float thickness = g_FluidThicknessTexture.Load(int3(pixel, 0));
     float cosTheta = saturate(dot(normal, viewDir));
 
     float ior = ReconstructIOR();
