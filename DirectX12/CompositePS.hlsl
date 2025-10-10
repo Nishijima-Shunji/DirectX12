@@ -8,7 +8,8 @@ struct VSOutput
     float2 uv       : TEXCOORD0;
 };
 
-VSOutput main(uint vertexID : SV_VertexID)
+// FXCがVSMainを参照するためエントリーポイント名を一致させる
+VSOutput VSMain(uint vertexID : SV_VertexID)
 {
     float2 uv = float2((vertexID << 1) & 2, vertexID & 2);
     VSOutput o;

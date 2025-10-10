@@ -17,7 +17,8 @@ static const float2 kCorners[4] = {
     float2(-1.0f,  1.0f)
 };
 
-VSOutput main(uint vertexID : SV_VertexID, uint instanceID : SV_InstanceID)
+// FXCがVSMainを参照するためエントリーポイント名を一致させる
+VSOutput VSMain(uint vertexID : SV_VertexID, uint instanceID : SV_InstanceID)
 {
     VSOutput output;
 

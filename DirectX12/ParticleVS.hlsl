@@ -21,7 +21,8 @@ struct VSOutput
 };
 
 
-VSOutput main(VSInput input)
+// FXCがVSMainを参照するためエントリーポイント名を一致させる
+VSOutput VSMain(VSInput input)
 {
     VSOutput output;
     float3 scaledPos = input.localPos * input.instanceRadius; // 影響半径に合わせて球を拡大
