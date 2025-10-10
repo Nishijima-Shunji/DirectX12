@@ -157,7 +157,8 @@ void FluidSystem::Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera)
 
     if (m_meshIB)
     {
-        cmd->IASetIndexBuffer(&m_meshIB->View());
+        D3D12_INDEX_BUFFER_VIEW ibView = m_meshIB->View(); // 参照切れを防ぐため一時変数で保持する
+        cmd->IASetIndexBuffer(&ibView);
         cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         cmd->DrawIndexedInstanced(m_indexCount, static_cast<UINT>(m_particles.size()), 0, 0, 0);
     }

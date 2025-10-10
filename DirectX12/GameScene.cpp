@@ -2,10 +2,15 @@
 #include "DebugCube.h"
 #include "Engine.h"
 #include "Camera.h"
+#include "VertexBuffer.h"
+#include "PipelineState.h"
+#include "RootSignature.h"
+#include "ConstantBuffer.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <vector>
+#include <array>
 #include <Windows.h>
 
 using namespace DirectX;
