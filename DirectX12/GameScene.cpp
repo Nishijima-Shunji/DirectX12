@@ -180,8 +180,8 @@ using GameSceneDetail::TransparentWalls;
 GameScene::GameScene(Game* game)
     : BaseScene(game)
 {
-    m_initialBounds.min = XMFLOAT3(-2.0f, 0.0f, -2.0f);
-    m_initialBounds.max = XMFLOAT3(2.0f, 2.5f, 2.0f);
+    m_initialBounds.min = XMFLOAT3(-20.0f, 0.0f, -20.0f);
+    m_initialBounds.max = XMFLOAT3(20.0f, 2.5f, 20.0f);
 }
 
 GameScene::~GameScene() = default;
@@ -219,7 +219,7 @@ bool GameScene::Init()
 bool GameScene::RecreateFluid()
 {
     auto newFluid = std::make_unique<FluidSystem>();
-    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 100000))
+    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 100))
     {
         OutputDebugStringA("FluidSystem recreate failed.\n"); // 失敗をデバッグ出力して原因調査しやすくする
         return false;
@@ -236,7 +236,7 @@ void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
         return;
     }
 
-    if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000) == 0)
+    if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0)
     {
         m_fluid->ClearCameraLiftRequest(); // 入力が無い間は巻き上げ効果を解除
         return;
@@ -256,18 +256,18 @@ void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
 
 void GameScene::HandleWallControl(Camera& camera, float deltaTime)
 {
-    if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000))
+    if (!(GetAsyncKeyState(VK_SPACE) & 0x8000))
     {
         return;
     }
 
     float pushPull = 0.0f;
-    if (GetAsyncKeyState('W') & 0x8000) pushPull += 1.0f;
-    if (GetAsyncKeyState('S') & 0x8000) pushPull -= 1.0f;
+    if (GetAsyncKeyState('W') & 0x8000) pushPull += 15.0f;
+    if (GetAsyncKeyState('S') & 0x8000) pushPull -= 15.0f;
 
     float slide = 0.0f;
-    if (GetAsyncKeyState('D') & 0x8000) slide += 1.0f;
-    if (GetAsyncKeyState('A') & 0x8000) slide -= 1.0f;
+    if (GetAsyncKeyState('D') & 0x8000) slide += 15.0f;
+    if (GetAsyncKeyState('A') & 0x8000) slide -= 15.0f;
 
     if (std::fabs(pushPull) < 1e-3f && std::fabs(slide) < 1e-3f)
     {
@@ -310,7 +310,7 @@ void GameScene::HandleWallControl(Camera& camera, float deltaTime)
         XMFLOAT3 direction{};
         XMStoreFloat3(&direction, right);
         // 右方向ベクトルに沿って側面の壁も制御する
-        m_fluid->AdjustWall(direction, slide * moveAmount);
+        m_fluid->AdjustWall(direction, slide * moveAmount, deltaTime);
     }
 }
 

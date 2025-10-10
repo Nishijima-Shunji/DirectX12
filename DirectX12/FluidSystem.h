@@ -32,6 +32,7 @@ public:
     void Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera);
 
     void AdjustWall(const DirectX::XMFLOAT3& direction, float amount);
+    void AdjustWall(const DirectX::XMFLOAT3& dir, float amount, float deltaTime);
     void SetCameraLiftRequest(const DirectX::XMFLOAT3& origin, const DirectX::XMFLOAT3& direction, float deltaTime);
     void ClearCameraLiftRequest();
 
@@ -77,10 +78,16 @@ private:
     ID3D12Device* m_device = nullptr;
     Bounds m_bounds{};
 
-    int m_resolution = 128;
-    float m_waveSpeed = 3.5f;
-    float m_damping = 0.985f;
+    int   m_resolution = 128;
+    float m_waveSpeed = 9.0f;       // 波速↑（水の“走り”を速く）
+    float m_damping = 0.9975f;      // 減衰を弱く（粘度感↓）
+    float m_waveTimeScale = 1.35f;  // VSの波アニメ用の時刻スケール
+    float m_timeSeconds = 0.0f;     // 経過秒
     float m_waterLevel = 0.0f;
+
+    DirectX::XMFLOAT3 m_simMin{ 0,0,0 }; // 初期グリッドの原点（XZ用）
+    float m_cellDx = 0.0f;                // X のセル幅（固定）
+    float m_cellDz = 0.0f;                // Z のセル幅（固定）
 
     std::vector<float> m_height;
     std::vector<float> m_velocity;
@@ -96,6 +103,8 @@ private:
     std::unique_ptr<IndexBuffer> m_indexBuffer;
 
     bool m_liftRequested = false;
+
+    void ApplyWallImpulse(const Bounds& prev, const Bounds& curr, float dt);
 
     float m_minWallExtent = 0.5f;
 };
