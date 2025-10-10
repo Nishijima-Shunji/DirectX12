@@ -17,7 +17,6 @@ using namespace DirectX;
 
 namespace
 {
-    constexpr float kGravity = -9.8f;       // 重力加速度
     constexpr float kWallThickness = 0.0f;  // AABB扱いなので実体厚みは不要
 }
 
@@ -56,6 +55,7 @@ FluidSystem::FluidSystem()
 {
     // グリッド間隔は粒子の影響半径に合わせて初期化し、MLS-MPM 用の節点を確保する準備を行う
     m_gridSpacing = std::max(m_supportRadius, 0.01f);
+    UpdateKernelConstants();
 }
 
 bool FluidSystem::Init(ID3D12Device* device, const Bounds& initialBounds, UINT particleCount, RenderMode renderMode)
@@ -67,6 +67,7 @@ bool FluidSystem::Init(ID3D12Device* device, const Bounds& initialBounds, UINT p
     m_useSSFR = (m_renderMode == RenderMode::SSFR);
     InitializeParticles(particleCount);
     InitializeGrid();
+    UpdateKernelConstants();
 
     m_rootSignature = std::make_unique<RootSignature>();
     if (!m_rootSignature || !m_rootSignature->IsValid())
@@ -237,6 +238,9 @@ void FluidSystem::InitializeParticles(UINT particleCount)
                 Particle particle{};
                 particle.position = XMFLOAT3(px, py, pz);
                 particle.velocity = XMFLOAT3(0.0f, 0.0f, 0.0f);
+                particle.predicted = particle.position;
+                particle.lambda = 0.0f;
+                particle.density = m_restDensity;
                 m_particles[index] = particle;
 
                 m_instances[index].position = particle.position;
@@ -250,192 +254,180 @@ void FluidSystem::InitializeParticles(UINT particleCount)
 void FluidSystem::Update(float deltaTime)
 {
     const float dt = std::clamp(deltaTime, 0.0f, 0.033f); // 極端なデルタタイムを抑制
-    const float gravityStep = kGravity * dt;
-    const float dragFactor = std::clamp(1.0f - m_drag * dt, 0.0f, 1.0f);
+    if (dt <= 0.0f || m_particles.empty())
+    {
+        return;
+    }
 
     EnsureGridReady();
     ClearGridNodes();
-
-    const float invSpacing = 1.0f / std::max(m_gridSpacing, 1e-4f);
-    const int maxX = std::max(m_gridResolution.x - 1, 0);
-    const int maxY = std::max(m_gridResolution.y - 1, 0);
-    const int maxZ = std::max(m_gridResolution.z - 1, 0);
-
-    // 粒子からグリッド節点へ速度と質量を散布（近傍探索の代わりに MLS-MPM を利用する）
-    for (const auto& particle : m_particles)
+    if (m_cellParticleIndices.size() != m_gridNodes.size())
     {
-        const float fx = std::clamp((particle.position.x - m_gridOrigin.x) * invSpacing, 0.0f, static_cast<float>(maxX));
-        const float fy = std::clamp((particle.position.y - m_gridOrigin.y) * invSpacing, 0.0f, static_cast<float>(maxY));
-        const float fz = std::clamp((particle.position.z - m_gridOrigin.z) * invSpacing, 0.0f, static_cast<float>(maxZ));
-
-        const int baseX = std::clamp(static_cast<int>(std::floor(fx)), 0, maxX);
-        const int baseY = std::clamp(static_cast<int>(std::floor(fy)), 0, maxY);
-        const int baseZ = std::clamp(static_cast<int>(std::floor(fz)), 0, maxZ);
-
-        const float fracX = std::clamp(fx - baseX, 0.0f, 1.0f);
-        const float fracY = std::clamp(fy - baseY, 0.0f, 1.0f);
-        const float fracZ = std::clamp(fz - baseZ, 0.0f, 1.0f);
-
-        const int nodeX[2] = { baseX, std::min(baseX + 1, maxX) };
-        const int nodeY[2] = { baseY, std::min(baseY + 1, maxY) };
-        const int nodeZ[2] = { baseZ, std::min(baseZ + 1, maxZ) };
-        const float weightX[2] = { 1.0f - fracX, fracX };
-        const float weightY[2] = { 1.0f - fracY, fracY };
-        const float weightZ[2] = { 1.0f - fracZ, fracZ };
-
-        for (int ix = 0; ix < 2; ++ix)
-        {
-            for (int iy = 0; iy < 2; ++iy)
-            {
-                for (int iz = 0; iz < 2; ++iz)
-                {
-                    const float weight = weightX[ix] * weightY[iy] * weightZ[iz];
-                    if (weight <= 0.0f)
-                    {
-                        continue;
-                    }
-
-                    auto& node = m_gridNodes[GridIndex(nodeX[ix], nodeY[iy], nodeZ[iz])];
-                    node.mass += weight;
-                    node.velocity.x += particle.velocity.x * weight;
-                    node.velocity.y += particle.velocity.y * weight;
-                    node.velocity.z += particle.velocity.z * weight;
-                }
-            }
-        }
+        m_cellParticleIndices.clear();
+        m_cellParticleIndices.resize(m_gridNodes.size());
     }
 
-    for (auto& node : m_gridNodes)
-    {
-        if (node.mass <= 1e-6f)
-        {
-            node.pressure = 0.0f;
-            node.pressureGradient = XMFLOAT3(0.0f, 0.0f, 0.0f);
-            continue;
-        }
+    const XMVECTOR gravity = XMLoadFloat3(&m_gravity);
 
-        const float invMass = 1.0f / node.mass;
-        node.velocity.x = node.velocity.x * invMass;
-        node.velocity.y = (node.velocity.y * invMass) + gravityStep;
-        node.velocity.z = node.velocity.z * invMass;
-
-        // 粒子が密集し過ぎた節点に圧力を設定し、後段で押し戻す力を計算する
-        const float density = node.mass;
-        const float compression = std::max(density - m_restDensity, 0.0f);
-        node.pressure = compression * m_pressureStiffness;
-    }
-
-    const float safeSpacing = std::max(m_gridSpacing, 1e-4f);
-    auto samplePressure = [this](int x, int y, int z)
-    {
-        return m_gridNodes[GridIndex(x, y, z)].pressure;
-    };
-
-    for (int z = 0; z < m_gridResolution.z; ++z)
-    {
-        for (int y = 0; y < m_gridResolution.y; ++y)
-        {
-            for (int x = 0; x < m_gridResolution.x; ++x)
-            {
-                auto& node = m_gridNodes[GridIndex(x, y, z)];
-                if (node.mass <= 1e-6f)
-                {
-                    node.pressureGradient = XMFLOAT3(0.0f, 0.0f, 0.0f);
-                    continue;
-                }
-
-                const float pxPlus = samplePressure(x + 1, y, z);
-                const float pxMinus = samplePressure(x - 1, y, z);
-                const float pyPlus = samplePressure(x, y + 1, z);
-                const float pyMinus = samplePressure(x, y - 1, z);
-                const float pzPlus = samplePressure(x, y, z + 1);
-                const float pzMinus = samplePressure(x, y, z - 1);
-
-                const float gradScale = 0.5f / safeSpacing;
-                node.pressureGradient = XMFLOAT3(
-                    (pxPlus - pxMinus) * gradScale,
-                    (pyPlus - pyMinus) * gradScale,
-                    (pzPlus - pzMinus) * gradScale);
-            }
-        }
-    }
-
+    // 予測位置の更新：重力を速度へ積分し、PBF の拘束解決用に位置を仮計算する
     for (auto& particle : m_particles)
     {
-        const float fx = std::clamp((particle.position.x - m_gridOrigin.x) * invSpacing, 0.0f, static_cast<float>(maxX));
-        const float fy = std::clamp((particle.position.y - m_gridOrigin.y) * invSpacing, 0.0f, static_cast<float>(maxY));
-        const float fz = std::clamp((particle.position.z - m_gridOrigin.z) * invSpacing, 0.0f, static_cast<float>(maxZ));
+        XMVECTOR velocity = XMLoadFloat3(&particle.velocity);
+        velocity = XMVectorAdd(velocity, XMVectorScale(gravity, dt));
+        XMStoreFloat3(&particle.velocity, velocity);
 
-        const int baseX = std::clamp(static_cast<int>(std::floor(fx)), 0, maxX);
-        const int baseY = std::clamp(static_cast<int>(std::floor(fy)), 0, maxY);
-        const int baseZ = std::clamp(static_cast<int>(std::floor(fz)), 0, maxZ);
+        XMVECTOR position = XMLoadFloat3(&particle.position);
+        XMVECTOR predicted = XMVectorAdd(position, XMVectorScale(velocity, dt));
+        XMStoreFloat3(&particle.predicted, predicted);
+        ConstrainToBounds(particle.predicted);
+        particle.lambda = 0.0f;
+        particle.density = 0.0f;
+    }
 
-        const float fracX = std::clamp(fx - baseX, 0.0f, 1.0f);
-        const float fracY = std::clamp(fy - baseY, 0.0f, 1.0f);
-        const float fracZ = std::clamp(fz - baseZ, 0.0f, 1.0f);
+    // PBF ソルバ反復（密度制約の解決）
+    for (int iter = 0; iter < m_solverIterations; ++iter)
+    {
+        RebuildCellTable();
 
-        const int nodeX[2] = { baseX, std::min(baseX + 1, maxX) };
-        const int nodeY[2] = { baseY, std::min(baseY + 1, maxY) };
-        const int nodeZ[2] = { baseZ, std::min(baseZ + 1, maxZ) };
-        const float weightX[2] = { 1.0f - fracX, fracX };
-        const float weightY[2] = { 1.0f - fracY, fracY };
-        const float weightZ[2] = { 1.0f - fracZ, fracZ };
-
-        XMFLOAT3 newVelocity{ 0.0f, 0.0f, 0.0f };
-        XMFLOAT3 pressureGradient{ 0.0f, 0.0f, 0.0f };
-        float density = 0.0f;
-
-        for (int ix = 0; ix < 2; ++ix)
+        // ラムダ計算：密度制約値と勾配長の二乗を集計する
+        for (size_t i = 0; i < m_particles.size(); ++i)
         {
-            for (int iy = 0; iy < 2; ++iy)
+            Particle& particle = m_particles[i];
+            const XMVECTOR predicted = XMLoadFloat3(&particle.predicted);
+
+            float density = m_particleMass * EvaluatePoly6(0.0f);
+            XMVECTOR gradSelf = XMVectorZero();
+            float sumGrad2 = 0.0f;
+
+            ForEachNeighbor(i, [&](size_t j)
             {
-                for (int iz = 0; iz < 2; ++iz)
+                if (j == i)
                 {
-                    const float weight = weightX[ix] * weightY[iy] * weightZ[iz];
-                    if (weight <= 0.0f)
-                    {
-                        continue;
-                    }
-
-                    const auto& node = m_gridNodes[GridIndex(nodeX[ix], nodeY[iy], nodeZ[iz])];
-                    if (node.mass <= 1e-6f)
-                    {
-                        continue;
-                    }
-
-                    newVelocity.x += node.velocity.x * weight;
-                    newVelocity.y += node.velocity.y * weight;
-                    newVelocity.z += node.velocity.z * weight;
-                    pressureGradient.x += node.pressureGradient.x * weight;
-                    pressureGradient.y += node.pressureGradient.y * weight;
-                    pressureGradient.z += node.pressureGradient.z * weight;
-                    density += node.mass * weight;
+                    return;
                 }
+                const XMVECTOR neighborPred = XMLoadFloat3(&m_particles[j].predicted);
+                const XMVECTOR offset = XMVectorSubtract(predicted, neighborPred);
+                const float distance = XMVectorGetX(XMVector3Length(offset));
+                if (distance >= m_supportRadius)
+                {
+                    return;
+                }
+
+                density += m_particleMass * EvaluatePoly6(distance);
+                XMVECTOR gradW = XMVectorScale(EvaluateSpikyGradient(offset, distance), 1.0f / m_restDensity);
+                gradSelf = XMVectorAdd(gradSelf, gradW);
+                sumGrad2 += XMVectorGetX(XMVector3Dot(gradW, gradW));
+            });
+
+            const float Ci = density / m_restDensity - 1.0f;
+            sumGrad2 += XMVectorGetX(XMVector3Dot(gradSelf, gradSelf));
+            particle.density = density;
+            if (sumGrad2 > 0.0f)
+            {
+                particle.lambda = -Ci / (sumGrad2 + m_pbfEpsilon);
+            }
+            else
+            {
+                particle.lambda = 0.0f;
             }
         }
 
-        if (density > 1e-4f)
+        // 位置修正：近傍粒子との距離を調整して体積を保つ
+        for (size_t i = 0; i < m_particles.size(); ++i)
         {
-            const float invDensity = 1.0f / density;
-            // 圧力勾配に基づく反力を速度へ加算して粒子同士の押し戻しを再現する
-            newVelocity.x += (-pressureGradient.x * invDensity) * dt;
-            newVelocity.y += (-pressureGradient.y * invDensity) * dt;
-            newVelocity.z += (-pressureGradient.z * invDensity) * dt;
+            Particle& particle = m_particles[i];
+            const XMVECTOR predicted = XMLoadFloat3(&particle.predicted);
+            XMVECTOR delta = XMVectorZero();
+
+            ForEachNeighbor(i, [&](size_t j)
+            {
+                if (j == i)
+                {
+                    return;
+                }
+                const XMVECTOR neighborPred = XMLoadFloat3(&m_particles[j].predicted);
+                const XMVECTOR offset = XMVectorSubtract(predicted, neighborPred);
+                const float distance = XMVectorGetX(XMVector3Length(offset));
+                if (distance >= m_supportRadius)
+                {
+                    return;
+                }
+
+                float corr = 0.0f;
+                if (m_poly6DeltaQ > 1e-8f)
+                {
+                    const float ratio = EvaluatePoly6(distance) / m_poly6DeltaQ;
+                    corr = m_sCorrK * std::pow(std::max(ratio, 0.0f), m_sCorrN);
+                }
+
+                const float lambdaSum = particle.lambda + m_particles[j].lambda + corr;
+                XMVECTOR gradW = XMVectorScale(EvaluateSpikyGradient(offset, distance), 1.0f / m_restDensity);
+                delta = XMVectorAdd(delta, XMVectorScale(gradW, lambdaSum));
+            });
+
+            XMVECTOR updated = XMVectorAdd(predicted, delta);
+            XMFLOAT3 clamped{};
+            XMStoreFloat3(&clamped, updated);
+            ConstrainToBounds(clamped);
+            XMStoreFloat3(&particle.predicted, XMLoadFloat3(&clamped));
         }
-
-        particle.velocity.x = std::clamp(newVelocity.x * dragFactor, -m_maxVelocity, m_maxVelocity);
-        particle.velocity.y = std::clamp(newVelocity.y * dragFactor, -m_maxVelocity, m_maxVelocity);
-        particle.velocity.z = std::clamp(newVelocity.z * dragFactor, -m_maxVelocity, m_maxVelocity);
-
-        particle.position.x += particle.velocity.x * dt;
-        particle.position.y += particle.velocity.y * dt;
-        particle.position.z += particle.velocity.z * dt;
-
-        ResolveCollisions(particle);
     }
 
+    RebuildCellTable();
+
+    std::vector<XMFLOAT3> newVelocities(m_particles.size());
+    const float invDt = 1.0f / dt;
+
+    // 速度更新：予測位置との差分と XSPH で平滑化する
+    for (size_t i = 0; i < m_particles.size(); ++i)
+    {
+        const Particle& particle = m_particles[i];
+        const XMVECTOR predicted = XMLoadFloat3(&particle.predicted);
+        const XMVECTOR previous = XMLoadFloat3(&particle.position);
+        XMVECTOR velocity = XMVectorScale(XMVectorSubtract(predicted, previous), invDt);
+        XMVECTOR xsph = XMVectorZero();
+
+        ForEachNeighbor(i, [&](size_t j)
+        {
+            if (j == i)
+            {
+                return;
+            }
+            const XMVECTOR neighborPred = XMLoadFloat3(&m_particles[j].predicted);
+            const XMVECTOR offset = XMVectorSubtract(predicted, neighborPred);
+            const float distance = XMVectorGetX(XMVector3Length(offset));
+            if (distance >= m_supportRadius)
+            {
+                return;
+            }
+
+            const float weight = EvaluatePoly6(distance);
+            const XMVECTOR neighborVelocity = XMLoadFloat3(&m_particles[j].velocity);
+            xsph = XMVectorAdd(xsph, XMVectorScale(XMVectorSubtract(neighborVelocity, velocity), weight));
+        });
+
+        velocity = XMVectorAdd(velocity, XMVectorScale(xsph, m_xsphC));
+        XMFLOAT3 velocityFloat{};
+        XMStoreFloat3(&velocityFloat, velocity);
+        velocityFloat.x = std::clamp(velocityFloat.x, -m_maxVelocity, m_maxVelocity);
+        velocityFloat.y = std::clamp(velocityFloat.y, -m_maxVelocity, m_maxVelocity);
+        velocityFloat.z = std::clamp(velocityFloat.z, -m_maxVelocity, m_maxVelocity);
+        newVelocities[i] = velocityFloat;
+    }
+
+    for (size_t i = 0; i < m_particles.size(); ++i)
+    {
+        m_particles[i].velocity = newVelocities[i];
+        m_particles[i].position = m_particles[i].predicted;
+        ResolveCollisions(m_particles[i]);
+        m_particles[i].predicted = m_particles[i].position;
+    }
+
+    ClearGridNodes();
+    ScatterDensityToGrid();
+
     UpdateInstanceBuffer();
-    GenerateMarchingCubesMesh(); // マーチングキューブ用メッシュを更新して粒子表面を再構築する
+    GenerateMarchingCubesMesh();
     UpdateGridLines();
 }
 
@@ -834,6 +826,8 @@ void FluidSystem::InitializeGrid()
     m_gridNodes.assign(
         static_cast<size_t>(cellsX) * static_cast<size_t>(cellsY) * static_cast<size_t>(cellsZ),
         GridNode{ XMFLOAT3(0.0f, 0.0f, 0.0f), 0.0f, 0.0f, XMFLOAT3(0.0f, 0.0f, 0.0f) });
+    m_cellParticleIndices.clear();
+    m_cellParticleIndices.resize(m_gridNodes.size());
 }
 
 void FluidSystem::ClearGridNodes()
@@ -862,6 +856,142 @@ void FluidSystem::EnsureGridReady()
     if (m_gridNodes.empty())
     {
         InitializeGrid();
+    }
+}
+
+void FluidSystem::ConstrainToBounds(XMFLOAT3& position) const
+{
+    // 壁面内に粒子を留めるため、境界から粒子半径ぶん内側へクリップする
+    const float minX = m_bounds.min.x + m_particleRadius + kWallThickness;
+    const float maxX = m_bounds.max.x - m_particleRadius - kWallThickness;
+    const float minY = m_bounds.min.y + m_particleRadius + kWallThickness;
+    const float maxY = m_bounds.max.y - m_particleRadius - kWallThickness;
+    const float minZ = m_bounds.min.z + m_particleRadius + kWallThickness;
+    const float maxZ = m_bounds.max.z - m_particleRadius - kWallThickness;
+
+    position.x = std::clamp(position.x, minX, maxX);
+    position.y = std::clamp(position.y, minY, maxY);
+    position.z = std::clamp(position.z, minZ, maxZ);
+}
+
+void FluidSystem::UpdateKernelConstants()
+{
+    // PBF カーネル係数を事前計算して毎フレームの pow 呼び出しを削減する
+    const float h = std::max(m_supportRadius, 1e-3f);
+    const float h2 = h * h;
+    const float h3 = h2 * h;
+    const float h4 = h2 * h2;
+    const float h6 = h3 * h3;
+    const float h9 = h6 * h3;
+
+    m_poly6Coefficient = 315.0f / (64.0f * XM_PI * h9);
+    m_spikyCoefficient = -45.0f / (XM_PI * h6);
+    m_deltaQ = m_deltaQFactor * h;
+    const float dq2 = m_deltaQ * m_deltaQ;
+    const float dqTerm = std::max(h2 - dq2, 0.0f);
+    m_poly6DeltaQ = m_poly6Coefficient * dqTerm * dqTerm * dqTerm;
+}
+
+float FluidSystem::EvaluatePoly6(float distance) const
+{
+    // Poly6 カーネルで密度を求める（距離が半径を超えた場合は 0）
+    if (distance >= m_supportRadius)
+    {
+        return 0.0f;
+    }
+    const float h2 = m_supportRadius * m_supportRadius;
+    const float diff = h2 - distance * distance;
+    return m_poly6Coefficient * diff * diff * diff;
+}
+
+XMVECTOR FluidSystem::EvaluateSpikyGradient(const XMVECTOR& offset, float distance) const
+{
+    // Spiky 勾配カーネルで圧力項の方向ベクトルを算出する
+    if (distance <= 1e-6f || distance >= m_supportRadius)
+    {
+        return XMVectorZero();
+    }
+    const float factor = m_spikyCoefficient * (m_supportRadius - distance) * (m_supportRadius - distance) / distance;
+    return XMVectorScale(offset, factor);
+}
+
+void FluidSystem::RebuildCellTable()
+{
+    // 予測位置から空間セルを再構築し、近傍探索の計算量を抑える
+    for (auto& cell : m_cellParticleIndices)
+    {
+        cell.clear();
+    }
+
+    if (m_gridSpacing <= 0.0f)
+    {
+        return;
+    }
+
+    const float invSpacing = 1.0f / std::max(m_gridSpacing, 1e-4f);
+    const int maxX = std::max(m_gridResolution.x - 1, 0);
+    const int maxY = std::max(m_gridResolution.y - 1, 0);
+    const int maxZ = std::max(m_gridResolution.z - 1, 0);
+
+    for (size_t i = 0; i < m_particles.size(); ++i)
+    {
+        const auto& predicted = m_particles[i].predicted;
+        const float fx = std::clamp((predicted.x - m_gridOrigin.x) * invSpacing, 0.0f, static_cast<float>(maxX));
+        const float fy = std::clamp((predicted.y - m_gridOrigin.y) * invSpacing, 0.0f, static_cast<float>(maxY));
+        const float fz = std::clamp((predicted.z - m_gridOrigin.z) * invSpacing, 0.0f, static_cast<float>(maxZ));
+
+        const int x = std::clamp(static_cast<int>(std::floor(fx)), 0, maxX);
+        const int y = std::clamp(static_cast<int>(std::floor(fy)), 0, maxY);
+        const int z = std::clamp(static_cast<int>(std::floor(fz)), 0, maxZ);
+        const size_t cellIndex = GridIndex(x, y, z);
+        if (cellIndex < m_cellParticleIndices.size())
+        {
+            m_cellParticleIndices[cellIndex].push_back(static_cast<uint32_t>(i));
+        }
+    }
+}
+
+void FluidSystem::ScatterDensityToGrid()
+{
+    // マーチングキューブ用に粒子密度を格子へ散布してスカラー場を構築する
+    const float invSpacing = 1.0f / std::max(m_gridSpacing, 1e-4f);
+    const int maxX = std::max(m_gridResolution.x - 1, 0);
+    const int maxY = std::max(m_gridResolution.y - 1, 0);
+    const int maxZ = std::max(m_gridResolution.z - 1, 0);
+
+    for (const auto& particle : m_particles)
+    {
+        const float fx = std::clamp((particle.position.x - m_gridOrigin.x) * invSpacing, 0.0f, static_cast<float>(maxX));
+        const float fy = std::clamp((particle.position.y - m_gridOrigin.y) * invSpacing, 0.0f, static_cast<float>(maxY));
+        const float fz = std::clamp((particle.position.z - m_gridOrigin.z) * invSpacing, 0.0f, static_cast<float>(maxZ));
+
+        const int baseX = std::clamp(static_cast<int>(std::floor(fx)), 0, maxX);
+        const int baseY = std::clamp(static_cast<int>(std::floor(fy)), 0, maxY);
+        const int baseZ = std::clamp(static_cast<int>(std::floor(fz)), 0, maxZ);
+
+        const float fracX = fx - static_cast<float>(baseX);
+        const float fracY = fy - static_cast<float>(baseY);
+        const float fracZ = fz - static_cast<float>(baseZ);
+
+        const int nodeX[2] = { baseX, std::min(baseX + 1, maxX) };
+        const int nodeY[2] = { baseY, std::min(baseY + 1, maxY) };
+        const int nodeZ[2] = { baseZ, std::min(baseZ + 1, maxZ) };
+        const float weightX[2] = { 1.0f - fracX, fracX };
+        const float weightY[2] = { 1.0f - fracY, fracY };
+        const float weightZ[2] = { 1.0f - fracZ, fracZ };
+
+        for (int ix = 0; ix < 2; ++ix)
+        {
+            for (int iy = 0; iy < 2; ++iy)
+            {
+                for (int iz = 0; iz < 2; ++iz)
+                {
+                    const float weight = weightX[ix] * weightY[iy] * weightZ[iz];
+                    auto& node = m_gridNodes[GridIndex(nodeX[ix], nodeY[iy], nodeZ[iz])];
+                    node.mass += weight * m_particleMass;
+                }
+            }
+        }
     }
 }
 
@@ -1904,6 +2034,7 @@ void FluidSystem::SetBounds(const Bounds& bounds)
 {
     m_bounds = bounds;
     InitializeGrid();
+    UpdateKernelConstants();
     for (auto& particle : m_particles)
     {
         ResolveCollisions(particle);
