@@ -12,8 +12,6 @@
 #include <array>
 #include <memory>
 #include <vector>
-#include <algorithm>
-#include <cmath>
 #include <wrl.h>
 
 class Camera;
@@ -48,11 +46,8 @@ public:
 private:
     struct Particle
     {
-        DirectX::XMFLOAT3 position;  // 現在位置
-        DirectX::XMFLOAT3 velocity;  // 速度ベクトル
-        DirectX::XMFLOAT3 predicted; // 位置予測（PBF の拘束解決に使用）
-        float lambda = 0.0f;         // ラグランジュ乗数
-        float density = 0.0f;        // 粒子密度
+        DirectX::XMFLOAT3 position; // 現在位置
+        DirectX::XMFLOAT3 velocity; // 速度ベクトル
     };
 
     struct FluidConstant
@@ -72,59 +67,6 @@ private:
     void ClearGridNodes();
     size_t GridIndex(int x, int y, int z) const;
     void EnsureGridReady();
-    void ConstrainToBounds(DirectX::XMFLOAT3& position) const;
-    void UpdateKernelConstants();
-    float EvaluatePoly6(float distance) const;
-    DirectX::XMVECTOR EvaluateSpikyGradient(const DirectX::XMVECTOR& offset, float distance) const;
-    void RebuildCellTable();
-    template<typename Fn>
-    void ForEachNeighbor(size_t index, const Fn& fn) const
-    {
-        // 予測位置の周辺 3x3x3 セルを走査して近傍粒子に処理を適用する
-        if (index >= m_particles.size() || m_gridSpacing <= 0.0f)
-        {
-            return;
-        }
-
-        const float invSpacing = 1.0f / std::max(m_gridSpacing, 1e-4f);
-        const int maxX = std::max(m_gridResolution.x - 1, 0);
-        const int maxY = std::max(m_gridResolution.y - 1, 0);
-        const int maxZ = std::max(m_gridResolution.z - 1, 0);
-
-        const DirectX::XMFLOAT3& pos = m_particles[index].predicted;
-        const float fx = std::clamp((pos.x - m_gridOrigin.x) * invSpacing, 0.0f, static_cast<float>(maxX));
-        const float fy = std::clamp((pos.y - m_gridOrigin.y) * invSpacing, 0.0f, static_cast<float>(maxY));
-        const float fz = std::clamp((pos.z - m_gridOrigin.z) * invSpacing, 0.0f, static_cast<float>(maxZ));
-
-        const int baseX = std::clamp(static_cast<int>(std::floor(fx)), 0, maxX);
-        const int baseY = std::clamp(static_cast<int>(std::floor(fy)), 0, maxY);
-        const int baseZ = std::clamp(static_cast<int>(std::floor(fz)), 0, maxZ);
-
-        for (int dz = -1; dz <= 1; ++dz)
-        {
-            const int cellZ = std::clamp(baseZ + dz, 0, maxZ);
-            for (int dy = -1; dy <= 1; ++dy)
-            {
-                const int cellY = std::clamp(baseY + dy, 0, maxY);
-                for (int dx = -1; dx <= 1; ++dx)
-                {
-                    const int cellX = std::clamp(baseX + dx, 0, maxX);
-                    const size_t cellIndex = GridIndex(cellX, cellY, cellZ);
-                    if (cellIndex >= m_cellParticleIndices.size())
-                    {
-                        continue;
-                    }
-
-                    const auto& cell = m_cellParticleIndices[cellIndex];
-                    for (uint32_t neighbor : cell)
-                    {
-                        fn(neighbor);
-                    }
-                }
-            }
-        }
-    }
-    void ScatterDensityToGrid();
 
     struct SphereVertex
     {
@@ -163,6 +105,7 @@ private:
     DirectX::XMMATRIX m_world;     // 粒子全体のワールド行列
     float m_particleRadius = 0.05f; // 粒子半径
     float m_restitution = 0.4f;     // 壁衝突時の反発係数
+    float m_drag = 0.1f;            // 簡易減衰係数
     float m_supportRadius = 0.18f;  // 粒子同士の相互作用半径
     float m_maxVelocity = 6.0f;     // 速度クランプ値
 
@@ -273,23 +216,11 @@ private:
     DirectX::XMINT3 m_gridResolution{ 1, 1, 1 };        // グリッド解像度
     float m_gridSpacing = 0.1f;                         // グリッドセル間隔
     std::vector<GridNode> m_gridNodes;                  // MLS-MPM 用の節点データ
-    std::vector<std::vector<uint32_t>> m_cellParticleIndices; // 近傍探索用セルリスト
     float m_ssfrResolutionScale = 0.5f;                 // SSFR を半解像度で回すスケール
     float m_restDensity = 1.0f;                         // 静止密度（圧力計算の基準値）
+    float m_pressureStiffness = 6.0f;                   // 圧力係数（反発力の強さを制御）
     float m_bilateralSpatialSigma = 2.0f;               // バイラテラルフィルタの空間シグマ
     float m_bilateralDepthSigma = 0.05f;                // バイラテラルフィルタの深度シグマ
     float m_bilateralNormalSigma = 16.0f;               // 法線一致性の鋭さ
     float m_bilateralKernelRadius = 2.0f;               // サンプル半径（ピクセル単位）
-    float m_particleMass = 1.0f;                        // 粒子質量
-    int m_solverIterations = 4;                         // PBF の反復回数
-    float m_pbfEpsilon = 1e-4f;                         // 拘束安定化用イプシロン
-    float m_xsphC = 0.03f;                              // XSPH 係数
-    float m_sCorrK = -0.01f;                            // 圧力補正項の係数
-    float m_sCorrN = 4.0f;                              // 圧力補正項の指数
-    float m_deltaQFactor = 0.3f;                        // s_corr 計算用の基準距離割合
-    DirectX::XMFLOAT3 m_gravity{ 0.0f, -9.8f, 0.0f };     // 重力ベクトル
-    float m_poly6Coefficient = 0.0f;                    // Poly6 カーネル係数
-    float m_spikyCoefficient = 0.0f;                    // Spiky カーネル係数
-    float m_deltaQ = 0.0f;                              // s_corr 用距離
-    float m_poly6DeltaQ = 0.0f;                         // s_corr 用カーネル値
 };
