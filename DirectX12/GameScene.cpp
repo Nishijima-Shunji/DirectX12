@@ -219,7 +219,7 @@ bool GameScene::Init()
 bool GameScene::RecreateFluid()
 {
     auto newFluid = std::make_unique<FluidSystem>();
-    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 10000))
+    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 100))
     {
         OutputDebugStringA("FluidSystem recreate failed.\n"); // 失敗をデバッグ出力して原因調査しやすくする
         return false;
@@ -473,6 +473,22 @@ void GameScene::Draw()
     {
         m_fluid->Draw(cmd, *camera);
     }
+
+    if (m_fluid && m_debugCube) {
+        using namespace DirectX;
+
+        m_fluid->ForEachDebugParticle([&](const auto& p) {
+            const float s = std::max(0.02f, p.radius * 2.0f); // 小さすぎ対策
+            // 少しだけ浮かせて深度衝突を避ける（見えない対策）
+            const XMMATRIX W = XMMatrixScaling(s, s, s) *
+                XMMatrixTranslation(p.pos.x, p.pos.y + 0.01f, p.pos.z);
+
+            m_debugCube->SetWorldMatrix(W);
+            m_debugCube->Update(0.0f);   // ★ CB更新を必ず呼ぶ
+            m_debugCube->Render(cmd);    // 1粒子=1ドロー（少数 or サンプリング前提）
+            });
+    }
+
 
     if (m_walls)
     {
