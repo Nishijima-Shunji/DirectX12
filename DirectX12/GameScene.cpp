@@ -11,7 +11,7 @@ using namespace DirectX;
 
 namespace
 {
-    constexpr FluidSystem::RenderMode kRenderMode = FluidSystem::RenderMode::MarchingCubes; // 初期描画モード（マーチングキューブ）
+    constexpr FluidSystem::RenderMode kRenderMode = FluidSystem::RenderMode::SSFR; // 初期描画モード
 }
 
 namespace GameSceneDetail
@@ -191,7 +191,7 @@ bool GameScene::Init()
     g_Engine->RegisterObj<Camera>("Camera", camera);
 
     m_fluid = std::make_unique<FluidSystem>();
-    if (!m_fluid || !m_fluid->Init(g_Engine->Device(), m_initialBounds, 10000, kRenderMode))
+    if (!m_fluid || !m_fluid->Init(g_Engine->Device(), m_initialBounds, 5000, kRenderMode))
     {
         return false;
     }
