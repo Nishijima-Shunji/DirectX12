@@ -15,11 +15,6 @@
 
 using namespace DirectX;
 
-namespace
-{
-    constexpr FluidSystem::RenderMode kRenderMode = FluidSystem::RenderMode::SSFR; // 初期描画モードはSSFR
-}
-
 namespace GameSceneDetail
 {
     struct WallVertex
@@ -196,7 +191,7 @@ bool GameScene::Init()
     auto* camera = new Camera();
     g_Engine->RegisterObj<Camera>("Camera", camera);
 
-    if (!RecreateFluid(kRenderMode))
+    if (!RecreateFluid())
     {
         return false; // 初期生成に失敗した場合はシーンの起動を中止
     }
@@ -221,44 +216,17 @@ bool GameScene::Init()
     return true;
 }
 
-bool GameScene::RecreateFluid(FluidSystem::RenderMode mode)
+bool GameScene::RecreateFluid()
 {
     auto newFluid = std::make_unique<FluidSystem>();
-    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 5000, mode))
+    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 5000))
     {
         OutputDebugStringA("FluidSystem recreate failed.\n"); // 失敗をデバッグ出力して原因調査しやすくする
         return false;
     }
 
     m_fluid = std::move(newFluid);
-    m_currentRenderMode = mode;
     return true;
-}
-
-void GameScene::HandleRenderModeToggle()
-{
-    const bool particleKey = (GetAsyncKeyState('1') & 0x8000) != 0;
-    const bool ssfrKey = (GetAsyncKeyState('2') & 0x8000) != 0;
-    const bool marchingKey = (GetAsyncKeyState('3') & 0x8000) != 0;
-
-    if (particleKey && !m_prevParticleKey && m_currentRenderMode != FluidSystem::RenderMode::InstancedSpheres)
-    {
-        RecreateFluid(FluidSystem::RenderMode::InstancedSpheres); // 1キーで粒子メッシュ描画へ切り替え
-    }
-
-    if (ssfrKey && !m_prevSsfrKey && m_currentRenderMode != FluidSystem::RenderMode::SSFR)
-    {
-        RecreateFluid(FluidSystem::RenderMode::SSFR); // 2キーでSSFRへ戻す
-    }
-
-    if (marchingKey && !m_prevMarchingKey && m_currentRenderMode != FluidSystem::RenderMode::MarchingCubes)
-    {
-        RecreateFluid(FluidSystem::RenderMode::MarchingCubes); // 3キーは検証用にマーチングキューブへ
-    }
-
-    m_prevParticleKey = particleKey;
-    m_prevSsfrKey = ssfrKey;
-    m_prevMarchingKey = marchingKey;
 }
 
 void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
@@ -355,7 +323,6 @@ void GameScene::Update(float deltaTime)
     }
 
     camera->Update(deltaTime);
-    HandleRenderModeToggle();
     HandleCameraLift(*camera, deltaTime);
     HandleWallControl(*camera, deltaTime);
 

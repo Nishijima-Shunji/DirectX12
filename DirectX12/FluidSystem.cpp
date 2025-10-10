@@ -1,7 +1,5 @@
 #include "FluidSystem.h"
 #include "Engine.h"
-#include "SphereMeshGenerator.h"
-#include "SharedStruct.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -88,11 +86,10 @@ FluidSystem::~FluidSystem()
 {
 }
 
-bool FluidSystem::Init(ID3D12Device* device, const Bounds& bounds, size_t particleCount, RenderMode mode)
+bool FluidSystem::Init(ID3D12Device* device, const Bounds& bounds, size_t particleCount)
 {
     m_device = device;
     m_bounds = bounds;
-    m_renderMode = mode;
 
     m_gridMin = bounds.min;
 
@@ -135,14 +132,13 @@ void FluidSystem::Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera)
 
     UpdateCameraCB(camera);
 
-    auto* pso = (m_renderMode == RenderMode::InstancedSpheres) ? m_instancedPso.get() : m_ssfrPso.get();
-    if (!pso)
+    if (!m_depthPso)
     {
         return;
     }
 
     cmd->SetGraphicsRootSignature(m_rootSignature->Get());
-    cmd->SetPipelineState(pso->Get());
+    cmd->SetPipelineState(m_depthPso->Get());
 
     UINT frameIndex = g_Engine->CurrentBackBufferIndex();
     if (m_cameraCB[frameIndex])
@@ -298,61 +294,46 @@ bool FluidSystem::BuildRenderResources()
         return false;
     }
 
-    m_instancedPso = std::make_unique<PipelineState>();
-    m_ssfrPso = std::make_unique<PipelineState>();
-    if (!m_instancedPso || !m_ssfrPso)
+    m_depthPso = std::make_unique<PipelineState>();
+    if (!m_depthPso)
     {
         return false;
     }
 
     auto layout = CreateInputLayout();
-    m_instancedPso->SetInputLayout(layout);
-    m_instancedPso->SetRootSignature(m_rootSignature->Get());
-    m_instancedPso->SetVS(L"ParticleVS.cso");
-    m_instancedPso->SetPS(L"ParticlePS.cso");
-    m_instancedPso->SetDepthStencilFormat(DXGI_FORMAT_D32_FLOAT);
-    m_instancedPso->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-    if (!m_instancedPso->IsValid())
+    m_depthPso->SetInputLayout(layout);
+    m_depthPso->SetRootSignature(m_rootSignature->Get());
+    m_depthPso->SetVS(L"ParticlesDepthVS.cso");
+    m_depthPso->SetPS(L"ParticlesDepthPS.cso");
+    m_depthPso->SetDepthStencilFormat(DXGI_FORMAT_D32_FLOAT);
+    m_depthPso->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+    if (!m_depthPso->IsValid())
     {
         return false;
     }
 
-    m_ssfrPso->SetInputLayout(layout);
-    m_ssfrPso->SetRootSignature(m_rootSignature->Get());
-    m_ssfrPso->SetVS(L"ParticleVS.cso");
-    m_ssfrPso->SetPS(L"FluidSSFRPS.cso");
-    m_ssfrPso->SetDepthStencilFormat(DXGI_FORMAT_D32_FLOAT);
-    m_ssfrPso->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-    if (!m_ssfrPso->IsValid())
+    struct QuadVertex
     {
-        return false;
-    }
-
-    MeshData sphere = CreateLowPolySphere(1.0f, 2);
-
-        struct MeshVertex
-    {
-        XMFLOAT3 position;
-        XMFLOAT3 normal;
+        XMFLOAT2 corner;
     };
 
-    std::vector<MeshVertex> vertices;
-    vertices.reserve(sphere.vertices.size());
-    for (auto& v : sphere.vertices)
+    const QuadVertex quadVertices[] =
     {
-        MeshVertex mv{};
-        mv.position = v.Position;
-        mv.normal = v.Normal;
-        vertices.push_back(mv);
-    }
+        { XMFLOAT2(-1.0f, -1.0f) },
+        { XMFLOAT2( 1.0f, -1.0f) },
+        { XMFLOAT2( 1.0f,  1.0f) },
+        { XMFLOAT2(-1.0f,  1.0f) },
+    };
 
-    m_meshVB = std::make_unique<VertexBuffer>(vertices.size() * sizeof(MeshVertex), sizeof(MeshVertex), vertices.data());
-    m_meshIB = std::make_unique<IndexBuffer>(sphere.indices.size() * sizeof(uint32_t), sphere.indices.data());
-    m_indexCount = static_cast<UINT>(sphere.indices.size());
+    const uint32_t quadIndices[] = { 0, 1, 2, 0, 2, 3 };
+
+    m_meshVB = std::make_unique<VertexBuffer>(sizeof(quadVertices), sizeof(QuadVertex), quadVertices);
+    m_meshIB = std::make_unique<IndexBuffer>(sizeof(quadIndices), quadIndices);
+    m_indexCount = static_cast<UINT>(_countof(quadIndices));
 
     for (UINT i = 0; i < Engine::FRAME_BUFFER_COUNT; ++i)
     {
-        m_cameraCB[i] = std::make_unique<ConstantBuffer>(sizeof(CameraConstants));
+        m_cameraCB[i] = std::make_unique<ConstantBuffer>(sizeof(DepthConstants));
     }
 
     return m_meshVB && m_meshVB->IsValid() && m_meshIB && m_meshIB->IsValid();
@@ -748,19 +729,19 @@ void FluidSystem::UpdateCameraCB(const Camera& camera)
         return;
     }
 
-    CameraConstants* constants = cb->GetPtr<CameraConstants>();
-    XMStoreFloat4x4(&constants->world, XMMatrixTranspose(XMMatrixIdentity()));
+    DepthConstants* constants = cb->GetPtr<DepthConstants>();
     XMStoreFloat4x4(&constants->view, XMMatrixTranspose(camera.GetViewMatrix()));
     XMStoreFloat4x4(&constants->proj, XMMatrixTranspose(camera.GetProjMatrix()));
+    constants->clipZ = XMFLOAT2(0.1f, 1000.0f); // ※カメラの投影設定と揃えるため固定値で保持
+    constants->_pad = XMFLOAT2(0.0f, 0.0f);
 }
 
 D3D12_INPUT_LAYOUT_DESC FluidSystem::CreateInputLayout()
 {
     static D3D12_INPUT_ELEMENT_DESC descs[] =
     {
-        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-        { "POSITION", 1, DXGI_FORMAT_R32G32B32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+        { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,   0 },
+        { "POSITION", 1, DXGI_FORMAT_R32G32B32_FLOAT, 1, 0,  D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
         { "TEXCOORD", 0, DXGI_FORMAT_R32_FLOAT,       1, 12, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
     };
     D3D12_INPUT_LAYOUT_DESC layout{};

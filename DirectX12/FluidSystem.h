@@ -18,13 +18,6 @@
 class FluidSystem
 {
 public:
-    enum class RenderMode
-    {
-        SSFR,
-        InstancedSpheres,
-        MarchingCubes
-    };
-
     struct Bounds
     {
         DirectX::XMFLOAT3 min;
@@ -34,7 +27,7 @@ public:
     FluidSystem();
     ~FluidSystem();
 
-    bool Init(ID3D12Device* device, const Bounds& bounds, size_t particleCount, RenderMode mode);
+    bool Init(ID3D12Device* device, const Bounds& bounds, size_t particleCount);
     void Update(float deltaTime);
     void Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera);
 
@@ -43,8 +36,6 @@ public:
     void ClearCameraLiftRequest();
 
     const Bounds& GetBounds() const { return m_bounds; }
-    RenderMode CurrentRenderMode() const { return m_renderMode; }
-
 private:
     struct Particle
     {
@@ -67,11 +58,12 @@ private:
         float radius;
     };
 
-    struct CameraConstants
+    struct DepthConstants
     {
-        DirectX::XMFLOAT4X4 world;
         DirectX::XMFLOAT4X4 view;
         DirectX::XMFLOAT4X4 proj;
+        DirectX::XMFLOAT2 clipZ;
+        DirectX::XMFLOAT2 _pad;
     };
 
     bool BuildParticles(size_t particleCount);
@@ -104,8 +96,6 @@ private:
     ID3D12Device* m_device = nullptr;
 
     Bounds m_bounds{};
-    RenderMode m_renderMode = RenderMode::SSFR;
-
     float m_particleRadius = 0.03f;
     float m_cellSize = 0.06f;
 
@@ -118,8 +108,7 @@ private:
     SpatialGrid m_neighborGrid;
 
     std::unique_ptr<RootSignature> m_rootSignature;
-    std::unique_ptr<PipelineState> m_instancedPso;
-    std::unique_ptr<PipelineState> m_ssfrPso;
+    std::unique_ptr<PipelineState> m_depthPso;
 
     std::unique_ptr<VertexBuffer> m_meshVB;
     std::unique_ptr<VertexBuffer> m_instanceVB;
