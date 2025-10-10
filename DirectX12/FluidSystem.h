@@ -200,7 +200,6 @@ private:
     bool CreateComputePSO(); // コンピュート PSO 生成
     void GenerateMarchingCubesMesh(); // マーチングキューブメッシュ生成
     void UpdateMarchingBuffers(); // マーチングキューブ用VB/IB更新
-    float GetSmoothedNodeMass(int x, int y, int z) const; // グリッド節点の密度を平滑化して取得
     float SampleGridDensity(const DirectX::XMFLOAT3& position) const; // 格子密度サンプル
     DirectX::XMFLOAT3 SampleGridGradient(const DirectX::XMFLOAT3& position) const; // 密度勾配サンプル
 

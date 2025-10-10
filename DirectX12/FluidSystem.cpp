@@ -523,35 +523,6 @@ void FluidSystem::UpdateInstanceBuffer()
     }
 }
 
-float FluidSystem::GetSmoothedNodeMass(int x, int y, int z) const
-{
-    // 密度フィールドを平滑化して隙間三角形を防ぐために 3x3x3 の分離ガウシアンを適用する
-    static constexpr float kernel[3] = { 0.25f, 0.5f, 0.25f };
-    float accum = 0.0f;
-    float weightSum = 0.0f;
-
-    for (int dz = -1; dz <= 1; ++dz)
-    {
-        for (int dy = -1; dy <= 1; ++dy)
-        {
-            for (int dx = -1; dx <= 1; ++dx)
-            {
-                const float weight = kernel[dx + 1] * kernel[dy + 1] * kernel[dz + 1];
-                const GridNode& node = m_gridNodes[GridIndex(x + dx, y + dy, z + dz)];
-                accum += node.mass * weight;
-                weightSum += weight;
-            }
-        }
-    }
-
-    if (weightSum <= 1e-6f)
-    {
-        return 0.0f;
-    }
-
-    return accum / weightSum;
-}
-
 float FluidSystem::SampleGridDensity(const XMFLOAT3& position) const
 {
     if (m_gridNodes.empty())
@@ -582,7 +553,7 @@ float FluidSystem::SampleGridDensity(const XMFLOAT3& position) const
 
     auto density = [&](int x, int y, int z)
     {
-        return GetSmoothedNodeMass(x, y, z);
+        return m_gridNodes[GridIndex(x, y, z)].mass;
     };
 
     const float c000 = density(x0, y0, z0);
@@ -688,7 +659,7 @@ void FluidSystem::GenerateMarchingCubesMesh()
         return;
     }
 
-    const float isoLevel = std::max(m_restDensity * 0.35f, 0.04f); // 平滑化後でも面が途切れないよう閾値を少し下げる
+    const float isoLevel = std::max(m_restDensity * 0.5f, 0.05f); // 静止密度の半分を閾値にしてノイズを抑制
     const float spacing = std::max(m_gridSpacing, 1e-4f);
 
     // 立方体を 6 個のテトラへ分割し、簡易テーブルでマーチングキューブ相当の面生成を行う
@@ -756,7 +727,7 @@ void FluidSystem::GenerateMarchingCubesMesh()
                     const float pz = m_gridOrigin.z + (static_cast<float>(z + dz) * spacing);
 
                     cornerPos[i] = XMFLOAT3(px, py, pz);
-                    cornerValue[i] = GetSmoothedNodeMass(x + dx, y + dy, z + dz);
+                    cornerValue[i] = m_gridNodes[GridIndex(x + dx, y + dy, z + dz)].mass;
                 }
 
                 for (const auto& tetra : tetrahedra)
