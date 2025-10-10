@@ -1,721 +1,303 @@
 #include "FluidSystem.h"
-#include "Engine.h"
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstring>
-#include <limits>
+#include <d3dx12.h>
+#include "Engine.h"
 
 using namespace DirectX;
 
 namespace
 {
-    inline XMVECTOR LoadFloat3(const XMFLOAT3& v)
-    {
-        return XMLoadFloat3(&v);
-    }
-
-    inline XMFLOAT3 ToFloat3(const XMVECTOR& v)
-    {
-        XMFLOAT3 out{};
-        XMStoreFloat3(&out, v);
-        return out;
-    }
-
-    inline XMMATRIX LoadFloat3x3(const XMFLOAT3X3& m)
-    {
-        return XMLoadFloat3x3(&m);
-    }
-
-    inline XMFLOAT3X3 ToFloat3x3(const XMMATRIX& m)
-    {
-        XMFLOAT3X3 out{};
-        XMStoreFloat3x3(&out, m);
-        return out;
-    }
-
-    inline float QuadraticWeight(float x)
-    {
-        x = std::fabsf(x);
-        if (x < 0.5f)
-        {
-            return 0.75f - x * x;
-        }
-        if (x < 1.5f)
-        {
-            float t = 1.5f - x;
-            return 0.5f * t * t;
-        }
-        return 0.0f;
-    }
-
-    inline float QuadraticGradient(float x)
-    {
-        float s = (x >= 0.0f) ? 1.0f : -1.0f;
-        x = std::fabsf(x);
-        if (x < 0.5f)
-        {
-            return -2.0f * x * s;
-        }
-        if (x < 1.5f)
-        {
-            float t = 1.5f - x;
-            return -t * s;
-        }
-        return 0.0f;
-    }
-
-    inline float Clamp(float v, float minV, float maxV)
-    {
-        return std::max(minV, std::min(maxV, v));
-    }
-
-    inline XMFLOAT3 Clamp3(const XMFLOAT3& value, const XMFLOAT3& minV, const XMFLOAT3& maxV)
-    {
-        return XMFLOAT3(
-            Clamp(value.x, minV.x, maxV.x),
-            Clamp(value.y, minV.y, maxV.y),
-            Clamp(value.z, minV.z, maxV.z));
-    }
+    // 日本語コメント: 波面色を固定値で設定
+    constexpr XMFLOAT4 kSurfaceColor{ 0.0f, 0.45f, 0.8f, 0.9f };
 }
 
-FluidSystem::FluidSystem()
-{
-}
+FluidSystem::FluidSystem() = default;
+FluidSystem::~FluidSystem() = default;
 
-FluidSystem::~FluidSystem()
-{
-}
-
-bool FluidSystem::Init(ID3D12Device* device, const Bounds& bounds, size_t particleCount)
+bool FluidSystem::Init(ID3D12Device* device, const Bounds& bounds, size_t /*particleCount*/)
 {
     m_device = device;
     m_bounds = bounds;
+    m_waterLevel = (bounds.min.y + bounds.max.y) * 0.5f;
 
-    m_gridMin = bounds.min;
-
-    if (!BuildParticles(particleCount))
+    if (!BuildSimulationResources())
     {
         return false;
     }
-    if (!BuildGrid())
-    {
-        return false;
-    }
+
     if (!BuildRenderResources())
     {
         return false;
     }
-    if (!BuildInstanceBuffer())
-    {
-        return false;
-    }
 
-    RebuildSpatialGrid();
-
+    ResetWaveState();
+    UpdateVertexBuffer();
     return true;
 }
 
-void FluidSystem::Update(float deltaTime)
+bool FluidSystem::BuildSimulationResources()
 {
-    StepMLSMPM(deltaTime);
-    ApplyCameraLift(deltaTime);
-    RebuildSpatialGrid();
-    UpdateInstanceBuffer();
-}
+    // 日本語コメント: 格子解像度に合わせたバッファを初期化
+    const size_t total = static_cast<size_t>(m_resolution) * static_cast<size_t>(m_resolution);
+    m_height.assign(total, 0.0f);
+    m_velocity.assign(total, 0.0f);
+    m_vertices.assign(total, {});
 
-void FluidSystem::Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera)
-{
-    if (!cmd)
+    // 日本語コメント: インデックスは三角形リストで生成
+    m_indices.clear();
+    m_indices.reserve((m_resolution - 1) * (m_resolution - 1) * 6);
+    for (int z = 0; z < m_resolution - 1; ++z)
     {
-        return;
-    }
-
-    UpdateCameraCB(camera);
-
-    if (!m_depthPso)
-    {
-        return;
-    }
-
-    cmd->SetGraphicsRootSignature(m_rootSignature->Get());
-    cmd->SetPipelineState(m_depthPso->Get());
-
-    UINT frameIndex = g_Engine->CurrentBackBufferIndex();
-    if (m_cameraCB[frameIndex])
-    {
-        cmd->SetGraphicsRootConstantBufferView(0, m_cameraCB[frameIndex]->GetAddress());
-    }
-
-    D3D12_VERTEX_BUFFER_VIEW views[2] = {};
-    views[0] = m_meshVB->View();
-    views[1] = m_instanceVB->View();
-    cmd->IASetVertexBuffers(0, 2, views);
-
-    if (m_meshIB)
-    {
-        D3D12_INDEX_BUFFER_VIEW ibView = m_meshIB->View(); // 参照切れを防ぐため一時変数で保持する
-        cmd->IASetIndexBuffer(&ibView);
-        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmd->DrawIndexedInstanced(m_indexCount, static_cast<UINT>(m_particles.size()), 0, 0, 0);
-    }
-}
-
-void FluidSystem::AdjustWall(const XMFLOAT3& direction, float amount)
-{
-    // ※壁の調整: 入力ベクトルで対応面を動かし水槽形状を動的変更する
-
-    XMVECTOR dir = XMVector3Normalize(XMLoadFloat3(&direction));
-    XMFLOAT3 dirF{};
-    XMStoreFloat3(&dirF, dir);
-
-    XMFLOAT3 min = m_bounds.min;
-    XMFLOAT3 max = m_bounds.max;
-
-    // 壁操作は最も寄与する軸のみを採用してシンプルに制御する
-    if (std::fabsf(dirF.x) > std::fabsf(dirF.y) && std::fabsf(dirF.x) > std::fabsf(dirF.z))
-    {
-        if (dirF.x > 0.0f)
+        for (int x = 0; x < m_resolution - 1; ++x)
         {
-            max.x += amount;
-        }
-        else
-        {
-            min.x += amount;
+            uint32_t i0 = static_cast<uint32_t>(Index(x, z));
+            uint32_t i1 = static_cast<uint32_t>(Index(x + 1, z));
+            uint32_t i2 = static_cast<uint32_t>(Index(x, z + 1));
+            uint32_t i3 = static_cast<uint32_t>(Index(x + 1, z + 1));
+            m_indices.push_back(i0);
+            m_indices.push_back(i1);
+            m_indices.push_back(i2);
+            m_indices.push_back(i1);
+            m_indices.push_back(i3);
+            m_indices.push_back(i2);
         }
     }
-    else if (std::fabsf(dirF.y) > std::fabsf(dirF.z))
-    {
-        if (dirF.y > 0.0f)
-        {
-            max.y += amount;
-        }
-        else
-        {
-            min.y += amount;
-        }
-    }
-    else
-    {
-        if (dirF.z > 0.0f)
-        {
-            max.z += amount;
-        }
-        else
-        {
-            min.z += amount;
-        }
-    }
-
-    m_bounds.min = min;
-    m_bounds.max = max;
-    m_gridMin = m_bounds.min;
-}
-
-void FluidSystem::SetCameraLiftRequest(const XMFLOAT3& origin, const XMFLOAT3& direction, float deltaTime)
-{
-    m_liftRequested = true;
-    m_liftRayOrigin = origin;
-    m_liftRayDirection = direction;
-    m_liftAccumulated += deltaTime;
-}
-
-void FluidSystem::ClearCameraLiftRequest()
-{
-    m_liftRequested = false;
-    m_liftAccumulated = 0.0f;
-    m_liftTargetIndex = static_cast<size_t>(-1);
-}
-
-bool FluidSystem::BuildParticles(size_t particleCount)
-{
-    m_particles.clear();
-    m_particles.reserve(particleCount);
-
-    XMFLOAT3 size{
-        m_bounds.max.x - m_bounds.min.x,
-        m_bounds.max.y - m_bounds.min.y,
-        m_bounds.max.z - m_bounds.min.z };
-
-    const float spacing = m_particleRadius * 2.0f;
-
-    size_t count = 0;
-    for (float y = m_bounds.min.y + spacing; y < m_bounds.max.y - spacing && count < particleCount; y += spacing)
-    {
-        for (float z = m_bounds.min.z + spacing; z < m_bounds.max.z - spacing && count < particleCount; z += spacing)
-        {
-            for (float x = m_bounds.min.x + spacing; x < m_bounds.max.x - spacing && count < particleCount; x += spacing)
-            {
-                Particle p{};
-                p.position = XMFLOAT3(x, y, z);
-                p.velocity = XMFLOAT3(0.0f, 0.0f, 0.0f);
-                p.previous = p.position;
-                p.mass = 1.0f;
-                p.affine = XMFLOAT3X3(
-                    0.0f, 0.0f, 0.0f,
-                    0.0f, 0.0f, 0.0f,
-                    0.0f, 0.0f, 0.0f);
-                m_particles.push_back(p);
-                ++count;
-            }
-        }
-    }
-
-    // 粒子数が不足する場合でも柔軟に扱う
-    if (m_particles.empty())
-    {
-        return false;
-    }
-
-    return true;
-}
-
-bool FluidSystem::BuildGrid()
-{
-    XMFLOAT3 extent{
-        m_bounds.max.x - m_bounds.min.x,
-        m_bounds.max.y - m_bounds.min.y,
-        m_bounds.max.z - m_bounds.min.z };
-
-    int dimX = static_cast<int>(std::ceil(extent.x / m_cellSize)) + 4;
-    int dimY = static_cast<int>(std::ceil(extent.y / m_cellSize)) + 4;
-    int dimZ = static_cast<int>(std::ceil(extent.z / m_cellSize)) + 4;
-
-    m_gridDim = XMINT3(dimX, dimY, dimZ);
-    m_grid.resize(static_cast<size_t>(dimX * dimY * dimZ));
-
     return true;
 }
 
 bool FluidSystem::BuildRenderResources()
 {
+    // 日本語コメント: 専用ルートシグネチャを生成
+    CD3DX12_ROOT_PARAMETER params[1] = {};
+    params[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_ALL);
+
+    D3D12_ROOT_SIGNATURE_DESC desc{};
+    desc.NumParameters = _countof(params);
+    desc.pParameters = params;
+    desc.NumStaticSamplers = 0;
+    desc.pStaticSamplers = nullptr;
+    desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
     m_rootSignature = std::make_unique<RootSignature>();
-    if (!m_rootSignature || !m_rootSignature->IsValid())
+    if (!m_rootSignature || !m_rootSignature->Init(desc) || !m_rootSignature->IsValid())
     {
         return false;
     }
 
-    m_depthPso = std::make_unique<PipelineState>();
-    if (!m_depthPso)
+    m_pipelineState = std::make_unique<PipelineState>();
+    if (!m_pipelineState)
     {
         return false;
     }
 
-    auto layout = CreateInputLayout();
-    m_depthPso->SetInputLayout(layout);
-    m_depthPso->SetRootSignature(m_rootSignature->Get());
-    m_depthPso->SetVS(L"ParticlesDepthVS.cso");
-    m_depthPso->SetPS(L"ParticlesDepthPS.cso");
-    m_depthPso->SetDepthStencilFormat(DXGI_FORMAT_D32_FLOAT);
-    m_depthPso->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-    if (!m_depthPso->IsValid())
+    D3D12_INPUT_ELEMENT_DESC layout[] =
     {
-        return false;
-    }
-
-    struct QuadVertex
-    {
-        XMFLOAT2 corner;
+        { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(OceanVertex, position), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT,    0, offsetof(OceanVertex, normal),   D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,       0, offsetof(OceanVertex, uv),       D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+        { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT,0, offsetof(OceanVertex, color),    D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
     };
-
-    const QuadVertex quadVertices[] =
+    m_pipelineState->SetInputLayout({ layout, _countof(layout) });
+    m_pipelineState->SetRootSignature(m_rootSignature->Get());
+    m_pipelineState->SetVS(L"OceanVS.cso");
+    m_pipelineState->SetPS(L"OceanPS.cso");
+    m_pipelineState->SetDepthStencilFormat(DXGI_FORMAT_D32_FLOAT);
+    m_pipelineState->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+    if (!m_pipelineState->IsValid())
     {
-        { XMFLOAT2(-1.0f, -1.0f) },
-        { XMFLOAT2( 1.0f, -1.0f) },
-        { XMFLOAT2( 1.0f,  1.0f) },
-        { XMFLOAT2(-1.0f,  1.0f) },
-    };
-
-    const uint32_t quadIndices[] = { 0, 1, 2, 0, 2, 3 };
-
-    m_meshVB = std::make_unique<VertexBuffer>(sizeof(quadVertices), sizeof(QuadVertex), quadVertices);
-    m_meshIB = std::make_unique<IndexBuffer>(sizeof(quadIndices), quadIndices);
-    m_indexCount = static_cast<UINT>(_countof(quadIndices));
-
-    for (UINT i = 0; i < Engine::FRAME_BUFFER_COUNT; ++i)
-    {
-        m_cameraCB[i] = std::make_unique<ConstantBuffer>(sizeof(DepthConstants));
+        return false;
     }
 
-    return m_meshVB && m_meshVB->IsValid() && m_meshIB && m_meshIB->IsValid();
-}
-
-bool FluidSystem::BuildInstanceBuffer()
-{
-    m_instanceData.resize(m_particles.size());
-    m_instanceVB = std::make_unique<VertexBuffer>(m_particles.size() * sizeof(InstanceData), sizeof(InstanceData), nullptr);
-    return m_instanceVB && m_instanceVB->IsValid();
-}
-
-void FluidSystem::StepMLSMPM(float deltaTime)
-{
-    // ※MLS-MPM主処理: 粒子から格子へ写像し、格子演算後に粒子へ戻す
-    for (auto& node : m_grid)
+    size_t vbSize = m_vertices.size() * sizeof(OceanVertex);
+    m_vertexBuffer = std::make_unique<VertexBuffer>(vbSize, sizeof(OceanVertex), m_vertices.data());
+    if (!m_vertexBuffer || !m_vertexBuffer->IsValid())
     {
-        node.mass = 0.0f;
-        node.velocity = XMFLOAT3(0.0f, 0.0f, 0.0f);
+        return false;
     }
 
-    TransferParticlesToGrid();
-    UpdateGrid(deltaTime);
-    TransferGridToParticles(deltaTime);
-}
-
-void FluidSystem::TransferParticlesToGrid()
-{
-    // ※粒子→格子: 二次Bスプライン重みで運動量を積算する
-
-    for (const Particle& p : m_particles)
+    size_t ibSize = m_indices.size() * sizeof(uint32_t);
+    m_indexBuffer = std::make_unique<IndexBuffer>(ibSize, m_indices.data());
+    if (!m_indexBuffer || !m_indexBuffer->IsValid())
     {
-        XMVECTOR pos = XMLoadFloat3(&p.position);
-        XMVECTOR rel = XMVectorSubtract(pos, XMLoadFloat3(&m_gridMin));
-        XMVECTOR coord = XMVectorScale(rel, 1.0f / m_cellSize);
-        coord = XMVectorSubtract(coord, XMVectorReplicate(0.5f));
+        return false;
+    }
 
-        XMFLOAT3 coordF{};
-        XMStoreFloat3(&coordF, coord);
-
-        int baseX = static_cast<int>(std::floor(coordF.x));
-        int baseY = static_cast<int>(std::floor(coordF.y));
-        int baseZ = static_cast<int>(std::floor(coordF.z));
-
-        float fx = coordF.x - baseX;
-        float fy = coordF.y - baseY;
-        float fz = coordF.z - baseZ;
-
-        float wx[3] = {
-            QuadraticWeight(fx + 1.0f),
-            QuadraticWeight(fx),
-            QuadraticWeight(fx - 1.0f)
-        };
-        float wy[3] = {
-            QuadraticWeight(fy + 1.0f),
-            QuadraticWeight(fy),
-            QuadraticWeight(fy - 1.0f)
-        };
-        float wz[3] = {
-            QuadraticWeight(fz + 1.0f),
-            QuadraticWeight(fz),
-            QuadraticWeight(fz - 1.0f)
-        };
-
-        XMMATRIX C = LoadFloat3x3(p.affine);
-
-        for (int dz = 0; dz < 3; ++dz)
+    for (auto& cb : m_constantBuffers)
+    {
+        cb = std::make_unique<ConstantBuffer>(sizeof(OceanConstant));
+        if (!cb || !cb->IsValid())
         {
-            int gz = baseZ + dz;
-            if (gz < 0 || gz >= m_gridDim.z) continue;
-            for (int dy = 0; dy < 3; ++dy)
-            {
-                int gy = baseY + dy;
-                if (gy < 0 || gy >= m_gridDim.y) continue;
-                for (int dx = 0; dx < 3; ++dx)
-                {
-                    int gx = baseX + dx;
-                    if (gx < 0 || gx >= m_gridDim.x) continue;
-
-                    float weight = wx[dx] * wy[dy] * wz[dz];
-                    GridNode& node = GridAt(gx, gy, gz);
-                    XMFLOAT3 cellPos = GridCellCenter(gx, gy, gz);
-                    XMVECTOR diff = XMVectorSubtract(XMLoadFloat3(&cellPos), pos);
-                    XMVECTOR momentum = XMVectorAdd(XMLoadFloat3(&p.velocity), XMVector3Transform(diff, C));
-
-                    XMFLOAT3 contrib{};
-                    XMStoreFloat3(&contrib, XMVectorScale(momentum, weight * p.mass));
-
-                    node.velocity.x += contrib.x;
-                    node.velocity.y += contrib.y;
-                    node.velocity.z += contrib.z;
-                    node.mass += weight * p.mass;
-                }
-            }
+            return false;
         }
     }
+
+    return true;
 }
 
-void FluidSystem::UpdateGrid(float deltaTime)
+void FluidSystem::ResetWaveState()
 {
-    // ※格子演算: 重力付加と境界処理で安定化する
-
-    for (int z = 0; z < m_gridDim.z; ++z)
-    {
-        for (int y = 0; y < m_gridDim.y; ++y)
-        {
-            for (int x = 0; x < m_gridDim.x; ++x)
-            {
-                GridNode& node = GridAt(x, y, z);
-                if (node.mass <= 0.0f)
-                {
-                    continue;
-                }
-
-                float invMass = 1.0f / node.mass;
-                node.velocity.x *= invMass;
-                node.velocity.y *= invMass;
-                node.velocity.z *= invMass;
-
-                node.velocity.x += m_gravity.x * deltaTime;
-                node.velocity.y += m_gravity.y * deltaTime;
-                node.velocity.z += m_gravity.z * deltaTime;
-
-                XMFLOAT3 cellPos = GridCellCenter(x, y, z);
-
-                // 境界衝突では速度を反転させて流体が箱から漏れないようにする
-                if (cellPos.x < m_bounds.min.x + m_cellSize && node.velocity.x < 0.0f) node.velocity.x = 0.0f;
-                if (cellPos.x > m_bounds.max.x - m_cellSize && node.velocity.x > 0.0f) node.velocity.x = 0.0f;
-                if (cellPos.y < m_bounds.min.y + m_cellSize && node.velocity.y < 0.0f) node.velocity.y = 0.0f;
-                if (cellPos.y > m_bounds.max.y - m_cellSize && node.velocity.y > 0.0f) node.velocity.y = 0.0f;
-                if (cellPos.z < m_bounds.min.z + m_cellSize && node.velocity.z < 0.0f) node.velocity.z = 0.0f;
-                if (cellPos.z > m_bounds.max.z - m_cellSize && node.velocity.z > 0.0f) node.velocity.z = 0.0f;
-            }
-        }
-    }
+    // 日本語コメント: 初期波面を静止状態でセット
+    std::fill(m_height.begin(), m_height.end(), 0.0f);
+    std::fill(m_velocity.begin(), m_velocity.end(), 0.0f);
 }
 
-void FluidSystem::TransferGridToParticles(float deltaTime)
+void FluidSystem::Update(float deltaTime)
 {
-    // ※格子→粒子: 格子速度を補間して粒子を更新し、C行列も再構築する
-
-    for (Particle& p : m_particles)
-    {
-        XMVECTOR pos = XMLoadFloat3(&p.position);
-        XMVECTOR rel = XMVectorSubtract(pos, XMLoadFloat3(&m_gridMin));
-        XMVECTOR coord = XMVectorScale(rel, 1.0f / m_cellSize);
-        coord = XMVectorSubtract(coord, XMVectorReplicate(0.5f));
-
-        XMFLOAT3 coordF{};
-        XMStoreFloat3(&coordF, coord);
-
-        int baseX = static_cast<int>(std::floor(coordF.x));
-        int baseY = static_cast<int>(std::floor(coordF.y));
-        int baseZ = static_cast<int>(std::floor(coordF.z));
-
-        float fx = coordF.x - baseX;
-        float fy = coordF.y - baseY;
-        float fz = coordF.z - baseZ;
-
-        float wx[3] = {
-            QuadraticWeight(fx + 1.0f),
-            QuadraticWeight(fx),
-            QuadraticWeight(fx - 1.0f)
-        };
-        float wy[3] = {
-            QuadraticWeight(fy + 1.0f),
-            QuadraticWeight(fy),
-            QuadraticWeight(fy - 1.0f)
-        };
-        float wz[3] = {
-            QuadraticWeight(fz + 1.0f),
-            QuadraticWeight(fz),
-            QuadraticWeight(fz - 1.0f)
-        };
-
-        float gxGrad[3] = {
-            QuadraticGradient(fx + 1.0f),
-            QuadraticGradient(fx),
-            QuadraticGradient(fx - 1.0f)
-        };
-        float gyGrad[3] = {
-            QuadraticGradient(fy + 1.0f),
-            QuadraticGradient(fy),
-            QuadraticGradient(fy - 1.0f)
-        };
-        float gzGrad[3] = {
-            QuadraticGradient(fz + 1.0f),
-            QuadraticGradient(fz),
-            QuadraticGradient(fz - 1.0f)
-        };
-
-        XMVECTOR velocity = XMVectorZero();
-        XMMATRIX C = XMMatrixIdentity();
-        XMFLOAT3X3 accum{};
-
-        for (int dz = 0; dz < 3; ++dz)
-        {
-            int gz = baseZ + dz;
-            if (gz < 0 || gz >= m_gridDim.z) continue;
-            for (int dy = 0; dy < 3; ++dy)
-            {
-                int gy = baseY + dy;
-                if (gy < 0 || gy >= m_gridDim.y) continue;
-                for (int dx = 0; dx < 3; ++dx)
-                {
-                    int gx = baseX + dx;
-                    if (gx < 0 || gx >= m_gridDim.x) continue;
-
-                    float weight = wx[dx] * wy[dy] * wz[dz];
-                    const GridNode& node = GridAt(gx, gy, gz);
-                    if (node.mass <= 0.0f)
-                    {
-                        continue;
-                    }
-
-                    XMVECTOR nodeVel = XMLoadFloat3(&node.velocity);
-                    velocity = XMVectorAdd(velocity, XMVectorScale(nodeVel, weight));
-
-                    XMFLOAT3 cellPos = GridCellCenter(gx, gy, gz);
-                    XMVECTOR diff = XMVectorSubtract(XMLoadFloat3(&cellPos), pos);
-
-                    float wGradX = gxGrad[dx] * wy[dy] * wz[dz];
-                    float wGradY = wx[dx] * gyGrad[dy] * wz[dz];
-                    float wGradZ = wx[dx] * wy[dy] * gzGrad[dz];
-
-                    XMFLOAT3 grad(wGradX, wGradY, wGradZ);
-                    XMVECTOR gradV = XMLoadFloat3(&grad);
-                    gradV = XMVectorScale(gradV, 1.0f / m_cellSize);
-                    XMFLOAT3 gradF;
-                    XMStoreFloat3(&gradF, gradV);
-
-                    accum._11 += gradF.x * node.velocity.x;
-                    accum._12 += gradF.x * node.velocity.y;
-                    accum._13 += gradF.x * node.velocity.z;
-                    accum._21 += gradF.y * node.velocity.x;
-                    accum._22 += gradF.y * node.velocity.y;
-                    accum._23 += gradF.y * node.velocity.z;
-                    accum._31 += gradF.z * node.velocity.x;
-                    accum._32 += gradF.z * node.velocity.y;
-                    accum._33 += gradF.z * node.velocity.z;
-                }
-            }
-        }
-
-        XMStoreFloat3(&p.velocity, velocity);
-        p.previous = p.position;
-        XMFLOAT3 displacement;
-        XMStoreFloat3(&displacement, XMVectorScale(velocity, deltaTime));
-        p.position.x += displacement.x;
-        p.position.y += displacement.y;
-        p.position.z += displacement.z;
-        p.affine = accum;
-
-        ApplyBounds(p);
-    }
-}
-
-void FluidSystem::ApplyBounds(Particle& particle)
-{
-    particle.position = Clamp3(particle.position, m_bounds.min, m_bounds.max);
-    if (particle.position.x <= m_bounds.min.x || particle.position.x >= m_bounds.max.x)
-    {
-        particle.velocity.x *= -0.4f;
-    }
-    if (particle.position.y <= m_bounds.min.y || particle.position.y >= m_bounds.max.y)
-    {
-        particle.velocity.y *= -0.4f;
-    }
-    if (particle.position.z <= m_bounds.min.z || particle.position.z >= m_bounds.max.z)
-    {
-        particle.velocity.z *= -0.4f;
-    }
-}
-
-void FluidSystem::RebuildSpatialGrid()
-{
-    m_neighborGrid.Clear();
-    m_neighborGrid.SetCellSize(m_particleRadius * 3.0f);
-    for (size_t i = 0; i < m_particles.size(); ++i)
-    {
-        m_neighborGrid.Insert(i, m_particles[i].position);
-    }
-}
-
-void FluidSystem::ApplyCameraLift(float deltaTime)
-{
-    // ※視線巻き上げ: レイ付近の粒子に上昇+渦度を加えて流体を掴む
-
-    if (!m_liftRequested)
-    {
-        m_liftTargetIndex = static_cast<size_t>(-1);
-        return;
-    }
-
-    if (m_liftTargetIndex == static_cast<size_t>(-1))
-    {
-        m_liftTargetIndex = FindRayHitParticle(m_liftRayOrigin, m_liftRayDirection);
-    }
-
-    if (m_liftTargetIndex == static_cast<size_t>(-1))
+    if (deltaTime <= 0.0f)
     {
         return;
     }
 
-    const float liftRadius = m_particleRadius * 4.0f;
-    const float liftStrength = 12.0f;
+    ApplyPendingDrops();
+    StepSimulation(deltaTime);
+    UpdateVertexBuffer();
+}
 
-    std::vector<size_t> neighbors;
-    m_neighborGrid.Query(m_particles[m_liftTargetIndex].position, liftRadius, neighbors);
-
-    XMVECTOR origin = XMLoadFloat3(&m_liftRayOrigin);
-    XMVECTOR dir = XMVector3Normalize(XMLoadFloat3(&m_liftRayDirection));
-
-    for (size_t index : neighbors)
+void FluidSystem::ApplyPendingDrops()
+{
+    for (const auto& drop : m_pendingDrops)
     {
-        Particle& p = m_particles[index];
-        XMVECTOR pos = XMLoadFloat3(&p.position);
-        XMVECTOR toRay = XMVectorSubtract(pos, origin);
-        float t = XMVectorGetX(XMVector3Dot(toRay, dir));
-        XMVECTOR foot = XMVectorAdd(origin, XMVectorScale(dir, t));
-        XMVECTOR offset = XMVectorSubtract(pos, foot);
-        float distance = XMVectorGetX(XMVector3Length(offset));
+        ApplyDrop(drop);
+    }
+    m_pendingDrops.clear();
+}
 
-        if (distance < liftRadius)
+void FluidSystem::ApplyDrop(const DropRequest& drop)
+{
+    // 日本語コメント: UV座標から格子インデックスへ変換
+    float fx = std::clamp(drop.uv.x * static_cast<float>(m_resolution - 1), 0.0f, static_cast<float>(m_resolution - 1));
+    float fz = std::clamp(drop.uv.y * static_cast<float>(m_resolution - 1), 0.0f, static_cast<float>(m_resolution - 1));
+    int centerX = static_cast<int>(std::round(fx));
+    int centerZ = static_cast<int>(std::round(fz));
+
+    const float radius = drop.radius * static_cast<float>(m_resolution);
+    const float radiusSq = radius * radius;
+
+    for (int z = std::max(0, centerZ - static_cast<int>(radius)); z <= std::min(m_resolution - 1, centerZ + static_cast<int>(radius)); ++z)
+    {
+        for (int x = std::max(0, centerX - static_cast<int>(radius)); x <= std::min(m_resolution - 1, centerX + static_cast<int>(radius)); ++x)
         {
-            float weight = 1.0f - (distance / liftRadius);
-            XMVECTOR lift = XMVectorSet(0.0f, liftStrength * weight * deltaTime, 0.0f, 0.0f);
-            XMVECTOR swirl = XMVector3Cross(dir, offset);
-            swirl = XMVectorScale(XMVector3Normalize(swirl), liftStrength * 0.4f * weight * deltaTime);
+            float dx = static_cast<float>(x) - fx;
+            float dz = static_cast<float>(z) - fz;
+            float distSq = dx * dx + dz * dz;
+            if (distSq > radiusSq)
+            {
+                continue;
+            }
 
-            XMVECTOR newVel = XMVectorAdd(XMLoadFloat3(&p.velocity), XMVectorAdd(lift, swirl));
-            XMStoreFloat3(&p.velocity, newVel);
+            float falloff = 1.0f - (distSq / radiusSq);
+            size_t idx = Index(static_cast<size_t>(x), static_cast<size_t>(z));
+            m_velocity[idx] += drop.strength * falloff;
         }
     }
 }
 
-size_t FluidSystem::FindRayHitParticle(const XMFLOAT3& origin, const XMFLOAT3& direction) const
+void FluidSystem::StepSimulation(float deltaTime)
 {
-    XMVECTOR rayOrigin = XMLoadFloat3(&origin);
-    XMVECTOR rayDir = XMVector3Normalize(XMLoadFloat3(&direction));
-
-    float closestT = std::numeric_limits<float>::max();
-    size_t closestIndex = static_cast<size_t>(-1);
-
-    for (size_t i = 0; i < m_particles.size(); ++i)
+    const float gridWidth = m_bounds.max.x - m_bounds.min.x;
+    const float gridDepth = m_bounds.max.z - m_bounds.min.z;
+    if (gridWidth <= 0.0f || gridDepth <= 0.0f)
     {
-        const Particle& p = m_particles[i];
-        XMVECTOR pos = XMLoadFloat3(&p.position);
-        XMVECTOR toParticle = XMVectorSubtract(pos, rayOrigin);
-        float t = XMVectorGetX(XMVector3Dot(toParticle, rayDir));
-        if (t < 0.0f)
+        return;
+    }
+
+    const float dt = std::min(deltaTime, 0.033f);
+    const float coeff = (m_waveSpeed * m_waveSpeed);
+
+    std::vector<float> newHeight(m_height.size(), 0.0f);
+
+    for (int z = 0; z < m_resolution; ++z)
+    {
+        for (int x = 0; x < m_resolution; ++x)
         {
-            continue;
-        }
-        XMVECTOR closestPoint = XMVectorAdd(rayOrigin, XMVectorScale(rayDir, t));
-        float distSq = XMVectorGetX(XMVector3LengthSq(XMVectorSubtract(closestPoint, pos)));
-        if (distSq <= m_particleRadius * m_particleRadius && t < closestT)
-        {
-            closestT = t;
-            closestIndex = i;
+            size_t idx = Index(static_cast<size_t>(x), static_cast<size_t>(z));
+            float h = m_height[idx];
+
+            auto sample = [&](int sx, int sz)
+            {
+                sx = std::clamp(sx, 0, m_resolution - 1);
+                sz = std::clamp(sz, 0, m_resolution - 1);
+                return m_height[Index(static_cast<size_t>(sx), static_cast<size_t>(sz))];
+            };
+
+            float lap = sample(x - 1, z) + sample(x + 1, z) + sample(x, z - 1) + sample(x, z + 1) - 4.0f * h;
+            float accel = coeff * lap;
+            m_velocity[idx] += accel * dt;
+            m_velocity[idx] *= m_damping;
+            newHeight[idx] = h + m_velocity[idx] * dt;
         }
     }
-    return closestIndex;
+
+    m_height.swap(newHeight);
 }
 
-void FluidSystem::UpdateInstanceBuffer()
+void FluidSystem::UpdateVertexBuffer()
 {
-    // ※描画用インスタンス: MLS-MPM結果をGPUバッファへ即時転送する
-
-    for (size_t i = 0; i < m_particles.size(); ++i)
+    const float gridWidth = m_bounds.max.x - m_bounds.min.x;
+    const float gridDepth = m_bounds.max.z - m_bounds.min.z;
+    if (gridWidth <= 0.0f || gridDepth <= 0.0f)
     {
-        m_instanceData[i].position = m_particles[i].position;
-        m_instanceData[i].radius = m_particleRadius;
+        return;
     }
 
-    if (m_instanceVB)
+    const float dx = gridWidth / static_cast<float>(m_resolution - 1);
+    const float dz = gridDepth / static_cast<float>(m_resolution - 1);
+
+    for (int z = 0; z < m_resolution; ++z)
+    {
+        for (int x = 0; x < m_resolution; ++x)
+        {
+            size_t idx = Index(static_cast<size_t>(x), static_cast<size_t>(z));
+            float fx = static_cast<float>(x) / static_cast<float>(m_resolution - 1);
+            float fz = static_cast<float>(z) / static_cast<float>(m_resolution - 1);
+
+            float worldX = m_bounds.min.x + gridWidth * fx;
+            float worldZ = m_bounds.min.z + gridDepth * fz;
+            float worldY = m_waterLevel + m_height[idx];
+
+            auto& v = m_vertices[idx];
+            v.position = XMFLOAT3(worldX, worldY, worldZ);
+            v.uv = XMFLOAT2(fx, fz);
+            v.color = kSurfaceColor;
+        }
+    }
+
+    // 日本語コメント: 法線は中央差分で計算
+    for (int z = 0; z < m_resolution; ++z)
+    {
+        for (int x = 0; x < m_resolution; ++x)
+        {
+            size_t idx = Index(static_cast<size_t>(x), static_cast<size_t>(z));
+            int xm = std::max(0, x - 1);
+            int xp = std::min(m_resolution - 1, x + 1);
+            int zm = std::max(0, z - 1);
+            int zp = std::min(m_resolution - 1, z + 1);
+
+            float hx = m_height[Index(static_cast<size_t>(xp), static_cast<size_t>(z))] - m_height[Index(static_cast<size_t>(xm), static_cast<size_t>(z))];
+            float hz = m_height[Index(static_cast<size_t>(x), static_cast<size_t>(zp))] - m_height[Index(static_cast<size_t>(x), static_cast<size_t>(zm))];
+
+            XMFLOAT3 normal{
+                -hx * 0.5f * dx,
+                1.0f,
+                -hz * 0.5f * dz
+            };
+
+            XMVECTOR n = XMVector3Normalize(XMLoadFloat3(&normal));
+            XMStoreFloat3(&m_vertices[idx].normal, n);
+        }
+    }
+
+    if (m_vertexBuffer && m_vertexBuffer->IsValid())
     {
         void* mapped = nullptr;
-        if (SUCCEEDED(m_instanceVB->GetResource()->Map(0, nullptr, &mapped)))
+        auto resource = m_vertexBuffer->GetResource();
+        if (resource && SUCCEEDED(resource->Map(0, nullptr, &mapped)))
         {
-            memcpy(mapped, m_instanceData.data(), m_instanceData.size() * sizeof(InstanceData));
-            m_instanceVB->GetResource()->Unmap(0, nullptr);
+            std::memcpy(mapped, m_vertices.data(), m_vertices.size() * sizeof(OceanVertex));
+            resource->Unmap(0, nullptr);
         }
     }
 }
@@ -723,53 +305,193 @@ void FluidSystem::UpdateInstanceBuffer()
 void FluidSystem::UpdateCameraCB(const Camera& camera)
 {
     UINT frameIndex = g_Engine->CurrentBackBufferIndex();
-    auto& cb = m_cameraCB[frameIndex];
+    auto& cb = m_constantBuffers[frameIndex];
     if (!cb)
     {
         return;
     }
 
-    DepthConstants* constants = cb->GetPtr<DepthConstants>();
-    XMStoreFloat4x4(&constants->view, XMMatrixTranspose(camera.GetViewMatrix()));
-    XMStoreFloat4x4(&constants->proj, XMMatrixTranspose(camera.GetProjMatrix()));
-    constants->clipZ = XMFLOAT2(0.1f, 1000.0f); // ※カメラの投影設定と揃えるため固定値で保持
-    constants->_pad = XMFLOAT2(0.0f, 0.0f);
-}
-
-D3D12_INPUT_LAYOUT_DESC FluidSystem::CreateInputLayout()
-{
-    static D3D12_INPUT_ELEMENT_DESC descs[] =
+    OceanConstant* constant = cb->GetPtr<OceanConstant>();
+    if (!constant)
     {
-        { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,   0 },
-        { "POSITION", 1, DXGI_FORMAT_R32G32B32_FLOAT, 1, 0,  D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
-        { "TEXCOORD", 0, DXGI_FORMAT_R32_FLOAT,       1, 12, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+        return;
+    }
+
+    XMStoreFloat4x4(&constant->world, XMMatrixTranspose(XMMatrixIdentity()));
+    XMStoreFloat4x4(&constant->view, XMMatrixTranspose(camera.GetViewMatrix()));
+    XMStoreFloat4x4(&constant->proj, XMMatrixTranspose(camera.GetProjMatrix()));
+    constant->color = kSurfaceColor;
+}
+
+void FluidSystem::Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera)
+{
+    if (!cmd || !m_pipelineState || !m_pipelineState->IsValid())
+    {
+        return;
+    }
+
+    UpdateCameraCB(camera);
+
+    UINT frameIndex = g_Engine->CurrentBackBufferIndex();
+    auto& cb = m_constantBuffers[frameIndex];
+    if (!cb)
+    {
+        return;
+    }
+
+    cmd->SetGraphicsRootSignature(m_rootSignature->Get());
+    cmd->SetPipelineState(m_pipelineState->Get());
+    cmd->SetGraphicsRootConstantBufferView(0, cb->GetAddress());
+
+    auto vbView = m_vertexBuffer->View();
+    auto ibView = m_indexBuffer->View();
+    cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    cmd->IASetVertexBuffers(0, 1, &vbView);
+    cmd->IASetIndexBuffer(&ibView);
+    cmd->DrawIndexedInstanced(static_cast<UINT>(m_indices.size()), 1, 0, 0, 0);
+}
+
+void FluidSystem::AdjustWall(const XMFLOAT3& direction, float amount)
+{
+    if (amount == 0.0f)
+    {
+        return;
+    }
+
+    XMVECTOR dirVec = XMLoadFloat3(&direction);
+    if (XMVector3LengthSq(dirVec).m128_f32[0] < 1e-6f)
+    {
+        return;
+    }
+    dirVec = XMVector3Normalize(dirVec);
+
+    XMFLOAT3 dir{};
+    XMStoreFloat3(&dir, dirVec);
+
+    float absX = std::fabs(dir.x);
+    float absY = std::fabs(dir.y);
+    float absZ = std::fabs(dir.z);
+
+    if (absX >= absY && absX >= absZ)
+    {
+        if (dir.x > 0.0f)
+        {
+            m_bounds.max.x += amount;
+        }
+        else
+        {
+            m_bounds.min.x += amount;
+        }
+    }
+    else if (absZ >= absX && absZ >= absY)
+    {
+        if (dir.z > 0.0f)
+        {
+            m_bounds.max.z += amount;
+        }
+        else
+        {
+            m_bounds.min.z += amount;
+        }
+    }
+    else
+    {
+        if (dir.y > 0.0f)
+        {
+            m_bounds.max.y += amount;
+        }
+        else
+        {
+            m_bounds.min.y += amount;
+        }
+        m_waterLevel = (m_bounds.min.y + m_bounds.max.y) * 0.5f;
+    }
+
+    if (m_bounds.max.x - m_bounds.min.x < m_minWallExtent)
+    {
+        float center = (m_bounds.max.x + m_bounds.min.x) * 0.5f;
+        m_bounds.min.x = center - m_minWallExtent * 0.5f;
+        m_bounds.max.x = center + m_minWallExtent * 0.5f;
+    }
+    if (m_bounds.max.z - m_bounds.min.z < m_minWallExtent)
+    {
+        float center = (m_bounds.max.z + m_bounds.min.z) * 0.5f;
+        m_bounds.min.z = center - m_minWallExtent * 0.5f;
+        m_bounds.max.z = center + m_minWallExtent * 0.5f;
+    }
+    if (m_bounds.max.y - m_bounds.min.y < 0.2f)
+    {
+        float center = (m_bounds.max.y + m_bounds.min.y) * 0.5f;
+        m_bounds.min.y = center - 0.1f;
+        m_bounds.max.y = center + 0.1f;
+        m_waterLevel = center;
+    }
+
+    UpdateVertexBuffer();
+}
+
+bool FluidSystem::RayIntersectBounds(const XMFLOAT3& origin, const XMFLOAT3& direction, XMFLOAT3& hitPoint) const
+{
+    XMFLOAT3 dir = direction;
+    if (std::fabs(dir.x) < 1e-6f && std::fabs(dir.y) < 1e-6f && std::fabs(dir.z) < 1e-6f)
+    {
+        return false;
+    }
+
+    float tMin = 0.0f;
+    float tMax = FLT_MAX;
+
+    auto updateInterval = [&](float rayOrigin, float rayDir, float boxMin, float boxMax) -> bool
+    {
+        if (std::fabs(rayDir) < 1e-6f)
+        {
+            return rayOrigin >= boxMin && rayOrigin <= boxMax;
+        }
+        float inv = 1.0f / rayDir;
+        float t0 = (boxMin - rayOrigin) * inv;
+        float t1 = (boxMax - rayOrigin) * inv;
+        if (t0 > t1)
+        {
+            std::swap(t0, t1);
+        }
+        tMin = std::max(tMin, t0);
+        tMax = std::min(tMax, t1);
+        return tMax > tMin;
     };
-    D3D12_INPUT_LAYOUT_DESC layout{};
-    layout.NumElements = _countof(descs);
-    layout.pInputElementDescs = descs;
-    return layout;
+
+    if (!updateInterval(origin.x, dir.x, m_bounds.min.x, m_bounds.max.x)) return false;
+    if (!updateInterval(origin.y, dir.y, m_bounds.min.y, m_bounds.max.y)) return false;
+    if (!updateInterval(origin.z, dir.z, m_bounds.min.z, m_bounds.max.z)) return false;
+
+    float t = tMin;
+    hitPoint = XMFLOAT3(origin.x + dir.x * t,
+                        origin.y + dir.y * t,
+                        origin.z + dir.z * t);
+    return true;
 }
 
-FluidSystem::GridNode& FluidSystem::GridAt(int x, int y, int z)
+void FluidSystem::SetCameraLiftRequest(const XMFLOAT3& origin, const XMFLOAT3& direction, float deltaTime)
 {
-    return m_grid[GridIndex(x, y, z)];
+    XMFLOAT3 hit{};
+    if (!RayIntersectBounds(origin, direction, hit))
+    {
+        return;
+    }
+
+    float u = (hit.x - m_bounds.min.x) / std::max(m_bounds.max.x - m_bounds.min.x, 1e-3f);
+    float v = (hit.z - m_bounds.min.z) / std::max(m_bounds.max.z - m_bounds.min.z, 1e-3f);
+    u = std::clamp(u, 0.0f, 1.0f);
+    v = std::clamp(v, 0.0f, 1.0f);
+
+    DropRequest drop{};
+    drop.uv = XMFLOAT2(u, v);
+    drop.strength = deltaTime * 6.0f;
+    drop.radius = 0.045f;
+    m_pendingDrops.push_back(drop);
+    m_liftRequested = true;
 }
 
-const FluidSystem::GridNode& FluidSystem::GridAt(int x, int y, int z) const
+void FluidSystem::ClearCameraLiftRequest()
 {
-    return m_grid[GridIndex(x, y, z)];
+    m_liftRequested = false;
 }
-
-size_t FluidSystem::GridIndex(int x, int y, int z) const
-{
-    return static_cast<size_t>(x + m_gridDim.x * (y + m_gridDim.y * z));
-}
-
-XMFLOAT3 FluidSystem::GridCellCenter(int x, int y, int z) const
-{
-    return XMFLOAT3(
-        m_gridMin.x + (x + 0.5f) * m_cellSize,
-        m_gridMin.y + (y + 0.5f) * m_cellSize,
-        m_gridMin.z + (z + 0.5f) * m_cellSize);
-}
-

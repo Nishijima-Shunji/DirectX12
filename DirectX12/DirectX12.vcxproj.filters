@@ -333,6 +333,12 @@
     <FxCompile Include="ParticlesDepthVS.hlsl">
       <Filter>リソース ファイル\VertexShader</Filter>
     </FxCompile>
+    <FxCompile Include="OceanVS.hlsl">
+      <Filter>リソース ファイル\VertexShader</Filter>
+    </FxCompile>
+    <FxCompile Include="OceanPS.hlsl">
+      <Filter>リソース ファイル\PixelShader</Filter>
+    </FxCompile>
     <FxCompile Include="ThicknessPS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
