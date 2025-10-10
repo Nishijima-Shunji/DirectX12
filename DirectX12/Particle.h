@@ -4,6 +4,7 @@
 #include <directxMath.h>
 #include "Engine.h"
 #include "VertexBuffer.h"
+#include "IndexBuffer.h"
 #include "RootSignature.h"
 #include "PipelineState.h"
 #include "ConstantBuffer.h"
@@ -17,17 +18,21 @@ class Particle : public Object
 {
 private:
 	std::vector<Point>		m_Particles;
-	VertexBuffer* m_VertexBuffer = nullptr;
-	RootSignature* m_RootSignature = nullptr;
-	PipelineState* m_PipelineState = nullptr;
-	ConstantBuffer* m_ConstantBuffer[Engine::FRAME_BUFFER_COUNT] = {};
+	float		m_ParticleRadius = 0.05f;
+	VertexBuffer*		m_SphereVertexBuffer = nullptr;
+	IndexBuffer*		m_SphereIndexBuffer = nullptr;
+	VertexBuffer*		m_InstanceBuffer = nullptr;
+	UINT		m_SphereIndexCount = 0;
+	RootSignature*		m_RootSignature = nullptr;
+	PipelineState*		m_PipelineState = nullptr;
+	ConstantBuffer*		m_ConstantBuffer[Engine::FRAME_BUFFER_COUNT] = {};
 
-	// グラフィックス描画用
-	ComPtr<ID3D12RootSignature>    m_graphicsRS;
+	void UpdateInstanceBuffer();
+};
 	PipelineState*				   m_graphicsPS;
 	ComPtr<ID3D12Resource>         m_graphicsCB;
 
-	// コンピュート用
+	// 繧ｳ繝ｳ繝斐Η繝ｼ繝育畑
 	ComPtr<ID3D12RootSignature>    m_computeRS;
 	PipelineState*				   m_computePS;
 	ComPtr<ID3D12Resource>         m_computeUAV;

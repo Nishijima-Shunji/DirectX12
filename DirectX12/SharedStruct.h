@@ -34,15 +34,21 @@ struct Mesh {
 
 struct ParticleVertex {
 	DirectX::XMFLOAT3 position;
+	DirectX::XMFLOAT3 normal;
 
-	static const D3D12_INPUT_ELEMENT_DESC InputElements[1];
+	static const D3D12_INPUT_ELEMENT_DESC InputElements[4];
 	static const D3D12_INPUT_LAYOUT_DESC InputLayout;
 	static constexpr UINT InputElementCount = _countof(InputElements);
 };
 
-// ƒƒ^ƒ{[ƒ‹—p‚Ì—±qî•ñ
+struct ParticleInstance {
+	DirectX::XMFLOAT3 position;
+	float radius;
+};
+
+};
 struct ParticleMeta
 {
-	DirectX::XMFLOAT3 pos;   // ƒ[ƒ‹ƒh‹óŠÔˆÊ’u
-	float               r;    // ”¼Œa
+	DirectX::XMFLOAT3 pos;   // ãƒ¯ãƒ¼ãƒ«ãƒ‰ç©ºé–“ä½ç½®
+	float               r;    // åŠå¾„
 };
