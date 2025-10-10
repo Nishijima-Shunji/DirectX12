@@ -21,7 +21,7 @@ struct VSOutput
 };
 
 
-VSOutput VSMain(VSInput input)
+VSOutput main(VSInput input)
 {
     VSOutput output;
     float3 scaledPos = input.localPos * input.instanceRadius; // 影響半径に合わせて球を拡大

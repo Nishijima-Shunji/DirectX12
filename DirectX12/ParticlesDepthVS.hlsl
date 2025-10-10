@@ -17,7 +17,7 @@ static const float2 kCorners[4] = {
     float2(-1.0f,  1.0f)
 };
 
-VSOutput VSMain(uint vertexID : SV_VertexID, uint instanceID : SV_InstanceID)
+VSOutput main(uint vertexID : SV_VertexID, uint instanceID : SV_InstanceID)
 {
     VSOutput output;
 

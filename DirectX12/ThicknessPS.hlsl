@@ -8,7 +8,7 @@ struct PSInput
     float2 uv       : TEXCOORD1;
 };
 
-float PSMain(PSInput input) : SV_Target0
+float main(PSInput input) : SV_Target0
 {
     float2 disc = input.uv * 2.0f - 1.0f;
     float r2 = dot(disc, disc);

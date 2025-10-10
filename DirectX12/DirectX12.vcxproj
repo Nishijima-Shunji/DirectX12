@@ -498,8 +498,12 @@
   </ItemGroup>
   <ItemGroup>
     <!-- ソリューションエクスプローラー整合性対応: 共有インクルード -->
-    <None Include="Common_SSFR.hlsli" />
-    <None Include="SharedStruct.hlsli" />
+    <None Include="Common_SSFR.hlsli">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </None>
+    <None Include="SharedStruct.hlsli">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </None>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
