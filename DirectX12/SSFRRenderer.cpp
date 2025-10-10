@@ -217,7 +217,7 @@ void SSFRRenderer::CreatePipelines(ID3D12Device* device)
 
         ComPtr<ID3DBlob> blob;
         ComPtr<ID3DBlob> error;
-        hr = D3D12SerializeVersionedRootSignature(&desc, blob.GetAddressOf(), error.GetAddressOf());
+        HRESULT hr = D3D12SerializeVersionedRootSignature(&desc, blob.GetAddressOf(), error.GetAddressOf());
         if (FAILED(hr) && error)
         {
             OutputDebugStringA((char*)error->GetBufferPointer());
@@ -255,7 +255,7 @@ void SSFRRenderer::CreatePipelines(ID3D12Device* device)
 
         ComPtr<ID3DBlob> blob;
         ComPtr<ID3DBlob> error;
-        hr = D3D12SerializeVersionedRootSignature(&desc, blob.GetAddressOf(), error.GetAddressOf());
+        HRESULT hr = D3D12SerializeVersionedRootSignature(&desc, blob.GetAddressOf(), error.GetAddressOf());
         if (FAILED(hr) && error)
         {
             OutputDebugStringA((char*)error->GetBufferPointer());
@@ -303,7 +303,7 @@ void SSFRRenderer::CreatePipelines(ID3D12Device* device)
 
         ComPtr<ID3DBlob> blob;
         ComPtr<ID3DBlob> error;
-        hr = D3D12SerializeVersionedRootSignature(&desc, blob.GetAddressOf(), error.GetAddressOf());
+        HRESULT hr = D3D12SerializeVersionedRootSignature(&desc, blob.GetAddressOf(), error.GetAddressOf());
         if (FAILED(hr) && error)
         {
             OutputDebugStringA((char*)error->GetBufferPointer());
@@ -344,7 +344,7 @@ void SSFRRenderer::CreatePipelines(ID3D12Device* device)
 
         ComPtr<ID3DBlob> blob;
         ComPtr<ID3DBlob> error;
-        hr = D3D12SerializeVersionedRootSignature(&desc, blob.GetAddressOf(), error.GetAddressOf());
+        HRESULT hr = D3D12SerializeVersionedRootSignature(&desc, blob.GetAddressOf(), error.GetAddressOf());
         if (FAILED(hr) && error)
         {
             OutputDebugStringA((char*)error->GetBufferPointer());
