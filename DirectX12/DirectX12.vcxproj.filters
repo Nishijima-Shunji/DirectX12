@@ -156,6 +156,13 @@
     <ClCompile Include="SpatialGrid.cpp">
       <Filter>ソース ファイル\Game</Filter>
     </ClCompile>
+    <!-- ソリューションエクスプローラー整合性対応: 追加C++ソース -->
+    <ClCompile Include="SSFRRenderer.cpp">
+      <Filter>ソース ファイル\System</Filter>
+    </ClCompile>
+    <ClCompile Include="SSFRResources.cpp">
+      <Filter>ソース ファイル\System</Filter>
+    </ClCompile>
     <ClInclude Include="App.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
@@ -243,6 +250,16 @@
     <ClInclude Include="Camera.h">
       <Filter>ヘッダー ファイル\Game\Object</Filter>
     </ClInclude>
+    <!-- ソリューションエクスプローラー整合性対応: 追加ヘッダー -->
+    <ClInclude Include="RandomUtil.h">
+      <Filter>ヘッダー ファイル\System</Filter>
+    </ClInclude>
+    <ClInclude Include="SSFRRenderer.h">
+      <Filter>ヘッダー ファイル\System</Filter>
+    </ClInclude>
+    <ClInclude Include="SSFRResources.h">
+      <Filter>ヘッダー ファイル\System</Filter>
+    </ClInclude>
     <ClCompile Include="FullscreenPSO.cpp">
       <Filter>ソース ファイル\System\PSO</Filter>
     </ClCompile>
@@ -278,6 +295,13 @@
     <FxCompile Include="ParticleCS.hlsl">
       <Filter>リソース ファイル\ComputeShader</Filter>
     </FxCompile>
+    <!-- ソリューションエクスプローラー整合性対応: 追加Computeシェーダー -->
+    <FxCompile Include="BilateralBlurCS_X.hlsl">
+      <Filter>リソース ファイル\ComputeShader</Filter>
+    </FxCompile>
+    <FxCompile Include="BilateralBlurCS_Y.hlsl">
+      <Filter>リソース ファイル\ComputeShader</Filter>
+    </FxCompile>
     <FxCompile Include="AccumBillboardPS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
@@ -299,26 +323,27 @@
     <FxCompile Include="ColorOnlyPS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
+    <!-- ソリューションエクスプローラー整合性対応: 追加Pixel/Vertexシェーダー -->
+    <FxCompile Include="CompositePS.hlsl">
+      <Filter>リソース ファイル\PixelShader</Filter>
+    </FxCompile>
+    <FxCompile Include="ParticlesDepthPS.hlsl">
+      <Filter>リソース ファイル\PixelShader</Filter>
+    </FxCompile>
+    <FxCompile Include="ParticlesDepthVS.hlsl">
+      <Filter>リソース ファイル\VertexShader</Filter>
+    </FxCompile>
+    <FxCompile Include="ThicknessPS.hlsl">
+      <Filter>リソース ファイル\PixelShader</Filter>
+    </FxCompile>
+    <FxCompile Include="ThicknessVS.hlsl">
+      <Filter>リソース ファイル\VertexShader</Filter>
+    </FxCompile>
     <FxCompile Include="PBFCS.hlsl">
       <Filter>リソース ファイル\ComputeShader</Filter>
     </FxCompile>
-    <FxCompile Include="SSFRParticlePS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
-    <FxCompile Include="SSFRCompositePS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
     <FxCompile Include="ColorOnlyVS.hlsl">
       <Filter>リソース ファイル\VertexShader</Filter>
-    </FxCompile>
-    <FxCompile Include="SSFRParticleVS.hlsl">
-      <Filter>リソース ファイル\VertexShader</Filter>
-    </FxCompile>
-    <FxCompile Include="SSFRBilateralCS.hlsl">
-      <Filter>リソース ファイル\ComputeShader</Filter>
-    </FxCompile>
-    <FxCompile Include="SSFRNormalCS.hlsl">
-      <Filter>リソース ファイル\ComputeShader</Filter>
     </FxCompile>
     <FxCompile Include="GridLinePS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
@@ -342,6 +367,10 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <!-- ソリューションエクスプローラー整合性対応: 共有インクルード -->
+    <None Include="Common_SSFR.hlsli">
+      <Filter>リソース ファイル</Filter>
+    </None>
     <None Include="SharedStruct.hlsli">
       <Filter>リソース ファイル</Filter>
     </None>
