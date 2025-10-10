@@ -287,7 +287,7 @@ void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
     const bool lmbDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 
     // 現在の水位（FluidSystemに getter がある想定。なければ 0.0f などに置換）
-    const float waterY =
+    const float waterY = 0.0f;
 #if 1
         m_fluid->GetWaterLevel();
 #else
@@ -310,7 +310,7 @@ void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
                 XMVECTOR dir = XMVector2Normalize(v);
                 XMFLOAT2 throwDir, throwVel;
                 XMStoreFloat2(&throwDir, dir);
-                m_fluid->EndGather(throwDir, spd);
+                m_fluid->EndGrab(throwDir, spd);
             }
             else
             {
@@ -336,7 +336,7 @@ void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
         sPrevXZ = hitXZ;
         sVelXZ = XMFLOAT2(0, 0);
         sTimeAccum = 0.0f;
-        m_fluid->BeginGather(hitXZ, kGrabRadius);
+        m_fluid->BeginGrab(hitXZ, kGrabRadius);
         return;
     }
 
@@ -358,7 +358,7 @@ void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
     XMStoreFloat2(&sPrevXZ, cur);
 
     // 水面を持ち上げる（押下中は常時少しずつ上げる）
-    m_fluid->UpdateGather(hitXZ, /*liftPerSec*/ kLiftPerSec, deltaTime);
+    m_fluid->UpdateGrab(hitXZ, /*liftPerSec*/ kLiftPerSec, deltaTime);
 }
 
 void GameScene::HandleWallControl(Camera& camera, float deltaTime)
