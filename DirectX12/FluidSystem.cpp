@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <cfloat>
 #include <filesystem>
 #include <random>
 #include <vector>
@@ -56,6 +57,8 @@ FluidSystem::FluidSystem()
 {
     // グリッド間隔は粒子の影響半径に合わせて初期化し、MLS-MPM 用の節点を確保する準備を行う
     m_gridSpacing = std::max(m_supportRadius, 0.01f);
+    m_pickGrid.SetCellSize(std::max(m_supportRadius, 0.05f)); // カメラレイ探索用グリッドも半径に合わせておく
+    m_cameraLiftRequest.active = false; // 初期状態では巻き上げ操作を無効化
 }
 
 bool FluidSystem::Init(ID3D12Device* device, const Bounds& initialBounds, UINT particleCount, RenderMode renderMode)
@@ -67,6 +70,10 @@ bool FluidSystem::Init(ID3D12Device* device, const Bounds& initialBounds, UINT p
     m_useSSFR = (m_renderMode == RenderMode::SSFR);
     InitializeParticles(particleCount);
     InitializeGrid();
+    m_pickGrid.SetCellSize(std::max(m_supportRadius, 0.05f)); // レイとの交差判定用セルサイズを最新状態に更新
+    m_pickCandidates.reserve(m_particles.size()); // ピッキングの都度再確保しないよう余裕を確保
+    m_liftVelocityDelta.assign(m_particles.size(), DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f)); // 巻き上げ用の差分テーブルを初期化
+    m_cameraLiftRequest.active = false; // 初期化直後は入力無しのためフラグを下げる
 
     m_rootSignature = std::make_unique<RootSignature>();
     if (!m_rootSignature || !m_rootSignature->IsValid())
@@ -245,6 +252,8 @@ void FluidSystem::InitializeParticles(UINT particleCount)
             }
         }
     }
+
+    m_liftVelocityDelta.assign(m_particles.size(), DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f)); // 巻き上げで使う差分テーブルを粒子数に合わせて初期化
 }
 
 void FluidSystem::Update(float deltaTime)
@@ -256,14 +265,35 @@ void FluidSystem::Update(float deltaTime)
     EnsureGridReady();
     ClearGridNodes();
 
+    for (auto& delta : m_liftVelocityDelta)
+    {
+        delta = DirectX::XMFLOAT3(0.0f, 0.0f, 0.0f); // 巻き上げで付与した速度をフレーム毎にリセット
+    }
+
+    m_pickGrid.Clear();
+    if (!m_particles.empty())
+    {
+        if (m_pickCandidates.capacity() < m_particles.size())
+        {
+            m_pickCandidates.reserve(m_particles.size()); // 候補配列の再確保を避けて負荷を抑える
+        }
+        for (size_t i = 0; i < m_particles.size(); ++i)
+        {
+            m_pickGrid.Insert(i, m_particles[i].position); // 位置情報を空間グリッドに登録
+        }
+    }
+
+    ApplyCameraLift(dt); // カメラからの入力で巻き上げ指示があれば速度差分を計算
+
     const float invSpacing = 1.0f / std::max(m_gridSpacing, 1e-4f);
     const int maxX = std::max(m_gridResolution.x - 1, 0);
     const int maxY = std::max(m_gridResolution.y - 1, 0);
     const int maxZ = std::max(m_gridResolution.z - 1, 0);
 
     // 粒子からグリッド節点へ速度と質量を散布（近傍探索の代わりに MLS-MPM を利用する）
-    for (const auto& particle : m_particles)
+    for (size_t particleIndex = 0; particleIndex < m_particles.size(); ++particleIndex)
     {
+        const auto& particle = m_particles[particleIndex];
         const float fx = std::clamp((particle.position.x - m_gridOrigin.x) * invSpacing, 0.0f, static_cast<float>(maxX));
         const float fy = std::clamp((particle.position.y - m_gridOrigin.y) * invSpacing, 0.0f, static_cast<float>(maxY));
         const float fz = std::clamp((particle.position.z - m_gridOrigin.z) * invSpacing, 0.0f, static_cast<float>(maxZ));
@@ -360,8 +390,9 @@ void FluidSystem::Update(float deltaTime)
         }
     }
 
-    for (auto& particle : m_particles)
+    for (size_t particleIndex = 0; particleIndex < m_particles.size(); ++particleIndex)
     {
+        auto& particle = m_particles[particleIndex];
         const float fx = std::clamp((particle.position.x - m_gridOrigin.x) * invSpacing, 0.0f, static_cast<float>(maxX));
         const float fy = std::clamp((particle.position.y - m_gridOrigin.y) * invSpacing, 0.0f, static_cast<float>(maxY));
         const float fz = std::clamp((particle.position.z - m_gridOrigin.z) * invSpacing, 0.0f, static_cast<float>(maxZ));
@@ -423,6 +454,13 @@ void FluidSystem::Update(float deltaTime)
             newVelocity.z += (-pressureGradient.z * invDensity) * dt;
         }
 
+        if (particleIndex < m_liftVelocityDelta.size())
+        {
+            newVelocity.x += m_liftVelocityDelta[particleIndex].x; // 巻き上げ操作で蓄えた速度差分を加算
+            newVelocity.y += m_liftVelocityDelta[particleIndex].y;
+            newVelocity.z += m_liftVelocityDelta[particleIndex].z;
+        }
+
         particle.velocity.x = std::clamp(newVelocity.x * dragFactor, -m_maxVelocity, m_maxVelocity);
         particle.velocity.y = std::clamp(newVelocity.y * dragFactor, -m_maxVelocity, m_maxVelocity);
         particle.velocity.z = std::clamp(newVelocity.z * dragFactor, -m_maxVelocity, m_maxVelocity);
@@ -437,6 +475,234 @@ void FluidSystem::Update(float deltaTime)
     UpdateInstanceBuffer();
     GenerateMarchingCubesMesh(); // マーチングキューブ用メッシュを更新して粒子表面を再構築する
     UpdateGridLines();
+}
+
+void FluidSystem::SetCameraLiftRequest(const XMFLOAT3& origin, const XMFLOAT3& direction, float deltaTime)
+{
+    m_cameraLiftRequest.origin = origin;
+
+    XMVECTOR dirVec = XMLoadFloat3(&direction);
+    if (XMVector3LengthSq(dirVec).m128_f32[0] < 1e-6f)
+    {
+        dirVec = XMVectorSet(0.0f, -1.0f, 0.0f, 0.0f); // 極端なケースでは下向きにフォールバック
+    }
+    dirVec = XMVector3Normalize(dirVec);
+    XMStoreFloat3(&m_cameraLiftRequest.direction, dirVec);
+
+    m_cameraLiftRequest.deltaTime = std::clamp(deltaTime, 0.0f, 0.033f);
+    m_cameraLiftRequest.influenceRadius = std::max(m_supportRadius * 2.4f, m_particleRadius * 6.0f); // 画面上で十分な範囲を巻き上げる
+
+    const float baseStrength = std::max(m_supportRadius * 45.0f, 8.0f); // 半径に応じて上昇力をスケーリング
+    m_cameraLiftRequest.liftStrength = baseStrength;
+    m_cameraLiftRequest.swirlStrength = baseStrength * 0.55f; // 上昇量に比例した回転力で渦を形成
+    m_cameraLiftRequest.active = true;
+}
+
+void FluidSystem::ClearCameraLiftRequest()
+{
+    m_cameraLiftRequest.active = false; // 入力が途切れたフレームは即座に巻き上げを停止
+}
+
+void FluidSystem::ApplyCameraLift(float deltaTime)
+{
+    if (!m_cameraLiftRequest.active || m_particles.empty())
+    {
+        m_cameraLiftRequest.active = false;
+        return; // 入力が無い場合は処理不要
+    }
+
+    XMVECTOR origin = XMLoadFloat3(&m_cameraLiftRequest.origin);
+    XMVECTOR dir = XMLoadFloat3(&m_cameraLiftRequest.direction);
+    dir = XMVector3Normalize(dir);
+
+    float tMin = 0.0f;
+    float tMax = 0.0f;
+    if (!IntersectRayBounds(origin, dir, tMin, tMax))
+    {
+        m_cameraLiftRequest.active = false;
+        return; // レイが流体境界に届かない場合は巻き上げできない
+    }
+
+    const float searchRadius = std::max(m_particleRadius * 2.0f, m_supportRadius * 0.8f);
+    float step = std::max(searchRadius * 0.5f, 0.02f);
+    step = std::min(step, std::max(tMax - tMin, 0.02f));
+
+    size_t bestIndex = SIZE_MAX;
+    float bestT = tMax;
+
+    for (float t = tMin; t <= tMax; t += step)
+    {
+        XMVECTOR samplePosVec = XMVectorMultiplyAdd(dir, XMVectorReplicate(t), origin);
+        XMFLOAT3 samplePos{};
+        XMStoreFloat3(&samplePos, samplePosVec);
+
+        m_pickGrid.Query(samplePos, searchRadius, m_pickCandidates);
+        for (size_t candidate : m_pickCandidates)
+        {
+            if (candidate >= m_particles.size())
+            {
+                continue;
+            }
+
+            float hitT = 0.0f;
+            if (RaySphere(origin, dir, m_particles[candidate].position, m_particleRadius * 1.35f, hitT) && hitT < bestT)
+            {
+                bestT = hitT;
+                bestIndex = candidate;
+            }
+        }
+
+        if (bestIndex != SIZE_MAX)
+        {
+            break; // 最初に見つかった粒子を起点にすることで負荷と揺らぎを抑える
+        }
+    }
+
+    if (bestIndex == SIZE_MAX)
+    {
+        m_cameraLiftRequest.active = false;
+        return;
+    }
+
+    const float influenceRadius = std::max(m_cameraLiftRequest.influenceRadius, m_supportRadius);
+    if (influenceRadius <= 0.0f)
+    {
+        m_cameraLiftRequest.active = false;
+        return;
+    }
+
+    const float dtLift = std::max(m_cameraLiftRequest.deltaTime > 0.0f ? m_cameraLiftRequest.deltaTime : deltaTime, 0.0f);
+    const float liftAmount = m_cameraLiftRequest.liftStrength * dtLift;
+    const float swirlAmount = m_cameraLiftRequest.swirlStrength * dtLift;
+
+    m_pickGrid.Query(m_particles[bestIndex].position, influenceRadius, m_pickCandidates);
+
+    XMVECTOR pivot = XMLoadFloat3(&m_particles[bestIndex].position);
+    XMVECTOR axis = dir;
+
+    for (size_t candidate : m_pickCandidates)
+    {
+        if (candidate >= m_particles.size() || candidate >= m_liftVelocityDelta.size())
+        {
+            continue;
+        }
+
+        XMVECTOR pos = XMLoadFloat3(&m_particles[candidate].position);
+        XMVECTOR offset = XMVectorSubtract(pos, pivot);
+        float distance = XMVectorGetX(XMVector3Length(offset));
+        if (distance > influenceRadius)
+        {
+            continue;
+        }
+
+        float weight = 1.0f - (distance / influenceRadius);
+        weight = std::clamp(weight * weight, 0.0f, 1.0f); // エッジでの突然の変化を抑える
+
+        XMFLOAT3 delta = m_liftVelocityDelta[candidate];
+        delta.y += liftAmount * weight; // 上向きの力で粒子を持ち上げる
+
+        XMVECTOR dotAxis = XMVector3Dot(offset, axis);
+        XMVECTOR projected = XMVectorScale(axis, XMVectorGetX(dotAxis));
+        XMVECTOR radial = XMVectorSubtract(offset, projected);
+        float radialLengthSq = XMVectorGetX(XMVector3LengthSq(radial));
+        if (radialLengthSq > 1e-8f)
+        {
+            radial = XMVector3Normalize(radial);
+            XMVECTOR tangent = XMVector3Cross(axis, radial);
+            XMFLOAT3 tangentVec{};
+            XMStoreFloat3(&tangentVec, tangent);
+            delta.x += tangentVec.x * swirlAmount * weight;
+            delta.y += tangentVec.y * swirlAmount * weight;
+            delta.z += tangentVec.z * swirlAmount * weight;
+        }
+
+        m_liftVelocityDelta[candidate] = delta;
+    }
+
+    if (bestIndex < m_liftVelocityDelta.size())
+    {
+        m_liftVelocityDelta[bestIndex].y += liftAmount; // 起点粒子は追加で強く引き上げる
+    }
+
+    m_cameraLiftRequest.active = false;
+}
+
+bool FluidSystem::IntersectRayBounds(const XMVECTOR& origin, const XMVECTOR& dir, float& outTMin, float& outTMax) const
+{
+    XMFLOAT3 o{};
+    XMFLOAT3 d{};
+    XMStoreFloat3(&o, origin);
+    XMStoreFloat3(&d, dir);
+
+    float tMin = 0.0f;
+    float tMax = FLT_MAX;
+
+    const float boundsMin[3] = { m_bounds.min.x, m_bounds.min.y, m_bounds.min.z };
+    const float boundsMax[3] = { m_bounds.max.x, m_bounds.max.y, m_bounds.max.z };
+
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        float dirAxis = axis == 0 ? d.x : (axis == 1 ? d.y : d.z);
+        float originAxis = axis == 0 ? o.x : (axis == 1 ? o.y : o.z);
+
+        if (std::fabs(dirAxis) < 1e-5f)
+        {
+            if (originAxis < boundsMin[axis] || originAxis > boundsMax[axis])
+            {
+                return false; // 平行で境界外の場合は衝突しない
+            }
+            continue;
+        }
+
+        float invD = 1.0f / dirAxis;
+        float t0 = (boundsMin[axis] - originAxis) * invD;
+        float t1 = (boundsMax[axis] - originAxis) * invD;
+        if (t0 > t1)
+        {
+            std::swap(t0, t1);
+        }
+
+        tMin = std::max(tMin, t0);
+        tMax = std::min(tMax, t1);
+        if (tMax < tMin)
+        {
+            return false;
+        }
+    }
+
+    outTMin = tMin;
+    outTMax = tMax;
+    return true;
+}
+
+bool FluidSystem::RaySphere(const XMVECTOR& origin, const XMVECTOR& dir, const XMFLOAT3& center, float radius, float& outTHit) const
+{
+    XMVECTOR c = XMLoadFloat3(&center);
+    XMVECTOR oc = XMVectorSubtract(origin, c);
+
+    const float b = XMVectorGetX(XMVector3Dot(oc, dir));
+    const float cTerm = XMVectorGetX(XMVector3Dot(oc, oc)) - radius * radius;
+    const float discriminant = b * b - cTerm;
+    if (discriminant < 0.0f)
+    {
+        return false;
+    }
+
+    const float sqrtDisc = std::sqrt(discriminant);
+    float t0 = -b - sqrtDisc;
+    float t1 = -b + sqrtDisc;
+
+    if (t0 > 0.0f)
+    {
+        outTHit = t0;
+        return true;
+    }
+    if (t1 > 0.0f)
+    {
+        outTHit = t1;
+        return true;
+    }
+    return false;
 }
 
 void FluidSystem::ResolveCollisions(Particle& particle) const
@@ -805,6 +1071,7 @@ void FluidSystem::InitializeGrid()
     m_gridNodes.assign(
         static_cast<size_t>(cellsX) * static_cast<size_t>(cellsY) * static_cast<size_t>(cellsZ),
         GridNode{ XMFLOAT3(0.0f, 0.0f, 0.0f), 0.0f, 0.0f, XMFLOAT3(0.0f, 0.0f, 0.0f) });
+    m_pickGrid.SetCellSize(std::max(m_supportRadius, 0.05f)); // カメラレイ検索に用いるセルサイズも合わせて再設定
 }
 
 void FluidSystem::ClearGridNodes()

@@ -6,12 +6,13 @@
 #include <cmath>
 #include <cstring>
 #include <vector>
+#include <Windows.h>
 
 using namespace DirectX;
 
 namespace
 {
-    constexpr FluidSystem::RenderMode kRenderMode = FluidSystem::RenderMode::MarchingCubes; // 初期描画モード
+    constexpr FluidSystem::RenderMode kRenderMode = FluidSystem::RenderMode::SSFR; // 初期描画モードはSSFR
 }
 
 namespace GameSceneDetail
@@ -190,10 +191,9 @@ bool GameScene::Init()
     auto* camera = new Camera();
     g_Engine->RegisterObj<Camera>("Camera", camera);
 
-    m_fluid = std::make_unique<FluidSystem>();
-    if (!m_fluid || !m_fluid->Init(g_Engine->Device(), m_initialBounds, 5000, kRenderMode))
+    if (!RecreateFluid(kRenderMode))
     {
-        return false;
+        return false; // 初期生成に失敗した場合はシーンの起動を中止
     }
 
     m_walls = std::make_unique<TransparentWalls>();
@@ -214,6 +214,71 @@ bool GameScene::Init()
     m_debugCube->SetWorldMatrix(XMMatrixScaling(0.4f, 0.4f, 0.4f) * XMMatrixTranslation(center.x, center.y, center.z));
 
     return true;
+}
+
+bool GameScene::RecreateFluid(FluidSystem::RenderMode mode)
+{
+    auto newFluid = std::make_unique<FluidSystem>();
+    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 5000, mode))
+    {
+        OutputDebugStringA("FluidSystem recreate failed.\n"); // 失敗をデバッグ出力して原因調査しやすくする
+        return false;
+    }
+
+    m_fluid = std::move(newFluid);
+    m_currentRenderMode = mode;
+    return true;
+}
+
+void GameScene::HandleRenderModeToggle()
+{
+    const bool particleKey = (GetAsyncKeyState('1') & 0x8000) != 0;
+    const bool ssfrKey = (GetAsyncKeyState('2') & 0x8000) != 0;
+    const bool marchingKey = (GetAsyncKeyState('3') & 0x8000) != 0;
+
+    if (particleKey && !m_prevParticleKey && m_currentRenderMode != FluidSystem::RenderMode::InstancedSpheres)
+    {
+        RecreateFluid(FluidSystem::RenderMode::InstancedSpheres); // 1キーで粒子メッシュ描画へ切り替え
+    }
+
+    if (ssfrKey && !m_prevSsfrKey && m_currentRenderMode != FluidSystem::RenderMode::SSFR)
+    {
+        RecreateFluid(FluidSystem::RenderMode::SSFR); // 2キーでSSFRへ戻す
+    }
+
+    if (marchingKey && !m_prevMarchingKey && m_currentRenderMode != FluidSystem::RenderMode::MarchingCubes)
+    {
+        RecreateFluid(FluidSystem::RenderMode::MarchingCubes); // 3キーは検証用にマーチングキューブへ
+    }
+
+    m_prevParticleKey = particleKey;
+    m_prevSsfrKey = ssfrKey;
+    m_prevMarchingKey = marchingKey;
+}
+
+void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
+{
+    if (!m_fluid)
+    {
+        return;
+    }
+
+    if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000) == 0)
+    {
+        m_fluid->ClearCameraLiftRequest(); // 入力が無い間は巻き上げ効果を解除
+        return;
+    }
+
+    XMVECTOR eye = camera.GetEyePos();
+    XMVECTOR target = camera.GetTargetPos();
+    XMVECTOR dir = XMVector3Normalize(XMVectorSubtract(target, eye));
+
+    XMFLOAT3 origin{};
+    XMFLOAT3 direction{};
+    XMStoreFloat3(&origin, eye);
+    XMStoreFloat3(&direction, dir);
+
+    m_fluid->SetCameraLiftRequest(origin, direction, deltaTime); // 視線方向に沿った巻き上げを指示
 }
 
 void GameScene::HandleWallControl(Camera& camera, float deltaTime)
@@ -285,6 +350,8 @@ void GameScene::Update(float deltaTime)
     }
 
     camera->Update(deltaTime);
+    HandleRenderModeToggle();
+    HandleCameraLift(*camera, deltaTime);
     HandleWallControl(*camera, deltaTime);
 
     if (m_fluid)

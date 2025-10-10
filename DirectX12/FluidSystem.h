@@ -6,6 +6,7 @@
 #include "PipelineState.h"
 #include "RootSignature.h"
 #include "SharedStruct.h"
+#include "SpatialGrid.h"
 #include "VertexBuffer.h"
 #include <DirectXMath.h>
 #include <cstdint>
@@ -31,8 +32,9 @@ public:
 
     enum class RenderMode
     {
-        SSFR,            // スクリーンスペース流体描画
-        MarchingCubes,   // マーチングキューブによるサーフェス生成
+        SSFR,             // スクリーンスペース流体描画
+        InstancedSpheres, // 粒子メッシュをそのまま描画するモード
+        MarchingCubes,    // マーチングキューブによるサーフェス生成
     };
 
     bool Init(ID3D12Device* device, const Bounds& initialBounds, UINT particleCount, RenderMode renderMode = RenderMode::SSFR);
@@ -42,6 +44,9 @@ public:
     void SetBounds(const Bounds& bounds);
     void AdjustWall(const DirectX::XMFLOAT3& direction, float amount); // 左クリック操作に合わせて壁を押し引きする
     const Bounds& GetBounds() const { return m_bounds; }
+
+    void SetCameraLiftRequest(const DirectX::XMFLOAT3& origin, const DirectX::XMFLOAT3& direction, float deltaTime); // カメラ操作から巻き上げを指示
+    void ClearCameraLiftRequest(); // 入力が無い場合は巻き上げ効果をリセット
 
 private:
     struct Particle
@@ -67,6 +72,9 @@ private:
     void ClearGridNodes();
     size_t GridIndex(int x, int y, int z) const;
     void EnsureGridReady();
+    void ApplyCameraLift(float deltaTime); // カメラからの巻き上げ操作を反映
+    bool IntersectRayBounds(const DirectX::XMVECTOR& origin, const DirectX::XMVECTOR& dir, float& outTMin, float& outTMax) const; // レイと境界の交差判定
+    bool RaySphere(const DirectX::XMVECTOR& origin, const DirectX::XMVECTOR& dir, const DirectX::XMFLOAT3& center, float radius, float& outTHit) const; // レイと粒子の交差判定
 
     struct SphereVertex
     {
@@ -126,6 +134,17 @@ private:
     size_t m_marchingIndexCapacity = 0;                   // IB確保済みサイズ
     UINT m_marchingIndexCount = 0;                        // 描画インデックス数
     std::unique_ptr<PipelineState> m_marchingPipelineState; // マーチングキューブ描画PSO
+
+    struct CameraLiftRequest
+    {
+        DirectX::XMFLOAT3 origin{ 0.0f, 0.0f, 0.0f };    // レイの発射位置
+        DirectX::XMFLOAT3 direction{ 0.0f, 0.0f, 1.0f }; // レイ方向（正規化済）
+        float deltaTime = 0.0f;                          // 入力時のデルタタイム
+        float influenceRadius = 0.4f;                    // 巻き上げの影響半径
+        float liftStrength = 12.0f;                      // 上昇力の強さ
+        float swirlStrength = 6.0f;                      // 巻き上げ回転の強さ
+        bool active = false;                             // このフレームで処理するか
+    };
 
     struct alignas(256) SSFRConstant
     {
@@ -222,4 +241,8 @@ private:
     float m_bilateralDepthSigma = 0.05f;                // バイラテラルフィルタの深度シグマ
     float m_bilateralNormalSigma = 16.0f;               // 法線一致性の鋭さ
     float m_bilateralKernelRadius = 2.0f;               // サンプル半径（ピクセル単位）
+    SpatialGrid m_pickGrid;                             // カメラレイとの交差判定を高速化する空間グリッド
+    std::vector<size_t> m_pickCandidates;               // ピッキング候補の一時バッファ
+    std::vector<DirectX::XMFLOAT3> m_liftVelocityDelta; // 巻き上げ用に蓄積した速度差分
+    CameraLiftRequest m_cameraLiftRequest;              // カメラ操作から受け取った巻き上げ要求
 };
