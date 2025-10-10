@@ -7,41 +7,35 @@ const UINT HANDLE_MAX = 512;
 
 DescriptorHeap::DescriptorHeap()
 {
-        m_Handles.clear();
-        m_Handles.reserve(HANDLE_MAX);
+	m_pHandles.clear();
+	m_pHandles.reserve(HANDLE_MAX);
 
-        D3D12_DESCRIPTOR_HEAP_DESC desc{};
-        desc.NodeMask = 1;
-        desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        desc.NumDescriptors = HANDLE_MAX;
-        desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	D3D12_DESCRIPTOR_HEAP_DESC desc{};
+	desc.NodeMask = 1;
+	desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	desc.NumDescriptors = HANDLE_MAX;
+	desc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
-        auto device = g_Engine->Device();
-        if (!device)
-        {
-                // foCXƈȍ~̃\[Xo^j]邽߁AsɂB
-                m_IsValid = false;
-                return;
-        }
+	auto device = g_Engine->Device();
 
-        const HRESULT hr = device->CreateDescriptorHeap(
-                &desc,
-                IID_PPV_ARGS(m_pHeap.ReleaseAndGetAddressOf()));
+	// ィスクリプタヒプを生
+	auto hr = device->CreateDescriptorHeap(
+		&desc,
+		IID_PPV_ARGS(m_pHeap.ReleaseAndGetAddressOf()));
 
-        if (FAILED(hr))
-        {
-                // q[vsƑSĂ SRV/UAV o^ɂȂ邽߁Aŏł؂B
-                m_IsValid = false;
-                return;
-        }
+	if (FAILED(hr))
+	{
+		m_IsValid = false;
+		return;
+	}
 
-        m_IncrementSize = device->GetDescriptorHandleIncrementSize(desc.Type); // fBXNv^ 1 ̃oCgoĂ
-        m_IsValid = true;
+	m_IncrementSize = device->GetDescriptorHandleIncrementSize(desc.Type); // ィスクリプタヒ1個メモリサイズを返す
+	m_IsValid = true;
 }
 
 ID3D12DescriptorHeap* DescriptorHeap::GetHeap()
 {
-        return m_pHeap.Get();
+	return m_pHeap.Get();
 }
 
 DescriptorHandle* DescriptorHeap::Register(Texture2D* texture)
@@ -60,21 +54,27 @@ DescriptorHandle* DescriptorHeap::Register(ID3D12Resource* resource, const D3D12
                 return nullptr;
         }
 
-        auto device = g_Engine->Device();
-        if (!device)
+        auto count = m_pHandles.size();
+        if (HANDLE_MAX <= count)
         {
                 return nullptr;
         }
 
-        DescriptorHandle* handle = AllocateHandle();
-        if (!handle)
-        {
-                return nullptr;
-        }
+        DescriptorHandle* pHandle = new DescriptorHandle();
 
-        device->CreateShaderResourceView(resource, &desc, handle->HandleCPU);
+        auto handleCPU = m_pHeap->GetCPUDescriptorHandleForHeapStart();
+        handleCPU.ptr += m_IncrementSize * count;
 
-        return handle;
+        auto handleGPU = m_pHeap->GetGPUDescriptorHandleForHeapStart();
+        handleGPU.ptr += m_IncrementSize * count;
+
+        pHandle->HandleCPU = handleCPU;
+        pHandle->HandleGPU = handleGPU;
+
+        g_Engine->Device()->CreateShaderResourceView(resource, &desc, pHandle->HandleCPU);
+
+        m_pHandles.push_back(pHandle);
+        return pHandle;
 }
 
 DescriptorHandle* DescriptorHeap::RegisterBuffer(
@@ -82,34 +82,35 @@ DescriptorHandle* DescriptorHeap::RegisterBuffer(
         UINT            numElements,
         UINT            stride)
 {
-        if (!resource)
-        {
-                return nullptr;
-        }
+	auto count = m_pHandles.size();
+	if (HANDLE_MAX <= count) return nullptr;
 
-        auto device = g_Engine->Device();
-        if (!device)
-        {
-                return nullptr;
-        }
+	auto pHandle = new DescriptorHandle();
 
-        DescriptorHandle* handle = AllocateHandle();
-        if (!handle)
-        {
-                return nullptr;
-        }
+	// CPU/GPU 両方のハンドルを取
+	auto cpu = m_pHeap->GetCPUDescriptorHandleForHeapStart();
+	cpu.ptr += m_IncrementSize * count;
+	auto gpu = m_pHeap->GetGPUDescriptorHandleForHeapStart();
+	gpu.ptr += m_IncrementSize * count;
 
-        D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
-        desc.Format = DXGI_FORMAT_UNKNOWN;
-        desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        desc.Buffer.NumElements = numElements;
-        desc.Buffer.StructureByteStride = stride;
-        desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+	pHandle->HandleCPU = cpu;
+	pHandle->HandleGPU = gpu;
 
-        device->CreateShaderResourceView(resource, &desc, handle->HandleCPU);
+	// SRV スクリプタを作
+	D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+	desc.Format = DXGI_FORMAT_UNKNOWN;
+	desc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	desc.Buffer.NumElements = numElements;
+	desc.Buffer.StructureByteStride = stride;
+	desc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
-        return handle;
+	// 実際に GPU へビューを書き込
+	g_Engine->Device()->CreateShaderResourceView(
+		resource, &desc, cpu);
+
+        m_pHandles.push_back(pHandle);
+        return pHandle;
 }
 
 DescriptorHandle* DescriptorHeap::RegisterBufferUAV(
@@ -117,22 +118,18 @@ DescriptorHandle* DescriptorHeap::RegisterBufferUAV(
         UINT            numElements,
         UINT            stride)
 {
-        if (!resource)
-        {
-                return nullptr;
-        }
+        auto count = m_pHandles.size();
+        if (HANDLE_MAX <= count) return nullptr;
 
-        auto device = g_Engine->Device();
-        if (!device)
-        {
-                return nullptr;
-        }
+        auto pHandle = new DescriptorHandle();
 
-        DescriptorHandle* handle = AllocateHandle();
-        if (!handle)
-        {
-                return nullptr;
-        }
+        auto cpu = m_pHeap->GetCPUDescriptorHandleForHeapStart();
+        cpu.ptr += m_IncrementSize * count;
+        auto gpu = m_pHeap->GetGPUDescriptorHandleForHeapStart();
+        gpu.ptr += m_IncrementSize * count;
+
+        pHandle->HandleCPU = cpu;
+        pHandle->HandleGPU = gpu;
 
         D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
         desc.Format = DXGI_FORMAT_UNKNOWN;
@@ -141,32 +138,29 @@ DescriptorHandle* DescriptorHeap::RegisterBufferUAV(
         desc.Buffer.StructureByteStride = stride;
         desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
 
-        device->CreateUnorderedAccessView(
-                resource, nullptr, &desc, handle->HandleCPU);
+        g_Engine->Device()->CreateUnorderedAccessView(
+                resource, nullptr, &desc, cpu);
 
-        return handle;
+        m_pHandles.push_back(pHandle);
+        return pHandle;
 }
 
 DescriptorHandle* DescriptorHeap::RegisterTextureUAV(
         ID3D12Resource* resource,
         DXGI_FORMAT      format)
 {
-        if (!resource)
-        {
-                return nullptr;
-        }
+        auto count = m_pHandles.size();
+        if (HANDLE_MAX <= count) return nullptr;
 
-        auto device = g_Engine->Device();
-        if (!device)
-        {
-                return nullptr;
-        }
+        auto pHandle = new DescriptorHandle();
 
-        DescriptorHandle* handle = AllocateHandle();
-        if (!handle)
-        {
-                return nullptr;
-        }
+        auto cpu = m_pHeap->GetCPUDescriptorHandleForHeapStart();
+        cpu.ptr += m_IncrementSize * count;
+        auto gpu = m_pHeap->GetGPUDescriptorHandleForHeapStart();
+        gpu.ptr += m_IncrementSize * count;
+
+        pHandle->HandleCPU = cpu;
+        pHandle->HandleGPU = gpu;
 
         D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
         desc.Format = format;
@@ -174,35 +168,9 @@ DescriptorHandle* DescriptorHeap::RegisterTextureUAV(
         desc.Texture2D.MipSlice = 0;
         desc.Texture2D.PlaneSlice = 0;
 
-        device->CreateUnorderedAccessView(
-                resource, nullptr, &desc, handle->HandleCPU);
+        g_Engine->Device()->CreateUnorderedAccessView(
+                resource, nullptr, &desc, cpu);
 
-        return handle;
-}
-
-DescriptorHandle* DescriptorHeap::AllocateHandle()
-{
-        if (!m_IsValid || !m_pHeap)
-        {
-                return nullptr;
-        }
-
-        const size_t index = m_Handles.size();
-        if (index >= HANDLE_MAX)
-        {
-                // 𒴂ƓfBXNv^̈Ă܂߁AŊ蓖Ă~߂B
-                return nullptr;
-        }
-
-        DescriptorHandle& handle = m_Handles.emplace_back();
-
-        auto cpu = m_pHeap->GetCPUDescriptorHandleForHeapStart();
-        cpu.ptr += m_IncrementSize * index;
-        auto gpu = m_pHeap->GetGPUDescriptorHandleForHeapStart();
-        gpu.ptr += m_IncrementSize * index;
-
-        handle.HandleCPU = cpu;
-        handle.HandleGPU = gpu;
-
-        return &handle;
+        m_pHandles.push_back(pHandle);
+        return pHandle;
 }

@@ -1,33 +1,36 @@
 #include "ConstantBuffer.h"
 #include "Engine.h"
 
-#include <stdexcept>
-
 ConstantBuffer::ConstantBuffer(size_t size)
 {
-    const size_t align = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
-    const UINT64 sizeAligned = (size + (align - 1)) & ~(align - 1); // alignÉØ‚ã‚°.
+    size_t align = D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT;
+    UINT64 sizeAligned = (size + (align - 1)) & ~(align - 1); // align‚ÉØ‚èã‚°‚é.
 
-    const HRESULT createResult = g_Engine->Device()->CreateCommittedResource(
+    auto prop = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD); // ƒq[ƒvƒvƒƒpƒeƒB
+    auto desc = CD3DX12_RESOURCE_DESC::Buffer(sizeAligned); // ƒŠƒ\[ƒX‚Ìİ’è
 
-    if (FAILED(createResult))
-        // sÂ‚Ô‚ÆŒÅ–obt@ÖƒANZXÄ•sï‡É‚È‚é‚½ßAOÅ–B
-        throw std::runtime_error("ConstantBuffer resource creation failed");
-    const HRESULT mapResult = m_pBuffer->Map(0, nullptr, &m_pMappedPtr);
-    if (FAILED(mapResult) || !m_pMappedPtr)
+    // ƒŠƒ\[ƒX‚ğ¶¬
+    auto hr = g_Engine->Device()->CreateCommittedResource(
+        &prop,
+        D3D12_HEAP_FLAG_NONE,
+        &desc,
+        D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(m_pBuffer.GetAddressOf()));
+    if (FAILED(hr))
     {
-        // }bvsÉƒ\[XÈ‚Æƒ[Né‚½ßAÄ‚Oğ“Š‚B
-        m_pBuffer.Reset();
-        throw std::runtime_error("ConstantBuffer map failed");
+        printf("’è”ƒoƒbƒtƒ@ƒŠƒ\[ƒX‚Ì¶¬‚É¸”s\n");
+        return;
+    }
     else
     {
-        printf("å®šæ•°ãƒãƒƒãƒ•ã‚¡ãƒªã‚½ãƒ¼ã‚¹ã®ç”Ÿæˆ æˆåŠŸ\n");
+        printf("’è”ƒoƒbƒtƒ@ƒŠƒ\[ƒX‚Ì¶¬ ¬Œ÷\n");
     }
 
 
     hr = m_pBuffer->Map(0, nullptr, &m_pMappedPtr);
     if (!m_pBuffer) {
-        printf("m_pBufferãŒç©ºã§ã™\n");
+        printf("m_pBuffer‚ª‹ó‚Å‚·\n");
         return;
     }
 
