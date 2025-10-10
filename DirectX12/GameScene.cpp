@@ -142,7 +142,7 @@ namespace GameSceneDetail
         void BuildVertices(const FluidSystem::Bounds& bounds)
         {
             m_vertices.clear();
-            const XMFLOAT4 wallColor{ 0.2f, 0.6f, 1.0f, 0.18f }; // 透明感を表現する薄い色
+            const XMFLOAT4 wallColor{ 0.2f, 0.6f, 1.0f, 0.0f }; // 透明感を表現する薄い色
             auto addQuad = [this, &wallColor](const XMFLOAT3& a, const XMFLOAT3& b, const XMFLOAT3& c, const XMFLOAT3& d)
             {
                 m_vertices.push_back({ a, wallColor });
@@ -219,7 +219,7 @@ bool GameScene::Init()
 bool GameScene::RecreateFluid()
 {
     auto newFluid = std::make_unique<FluidSystem>();
-    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 5000))
+    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 100000))
     {
         OutputDebugStringA("FluidSystem recreate failed.\n"); // 失敗をデバッグ出力して原因調査しやすくする
         return false;

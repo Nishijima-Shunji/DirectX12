@@ -1,8 +1,8 @@
 cbuffer OceanConstant : register(b0)
 {
-    float4x4 World; // 世界行列
-    float4x4 View;  // ビュー行列
-    float4x4 Proj;  // プロジェクション行列
+    row_major float4x4 World; // 世界行列
+    row_major float4x4 View; // ビュー行列
+    row_major float4x4 Proj; // プロジェクション行列
     float4 SurfaceColor; // 水面色
 }
 

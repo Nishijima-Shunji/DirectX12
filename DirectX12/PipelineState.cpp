@@ -102,20 +102,20 @@ void PipelineState::Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE type)
     desc.PrimitiveTopologyType = type;
 
     // ==============SSFRの為に一時的にコメントアウト=========
-    // 
-    //D3D12_BLEND_DESC blendDesc = {};
-    //blendDesc.AlphaToCoverageEnable = FALSE;
-    //blendDesc.IndependentBlendEnable = FALSE;
+     
+    D3D12_BLEND_DESC blendDesc = {};
+    blendDesc.AlphaToCoverageEnable = FALSE;
+    blendDesc.IndependentBlendEnable = FALSE;
 
-    //auto& rtBlendDesc = blendDesc.RenderTarget[0];
-    //rtBlendDesc.BlendEnable = TRUE;
-    //rtBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
-    //rtBlendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-    //rtBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
-    //rtBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
-    //rtBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
-    //rtBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
-    //rtBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+    auto& rtBlendDesc = blendDesc.RenderTarget[0];
+    rtBlendDesc.BlendEnable = TRUE;
+    rtBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+    rtBlendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+    rtBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+    rtBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
+    rtBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
+    rtBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    rtBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
     //desc.BlendState = blendDesc;
     HRESULT hr = g_Engine->Device()->CreateGraphicsPipelineState(

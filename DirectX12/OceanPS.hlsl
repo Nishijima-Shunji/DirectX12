@@ -9,7 +9,7 @@ struct VSOutput
 
 float4 main(VSOutput input) : SV_TARGET
 {
-    // 日本語コメント: シンプルな環境光とディフューズで水面を表現
+    // シンプルな環境光とディフューズで水面を表現
     float3 n = normalize(input.normal);
     float3 lightDir = normalize(float3(-0.35f, -1.0f, -0.3f));
     float diff = saturate(dot(n, -lightDir));
