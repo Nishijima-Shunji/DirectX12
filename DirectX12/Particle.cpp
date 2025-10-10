@@ -39,10 +39,11 @@ bool Particle::Init() {
 		}
 
 		// 
-		auto ptr = m_ConstantBuffer[i]->GetPtr<Transform>();
-		ptr->World = DirectX::XMMatrixIdentity();
-		ptr->View = DirectX::XMMatrixLookAtRH(camera->GetEyePos(), camera->GetTargetPos(), camera->GetUpward());
-		ptr->Proj = DirectX::XMMatrixPerspectiveFovRH(camera->GetFov(), camera->GetAspect(), 0.3f, 1000.0f);
+                auto ptr = m_ConstantBuffer[i]->GetPtr<Transform>();
+                // HLSL 側では行列が列優先で格納されるため、CPU 側の行列を転置して合わせる
+                ptr->World = DirectX::XMMatrixTranspose(DirectX::XMMatrixIdentity());
+                ptr->View = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera->GetEyePos(), camera->GetTargetPos(), camera->GetUpward()));
+                ptr->Proj = DirectX::XMMatrixTranspose(DirectX::XMMatrixPerspectiveFovRH(camera->GetFov(), camera->GetAspect(), 0.3f, 1000.0f));
 	}
 
 	// 
@@ -73,9 +74,10 @@ void Particle::Update(float deltaTime) {
 	UpdateVertexBuffer();
 
 	auto ptr = m_ConstantBuffer[0]->GetPtr<Transform>();
-	ptr->World = DirectX::XMMatrixIdentity();
-	ptr->View = DirectX::XMMatrixLookAtRH(camera->GetEyePos(), camera->GetTargetPos(), camera->GetUpward());
-	ptr->Proj = DirectX::XMMatrixPerspectiveFovRH(camera->GetFov(), camera->GetAspect(), 0.3f, 1000.0f);
+        // HLSL 側では行列が列優先で格納されるため、CPU 側の行列を転置して合わせる
+        ptr->World = DirectX::XMMatrixTranspose(DirectX::XMMatrixIdentity());
+        ptr->View = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtRH(camera->GetEyePos(), camera->GetTargetPos(), camera->GetUpward()));
+        ptr->Proj = DirectX::XMMatrixTranspose(DirectX::XMMatrixPerspectiveFovRH(camera->GetFov(), camera->GetAspect(), 0.3f, 1000.0f));
 
 	for (int i = 0; i < 10; ++i) {
 		const auto& p = m_Particles[i];
