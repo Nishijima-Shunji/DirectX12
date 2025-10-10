@@ -1305,8 +1305,8 @@ void FluidSystem::UpdateSSFRConstants(const Camera& camera)
     }
 
     auto* constant = cb->GetPtr<SSFRConstant>();
-    constant->view = XMMatrixTranspose(camera.GetViewMatrix());
-    constant->proj = XMMatrixTranspose(camera.GetProjMatrix());
+    constant->proj = XMMatrixTranspose(camera.GetProjMatrix()); // GPU 側 CameraCB.b0 の proj と一致させる
+    constant->view = XMMatrixTranspose(camera.GetViewMatrix()); // GPU 側 CameraCB.b0 の view と一致させる
     //c->world = XMMatrixTranspose(m_world); // world を使う場合
 
     constant->screenSize = XMFLOAT2(static_cast<float>(m_ssfrWidth), static_cast<float>(m_ssfrHeight));

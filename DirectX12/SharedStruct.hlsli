@@ -4,8 +4,8 @@
 // ※PS 側で CBV b0 のみを参照できるよう、framebufferSize を CameraCB 内へ整理（RS 警告対策）
 cbuffer CameraCB : register(b0)
 {
-    float4x4 proj;
-    float4x4 view;
+    float4x4 proj;                // CPU 側 SSFRConstant と順番を揃えて行列を共有
+    float4x4 view;                // CPU 側 SSFRConstant と順番を揃えて行列を共有
     float2 screenSize;
     float nearZ;
     float farZ;
