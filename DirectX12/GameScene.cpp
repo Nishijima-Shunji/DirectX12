@@ -219,7 +219,7 @@ bool GameScene::Init()
 bool GameScene::RecreateFluid()
 {
     auto newFluid = std::make_unique<FluidSystem>();
-    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 100))
+    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 10000))
     {
         OutputDebugStringA("FluidSystem recreate failed.\n"); // 失敗をデバッグ出力して原因調査しやすくする
         return false;
@@ -229,29 +229,136 @@ bool GameScene::RecreateFluid()
     return true;
 }
 
+static bool RayHitWaterXZ(Camera& cam, float waterY, DirectX::XMFLOAT2& outXZ)
+{
+    using namespace DirectX;
+    XMVECTOR eye = cam.GetEyePos();
+    XMVECTOR dir = XMVector3Normalize(cam.GetTargetPos() - eye);
+    float dy = XMVectorGetY(dir);
+    if (fabsf(dy) < 1e-5f) return false;             // ほぼ水平で当たらない
+    float t = (waterY - XMVectorGetY(eye)) / dy;
+    if (t < 0.0f) return false;                       // 後ろ向き
+    XMVECTOR p = eye + dir * t;
+    outXZ = XMFLOAT2(XMVectorGetX(p), XMVectorGetZ(p));
+    return true;
+}
+
 void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
 {
-    if (!m_fluid)
+    //if (!m_fluid)
+    //{
+    //    return;
+    //}
+
+    //if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0)
+    //{
+    //    m_fluid->ClearCameraLiftRequest(); // 入力が無い間は巻き上げ効果を解除
+    //    return;
+    //}
+
+    //XMVECTOR eye = camera.GetEyePos();
+    //XMVECTOR target = camera.GetTargetPos();
+    //XMVECTOR dir = XMVector3Normalize(XMVectorSubtract(target, eye));
+
+    //XMFLOAT3 origin{};
+    //XMFLOAT3 direction{};
+    //XMStoreFloat3(&origin, eye);
+    //XMStoreFloat3(&direction, dir);
+
+    //m_fluid->SetCameraLiftRequest(origin, direction, deltaTime); // 視線方向に沿った巻き上げを指示
+
+    if (!m_fluid) return;
+
+    using namespace DirectX;
+
+    // --- ここで操作パラメータ（好みで調整可） ---
+    const float kGrabRadius = 1.18f;   // 掴む円の半径[m]
+    const float kLiftPerSec = 5.60f;   // 押下中に毎秒どれだけ持ち上げるか[m/s]
+    const float kThrowScale = 1.00f;   // 投げ速度スケール
+    const float kMinThrowSpd = 0.2f;    // これ未満なら投げない[m/s]
+    // ---------------------------------------------
+
+    // 関数内で状態を保持（簡単のためstatic使用）
+    static bool sGrabbing = false;
+    static XMFLOAT2 sPrevXZ{ 0,0 };
+    static XMFLOAT2 sVelXZ{ 0,0 };         // 低域通過した投げ速度用
+    static float    sTimeAccum = 0.0f;
+
+    const bool lmbDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+
+    // 現在の水位（FluidSystemに getter がある想定。なければ 0.0f などに置換）
+    const float waterY =
+#if 1
+        m_fluid->GetWaterLevel();
+#else
+        0.0f;
+#endif
+
+    XMFLOAT2 hitXZ;
+    const bool hit = RayHitWaterXZ(camera, waterY, hitXZ);
+
+    if (!lmbDown)
     {
+        // ボタンを離した瞬間：投げる
+        if (sGrabbing)
+        {
+            // 速度ベクトル = 直近の平滑化した速度
+            XMVECTOR v = XMLoadFloat2(&sVelXZ);
+            float spd = XMVectorGetX(XMVector2Length(v)) * kThrowScale;
+            if (spd >= kMinThrowSpd)
+            {
+                XMVECTOR dir = XMVector2Normalize(v);
+                XMFLOAT2 throwDir, throwVel;
+                XMStoreFloat2(&throwDir, dir);
+                m_fluid->EndGather(throwDir, spd);
+            }
+            else
+            {
+                // ほぼその場で離したときは投げなし
+                XMFLOAT2 zero{ 0,0 };
+                m_fluid->EndGrab(zero, 0.0f);
+            }
+        }
+        // 状態リセット
+        sGrabbing = false;
+        sVelXZ = XMFLOAT2(0, 0);
+        sTimeAccum = 0.0f;
         return;
     }
 
-    if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0)
+    // マウス押下中
+    if (!hit) return; // 水面とレイが交差しないなら何もしない
+
+    if (!sGrabbing)
     {
-        m_fluid->ClearCameraLiftRequest(); // 入力が無い間は巻き上げ効果を解除
+        // 掴み開始
+        sGrabbing = true;
+        sPrevXZ = hitXZ;
+        sVelXZ = XMFLOAT2(0, 0);
+        sTimeAccum = 0.0f;
+        m_fluid->BeginGather(hitXZ, kGrabRadius);
         return;
     }
 
-    XMVECTOR eye = camera.GetEyePos();
-    XMVECTOR target = camera.GetTargetPos();
-    XMVECTOR dir = XMVector3Normalize(XMVectorSubtract(target, eye));
+    // 掴み継続：持ち上げ＋スピード推定
+    sTimeAccum += deltaTime;
 
-    XMFLOAT3 origin{};
-    XMFLOAT3 direction{};
-    XMStoreFloat3(&origin, eye);
-    XMStoreFloat3(&direction, dir);
+    // 位置差分→速度推定（2D）
+    XMVECTOR cur = XMLoadFloat2(&hitXZ);
+    XMVECTOR prv = XMLoadFloat2(&sPrevXZ);
+    XMVECTOR d = cur - prv;
+    if (deltaTime > 0.0f)
+    {
+        XMVECTOR instV = d / deltaTime;                 // 瞬間速度
+        // 低域通過（スムーズな投げ方向/速度に）
+        XMVECTOR oldV = XMLoadFloat2(&sVelXZ);
+        XMVECTOR v = XMVectorLerp(oldV, instV, 0.5f);
+        XMStoreFloat2(&sVelXZ, v);
+    }
+    XMStoreFloat2(&sPrevXZ, cur);
 
-    m_fluid->SetCameraLiftRequest(origin, direction, deltaTime); // 視線方向に沿った巻き上げを指示
+    // 水面を持ち上げる（押下中は常時少しずつ上げる）
+    m_fluid->UpdateGather(hitXZ, /*liftPerSec*/ kLiftPerSec, deltaTime);
 }
 
 void GameScene::HandleWallControl(Camera& camera, float deltaTime)

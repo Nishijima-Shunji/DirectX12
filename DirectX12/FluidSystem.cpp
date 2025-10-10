@@ -163,6 +163,7 @@ void FluidSystem::Update(float deltaTime)
 
 	ApplyPendingDrops();
 	StepSimulation(deltaTime);
+	UpdateInteractions(deltaTime);
 	UpdateVertexBuffer();
 }
 
@@ -692,3 +693,319 @@ void FluidSystem::ApplyWallImpulse(const Bounds& prev, const Bounds& curr, float
 	}
 }
 
+// 円ブラシ
+void FluidSystem::ApplyDiscImpulse(const XMFLOAT2& centerXZ, float radius, float addHeight, float addVel)
+{
+	if (m_resolution <= 1 || radius <= 0.0f) return;
+
+	// 固定グリッド(A対応後)を前提：m_simMin/m_cellDx/m_cellDz から座標→インデックスへ
+	const int xr = std::max(1, int(std::ceil(radius / m_cellDx)));
+	const int zr = std::max(1, int(std::ceil(radius / m_cellDz)));
+
+	// 中心の推定インデックス
+	int cx = int(std::round((centerXZ.x - m_simMin.x) / m_cellDx));
+	int cz = int(std::round((centerXZ.y - m_simMin.z) / m_cellDz));
+
+	auto clampi = [&](int v) { return std::max(0, std::min(m_resolution - 1, v)); };
+
+	const float r2 = radius * radius;
+
+	for (int z = clampi(cz - zr); z <= clampi(cz + zr); ++z)
+	{
+		for (int x = clampi(cx - xr); x <= clampi(cx + xr); ++x)
+		{
+			float wx = m_simMin.x + m_cellDx * float(x);
+			float wz = m_simMin.z + m_cellDz * float(z);
+			float dx = wx - centerXZ.x;
+			float dz = wz - centerXZ.y;
+			float d2 = dx * dx + dz * dz;
+			if (d2 > r2) continue;
+
+			// 滑らかに効かせる重み（ガウスでもsmoothstepでもOK）
+			float w = 1.0f - std::sqrt(d2) / radius; // 0..1
+			w = w * w * (3.0f - 2.0f * w); // smoothstep
+
+			size_t idx = Index((size_t)x, (size_t)z);
+			if (addHeight != 0.0f)   m_height[idx] += addHeight * w;
+			if (addVel != 0.0f)   m_velocity[idx] += addVel * w;
+		}
+	}
+}
+
+void FluidSystem::BeginGrab(const XMFLOAT2& xz, float radius)
+{
+	m_grabActive = true;
+	m_grabCenterXZ = xz;
+	m_grabRadius = radius;
+}
+
+void FluidSystem::UpdateGrab(const XMFLOAT2& xz, float liftPerSec, float dt)
+{
+	if (!m_grabActive) return;
+	m_grabCenterXZ = xz;
+	// 上げる：高さを直接足す
+	ApplyDiscImpulse(m_grabCenterXZ, m_grabRadius, /*addHeight*/ liftPerSec * dt, /*addVel*/ 0.0f);
+}
+
+void FluidSystem::EndGrab(const XMFLOAT2& throwDirXZ, float throwSpeed)
+{
+	if (!m_grabActive) return;
+	m_grabActive = false;
+
+	// “塊”パケットを生成（進行しながら波としぶきを作る）
+	WavePacket p{};
+	p.center = m_grabCenterXZ;
+	// 方向は正規化
+	XMVECTOR d = XMVector2Normalize(XMLoadFloat2(&throwDirXZ));
+	XMStoreFloat2(&p.vel, XMVectorScale(d, throwSpeed));
+	p.radius = m_packetDefaultRadius;
+	p.amp = m_packetDefaultAmp;
+	p.life = 1.2f; // 秒
+	m_packets.push_back(p);
+}
+
+void FluidSystem::CutWater(const XMFLOAT2& a, const XMFLOAT2& b, float radius, float depth)
+{
+	// a→b を10分割して連続インパルス
+	const int N = 10;
+	for (int i = 0; i <= N; ++i) {
+		float t = float(i) / float(N);
+		XMFLOAT2 p{ a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t };
+		ApplyDiscImpulse(p, radius, /*addHeight*/ -depth, /*addVel*/ 0.0f);
+	}
+}
+
+void FluidSystem::UpdateInteractions(float dt)
+{
+	// WavePacketの進行
+	for (size_t i = 0; i < m_packets.size(); )
+	{
+		WavePacket& p = m_packets[i];
+
+		// 進行
+		p.center.x += p.vel.x * dt;
+		p.center.y += p.vel.y * dt;
+
+		// 摩擦・減衰
+		p.vel.x *= std::max(0.0f, 1.0f - m_packetFriction * dt);
+		p.vel.y *= std::max(0.0f, 1.0f - m_packetFriction * dt);
+		p.amp *= std::pow(m_packetDecay, dt);
+
+		// 水面へ速度インパルス（“ぶつける”＝先頭側へ加速）
+		ApplyDiscImpulse(p.center, p.radius, /*addHeight*/ 0.0f, /*addVel*/ +2.5f * p.amp);
+
+		// しぶき発生（ロジックのみ）
+		float dist = std::sqrt(p.vel.x * p.vel.x + p.vel.y * p.vel.y) * dt;
+		int spawnN = int(m_sprayRate * dist);
+		for (int n = 0; n < spawnN; ++n) {
+			// 円周付近からランダムに
+			float ang = (float)n / std::max(1, spawnN) * 6.28318f;
+			float rx = p.center.x + p.radius * std::cos(ang);
+			float rz = p.center.y + p.radius * std::sin(ang);
+			// Yは現状の水面高さ
+			int ix = std::clamp(int(std::round((rx - m_simMin.x) / m_cellDx)), 0, m_resolution - 1);
+			int iz = std::clamp(int(std::round((rz - m_simMin.z) / m_cellDz)), 0, m_resolution - 1);
+			float y = m_waterLevel + m_height[Index((size_t)ix, (size_t)iz)];
+
+			SprayParticle sp{};
+			sp.pos = XMFLOAT3(rx, y, rz);
+			// 前進方向＋上向き
+			sp.vel = XMFLOAT3(p.vel.x * 0.4f, 3.0f + 0.6f * std::abs(p.amp), p.vel.y * 0.4f);
+			sp.life = m_sprayLife;
+			m_spray.push_back(sp);
+		}
+
+		p.life -= dt;
+		if (p.life <= 0.0f || p.amp < 0.01f)
+			m_packets.erase(m_packets.begin() + i);
+		else
+			++i;
+	}
+
+	// しぶき粒子の物理（描画は後続で追加）
+	for (size_t i = 0; i < m_spray.size(); ) {
+		SprayParticle& s = m_spray[i];
+		// 重力＋ドラッグ
+		s.vel.y += m_sprayGravity * dt;
+		s.vel.x *= std::max(0.0f, 1.0f - m_sprayDrag * dt);
+		s.vel.z *= std::max(0.0f, 1.0f - m_sprayDrag * dt);
+		s.pos.x += s.vel.x * dt;
+		s.pos.y += s.vel.y * dt;
+		s.pos.z += s.vel.z * dt;
+		s.life -= dt;
+
+		// 水面より下に戻ったら消す（将来: 高さへ再注入も可）
+		// 高さ判定
+		int ix = std::clamp(int(std::round((s.pos.x - m_simMin.x) / m_cellDx)), 0, m_resolution - 1);
+		int iz = std::clamp(int(std::round((s.pos.z - m_simMin.z) / m_cellDz)), 0, m_resolution - 1);
+		float y = m_waterLevel + m_height[Index((size_t)ix, (size_t)iz)];
+		if (s.life <= 0.0f || s.pos.y <= y)
+			m_spray.erase(m_spray.begin() + i);
+		else
+			++i;
+	}
+}
+
+void FluidSystem::BeginGather(const XMFLOAT2& xz, float gatherRadius) {
+	m_gatherActive = true;
+	m_gatherCenter = xz;
+	m_gatherRadius = gatherRadius;   // 中心ドームの半径
+	m_gatheredVolume = 0.0f;
+}
+
+void FluidSystem::UpdateGather(const XMFLOAT2& xz, float gatherRate, float dt) {
+	if (!m_gatherActive) return;
+	m_gatherCenter = xz;
+	m_gatherRate = gatherRate;
+
+	// 取りたい体積（m^3）：毎秒の目標 × dt
+	float want = std::max(0.0f, m_gatherRate) * dt;
+	float taken = 0.0f;
+
+	// 中心の外側「輪」から体積を頂く（高さ場→体積：height * cellArea）
+	TransferAnnulusToCenter(m_gatherCenter, m_gatherRadius, m_gatherRingW, want, taken);
+
+	// 取った体積を中心のドームに積む（ガウス分布で盛る）
+	if (taken > 0.0f) {
+		DepositVolumeGaussian(m_gatherCenter, taken, /*sigma=*/m_gatherRadius * 0.6f);
+		m_gatheredVolume += taken;
+	}
+}
+
+void FluidSystem::TransferAnnulusToCenter(const XMFLOAT2& c, float innerR, float ringW,
+	float wantVolume, float& outTaken)
+{
+	outTaken = 0.0f;
+	if (m_resolution <= 1 || innerR <= 0.0f || ringW <= 0.0f) return;
+
+	const float rIn = innerR;
+	const float rOut = innerR + ringW;
+	const float rIn2 = rIn * rIn, rOut2 = rOut * rOut;
+	const float cellA = m_cellDx * m_cellDz;
+
+	// まず「取れる上限体積」をスキャン（0未満の高さにはしない）
+	float can = 0.0f;
+	for (int z = 0; z < m_resolution; ++z) {
+		for (int x = 0; x < m_resolution; ++x) {
+			float wx = m_simMin.x + m_cellDx * x;
+			float wz = m_simMin.z + m_cellDz * z;
+			float dx = wx - c.x, dz = wz - c.y;
+			float d2 = dx * dx + dz * dz;
+			if (d2 < rIn2 || d2 > rOut2) continue;
+			size_t idx = Index((size_t)x, (size_t)z);
+			float h = std::max(0.0f, m_height[idx]); // 負に行きすぎない
+			can += h * cellA;
+		}
+	}
+	if (can <= 0.0f) return;
+
+	// 取り割合（wantを超えないように）
+	float take = std::min(wantVolume, can);
+	float scale = take / can;
+
+	// 実際に削る
+	for (int z = 0; z < m_resolution; ++z) {
+		for (int x = 0; x < m_resolution; ++x) {
+			float wx = m_simMin.x + m_cellDx * x;
+			float wz = m_simMin.z + m_cellDz * z;
+			float dx = wx - c.x, dz = wz - c.y;
+			float d2 = dx * dx + dz * dz;
+			if (d2 < rIn2 || d2 > rOut2) continue;
+			size_t idx = Index((size_t)x, (size_t)z);
+			float h = m_height[idx];
+			float dh = std::min(h, (h * scale)); // 比例配分
+			m_height[idx] -= dh;
+		}
+	}
+	outTaken = take;
+}
+
+
+void FluidSystem::DepositVolumeGaussian(const XMFLOAT2& c, float volume, float sigma)
+{
+	if (m_resolution <= 1 || volume <= 0.0f) return;
+
+	const float cellA = m_cellDx * m_cellDz;
+	const float twoSigma2 = 2.0f * sigma * sigma;
+
+	// 正規化係数（離散近似のノーマライズ）
+	double Wsum = 0.0;
+	for (int z = 0; z < m_resolution; ++z) {
+		for (int x = 0; x < m_resolution; ++x) {
+			float wx = m_simMin.x + m_cellDx * x;
+			float wz = m_simMin.z + m_cellDz * z;
+			float dx = wx - c.x, dz = wz - c.y;
+			float w = expf(-(dx * dx + dz * dz) / twoSigma2);
+			Wsum += w;
+		}
+	}
+	if (Wsum <= 1e-8) return;
+
+	// 高さへ分配（体積 = 高さ × cellArea）
+	for (int z = 0; z < m_resolution; ++z) {
+		for (int x = 0; x < m_resolution; ++x) {
+			float wx = m_simMin.x + m_cellDx * x;
+			float wz = m_simMin.z + m_cellDz * z;
+			float dx = wx - c.x, dz = wz - c.y;
+			float w = expf(-(dx * dx + dz * dz) / twoSigma2);
+			float dV = float(volume * (w / Wsum));
+			m_height[Index((size_t)x, (size_t)z)] += dV / cellA;
+		}
+	}
+}
+
+void FluidSystem::EndGather(const XMFLOAT2& aimDirXZ, float launchSpeed)
+{
+	if (!m_gatherActive) { return; }
+	m_gatherActive = false;
+
+	// 集めた体積から球半径を決定： V = 4/3 π r^3
+	const float V = m_gatheredVolume;
+	if (V <= 0.0f) return;
+	const float r = cbrtf((3.0f * V) / (4.0f * 3.14159265f));
+
+	// 球を“分離”して飛ばす（見た目はデバッグ球/キューブでOK）
+	m_blob.active = true;
+	m_blob.volume = V;
+	m_blob.radius = r;
+	m_blob.pos = { m_gatherCenter.x, m_waterLevel + r * 1.2f, m_gatherCenter.y };
+
+	DirectX::XMVECTOR d = DirectX::XMVector2Normalize(DirectX::XMLoadFloat2(&aimDirXZ));
+	DirectX::XMFLOAT2 dir;
+	DirectX::XMStoreFloat2(&dir, d);
+
+	m_blob.vel = { dir.x * launchSpeed, std::max(0.0f, 1.5f * launchSpeed), dir.y * launchSpeed };
+	m_gatheredVolume = 0.0f;
+}
+
+
+void FluidSystem::UpdateBlob(float dt)
+{
+	if (!m_blob.active) return;
+
+	// 単純な重力飛行
+	m_blob.vel.y += -9.8f * dt;
+	m_blob.pos.x += m_blob.vel.x * dt;
+	m_blob.pos.y += m_blob.vel.y * dt;
+	m_blob.pos.z += m_blob.vel.z * dt;
+
+	// 着水判定：球の底が水面に当たったら
+	int ix = std::clamp(int(std::round((m_blob.pos.x - m_simMin.x) / m_cellDx)), 0, m_resolution - 1);
+	int iz = std::clamp(int(std::round((m_blob.pos.z - m_simMin.z) / m_cellDz)), 0, m_resolution - 1);
+	float ySurface = m_waterLevel + m_height[Index((size_t)ix, (size_t)iz)];
+
+	if (m_blob.pos.y - m_blob.radius <= ySurface) {
+		// 体積を水面へ戻す（少し広めに分配して“着水のふくらみ”）
+		DepositVolumeGaussian(DirectX::XMFLOAT2{ m_blob.pos.x, m_blob.pos.z },
+			m_blob.volume, /*sigma=*/m_blob.radius * 1.5f);
+		// 速度→波（押し波インパルス）
+		ApplyDiscImpulse(DirectX::XMFLOAT2{ m_blob.pos.x, m_blob.pos.z },
+			/*radius=*/m_blob.radius * 1.2f,
+			/*addHeight=*/0.0f,
+			/*addVel=*/ std::max(0.0f, m_blob.vel.y * -0.8f));
+
+		// しぶきは既存の Spray を使うならここでスポーン（省略可）
+
+		m_blob.active = false;
+	}
+}
