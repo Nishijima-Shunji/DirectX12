@@ -1826,9 +1826,10 @@ void FluidSystem::Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera)
     }
 
     FluidConstant* constant = cb->GetPtr<FluidConstant>();
-    constant->World = m_world;
-    constant->View = camera.GetViewMatrix();
-    constant->Proj = camera.GetProjMatrix();
+    // HLSL 側では行列が列優先で格納されるため、全ての変換行列を転置してから書き込むことで描画結果が崩れる問題を防ぐ
+    constant->World = XMMatrixTranspose(m_world);
+    constant->View = XMMatrixTranspose(camera.GetViewMatrix());
+    constant->Proj = XMMatrixTranspose(camera.GetProjMatrix());
     constant->CameraPos = camera.GetPosition(); // 液体を軽やかに見せるハイライト計算に視線を使うためカメラ位置を渡す
 
     cmd->SetGraphicsRootSignature(m_rootSignature->Get());
