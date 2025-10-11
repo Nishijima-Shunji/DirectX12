@@ -201,12 +201,14 @@ bool GameScene::Init()
         return false; // 初期生成に失敗した場合はシーンの起動を中止
     }
 
+    // 境界の壁
     m_walls = std::make_unique<TransparentWalls>();
     if (!m_walls || !m_walls->Init(m_initialBounds))
     {
         return false;
     }
 
+    // カメラやオブジェクトの位置確認ようの仮オブジェクト
     m_debugCube = std::make_unique<DebugCube>();
     if (!m_debugCube)
     {
@@ -227,7 +229,7 @@ bool GameScene::RecreateFluid()
     auto newFluid = std::make_unique<FluidSystem>();
     if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 0))
     {
-        OutputDebugStringA("FluidSystem recreate failed.\n"); // 失敗をデバッグ出力して原因調査しやすくする
+        OutputDebugStringA("FluidSystem recreate failed.\n");
         return false;
     }
 
@@ -257,7 +259,7 @@ void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
 
     using namespace DirectX;
 
-    // --- ここで操作パラメータ（好みで調整可） ---
+    // --- 操作パラメータ ---
     const float kGrabRadius = 1.18f;   // 掴む円の半径[m]
     const float kLiftPerSec = 5.60f;   // 押下中に毎秒どれだけ持ち上げるか[m/s]
     const float kThrowScale = 1.00f;   // 投げ速度スケール

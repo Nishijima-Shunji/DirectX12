@@ -766,7 +766,7 @@ void FluidSystem::UpdateBlob(float dt)
 // 体積 [m^3] を中心XZにガウス分布で水面高さへ加算（HeightFieldモード用）
 void FluidSystem::DepositVolumeGaussian(const DirectX::XMFLOAT2& centerXZ, float volume, float sigma)
 {
-	// 粒子モードでは何もしない（HeightFieldが無い）
+	// HeightFieldの時だけ
 	if (m_mode != SimMode::Heightfield) return;
 
 	if (m_resolution <= 1 || m_cellDx <= 0.0f || m_cellDz <= 0.0f) return;
