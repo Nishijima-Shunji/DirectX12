@@ -17,9 +17,6 @@
 #include "Camera.h"
 #include "Engine.h"
 
-// ※コメントは分かりやすい日本語で記入。
-// 高さ場(従来) + 粒子(SPHライト) の2モードをサポート。
-
 class FluidSystem
 {
 public:
@@ -50,7 +47,7 @@ public:
     void UpdateGrab(const DirectX::XMFLOAT2& xz, float liftPerSec, float deltaTime);
     void EndGrab(const DirectX::XMFLOAT2& throwDirXZ, float throwSpeed);
 
-    // 水を“切る”：線上に連続で押し下げ
+    // 水を切る：線上に連続で押し下げ
     void CutWater(const DirectX::XMFLOAT2& xzFrom, const DirectX::XMFLOAT2& xzTo, float radius, float depth);
 
     // （オプション）粒子に直接インタラクション

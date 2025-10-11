@@ -157,12 +157,6 @@
       <Filter>ソース ファイル\Game</Filter>
     </ClCompile>
     <!-- ソリューションエクスプローラー整合性対応: 追加C++ソース -->
-    <ClCompile Include="SSFRRenderer.cpp">
-      <Filter>ソース ファイル\System</Filter>
-    </ClCompile>
-    <ClCompile Include="SSFRResources.cpp">
-      <Filter>ソース ファイル\System</Filter>
-    </ClCompile>
     <ClInclude Include="App.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
@@ -254,12 +248,6 @@
     <ClInclude Include="RandomUtil.h">
       <Filter>ヘッダー ファイル\System</Filter>
     </ClInclude>
-    <ClInclude Include="SSFRRenderer.h">
-      <Filter>ヘッダー ファイル\System</Filter>
-    </ClInclude>
-    <ClInclude Include="SSFRResources.h">
-      <Filter>ヘッダー ファイル\System</Filter>
-    </ClInclude>
     <ClCompile Include="FullscreenPSO.cpp">
       <Filter>ソース ファイル\System\PSO</Filter>
     </ClCompile>
@@ -296,37 +284,13 @@
       <Filter>リソース ファイル\ComputeShader</Filter>
     </FxCompile>
     <!-- ソリューションエクスプローラー整合性対応: 追加Computeシェーダー -->
-    <FxCompile Include="BilateralBlurCS_X.hlsl">
-      <Filter>リソース ファイル\ComputeShader</Filter>
-    </FxCompile>
-    <FxCompile Include="BilateralBlurCS_Y.hlsl">
-      <Filter>リソース ファイル\ComputeShader</Filter>
-    </FxCompile>
-    <FxCompile Include="AccumBillboardPS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
-    <FxCompile Include="AccumBillboardVS.hlsl">
-      <Filter>リソース ファイル\VertexShader</Filter>
-    </FxCompile>
-    <FxCompile Include="FullscreenVS.hlsl">
-      <Filter>リソース ファイル\VertexShader</Filter>
-    </FxCompile>
-    <FxCompile Include="BlurPS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
     <FxCompile Include="ColorPS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
-    <FxCompile Include="Composite.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
     <FxCompile Include="ColorOnlyPS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
     <!-- ソリューションエクスプローラー整合性対応: 追加Pixel/Vertexシェーダー -->
-    <FxCompile Include="CompositePS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
     <FxCompile Include="ParticlesDepthPS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
     </FxCompile>
@@ -338,12 +302,6 @@
     </FxCompile>
     <FxCompile Include="OceanPS.hlsl">
       <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
-    <FxCompile Include="ThicknessPS.hlsl">
-      <Filter>リソース ファイル\PixelShader</Filter>
-    </FxCompile>
-    <FxCompile Include="ThicknessVS.hlsl">
-      <Filter>リソース ファイル\VertexShader</Filter>
     </FxCompile>
     <FxCompile Include="PBFCS.hlsl">
       <Filter>リソース ファイル\ComputeShader</Filter>

@@ -39,7 +39,7 @@ bool FluidSystem::Init(ID3D12Device* device, const Bounds& bounds, size_t partic
 		return true;
 	}
 
-	// ---- 高さ場モード（従来どおり）----
+	// ---- 高さ場モード----
 	if (!BuildSimulationResources()) return false;
 	if (!BuildRenderResources())     return false;
 
@@ -48,7 +48,7 @@ bool FluidSystem::Init(ID3D12Device* device, const Bounds& bounds, size_t partic
 	return true;
 }
 
-// ====== 高さ場（従来） ======
+// 計算に必要なリソースを作成
 bool FluidSystem::BuildSimulationResources()
 {
 	const size_t total = (size_t)m_resolution * (size_t)m_resolution;
@@ -71,6 +71,7 @@ bool FluidSystem::BuildSimulationResources()
 	return true;
 }
 
+// 描画に必要なリソースを作成
 bool FluidSystem::BuildRenderResources()
 {
 	CD3DX12_ROOT_PARAMETER params[1] = {};
@@ -118,18 +119,21 @@ bool FluidSystem::BuildRenderResources()
 	return true;
 }
 
+// 初期状態にリセット
 void FluidSystem::ResetWaveState()
 {
 	std::fill(m_height.begin(), m_height.end(), 0.0f);
 	std::fill(m_velocity.begin(), m_velocity.end(), 0.0f);
 }
 
+// 
 void FluidSystem::ApplyPendingDrops()
 {
 	for (const auto& d : m_pendingDrops) ApplyDrop(d);
 	m_pendingDrops.clear();
 }
 
+// 
 void FluidSystem::ApplyDrop(const DropRequest& drop)
 {
 	float fx = std::clamp(drop.uv.x * float(m_resolution - 1), 0.0f, float(m_resolution - 1));
@@ -150,6 +154,7 @@ void FluidSystem::ApplyDrop(const DropRequest& drop)
 		}
 }
 
+// 水の計算
 void FluidSystem::StepSimulation(float deltaTime)
 {
 	const float gridWidth = m_bounds.max.x - m_bounds.min.x;
@@ -279,6 +284,7 @@ void FluidSystem::Draw(ID3D12GraphicsCommandList* cmd, const Camera& camera)
 	cmd->DrawIndexedInstanced((UINT)m_indices.size(), 1, 0, 0, 0);
 }
 
+// 壁による境界調整(水の大きさも変化)
 void FluidSystem::AdjustWall(const XMFLOAT3& direction, float amount)
 {
 	if (amount == 0.0f) return;
@@ -317,6 +323,7 @@ void FluidSystem::AdjustWall(const XMFLOAT3& direction, float amount)
 	if (m_mode == SimMode::Heightfield) UpdateVertexBuffer();
 }
 
+// 壁による境界調整(水は固定)
 void FluidSystem::AdjustWall(const DirectX::XMFLOAT3& direction, float amount, float deltaTime)
 {
 	if (amount == 0.0f) return;
@@ -350,6 +357,7 @@ void FluidSystem::AdjustWall(const DirectX::XMFLOAT3& direction, float amount, f
 	}
 }
 
+// レイと境界ボックスの交差判定
 bool FluidSystem::RayIntersectBounds(const XMFLOAT3& origin, const XMFLOAT3& direction, XMFLOAT3& hitPoint) const
 {
 	XMFLOAT3 dir = direction;
@@ -370,6 +378,7 @@ bool FluidSystem::RayIntersectBounds(const XMFLOAT3& origin, const XMFLOAT3& dir
 	return true;
 }
 
+// カメラ位置からの吸引・噴出リクエスト
 void FluidSystem::SetCameraLiftRequest(const XMFLOAT3& origin, const XMFLOAT3& direction, float deltaTime)
 {
 	XMFLOAT3 hit{}; if (!RayIntersectBounds(origin, direction, hit)) return;
@@ -390,6 +399,7 @@ void FluidSystem::SetCameraLiftRequest(const XMFLOAT3& origin, const XMFLOAT3& d
 }
 void FluidSystem::ClearCameraLiftRequest() { m_liftRequested = false; }
 
+// 壁の移動による波を発生
 void FluidSystem::ApplyWallImpulse(const Bounds& prev, const Bounds& curr, float dt)
 {
 	if (dt <= 0.0f || m_resolution <= 1 || m_cellDx <= 0.0f || m_cellDz <= 0.0f) return;
@@ -432,6 +442,7 @@ void FluidSystem::ApplyWallImpulse(const Bounds& prev, const Bounds& curr, float
 	}
 }
 
+// 円盤状の領域に波を発生（高さと速度）
 void FluidSystem::ApplyDiscImpulse(const XMFLOAT2& c, float radius, float addHeight, float addVel)
 {
 	if (m_resolution <= 1 || radius <= 0.0f) return;
@@ -457,6 +468,7 @@ void FluidSystem::ApplyDiscImpulse(const XMFLOAT2& c, float radius, float addHei
 		}
 }
 
+// ======= 水を操作系 =======
 void FluidSystem::BeginGrab(const XMFLOAT2& xz, float radius) { m_gatherActive = true; m_gatherCenter = xz; m_gatherRadius = radius; m_gatheredVolume = 0.0f; }
 void FluidSystem::UpdateGrab(const XMFLOAT2& xz, float liftPerSec, float dt) {
 	if (!m_gatherActive) return; m_gatherCenter = xz;
@@ -469,7 +481,6 @@ void FluidSystem::EndGrab(const XMFLOAT2& throwDirXZ, float throwSpeed)
 	XMVECTOR d = XMVector2Normalize(XMLoadFloat2(&throwDirXZ)); XMStoreFloat2(&p.vel, XMVectorScale(d, throwSpeed));
 	p.radius = m_packetDefaultRadius; p.amp = m_packetDefaultAmp; p.life = 1.2f; m_packets.push_back(p);
 }
-
 void FluidSystem::CutWater(const XMFLOAT2& a, const XMFLOAT2& b, float radius, float depth)
 {
 	const int N = 10;
@@ -480,8 +491,12 @@ void FluidSystem::CutWater(const XMFLOAT2& a, const XMFLOAT2& b, float radius, f
 	}
 }
 
+// ===========================
+
+// 波パケットと飛沫(まだ未実装：重すぎた為調整中)
 void FluidSystem::UpdateInteractions(float dt)
 {
+	// 波パケットと飛沫の更新
 	for (size_t i = 0; i < m_packets.size(); )
 	{
 		auto& p = m_packets[i];
@@ -491,6 +506,7 @@ void FluidSystem::UpdateInteractions(float dt)
 		p.amp *= std::pow(m_packetDecay, dt);
 		ApplyDiscImpulse(p.center, p.radius, 0.0f, +2.5f * p.amp);
 
+		// 飛沫生成
 		float dist = std::sqrt(p.vel.x * p.vel.x + p.vel.y * p.vel.y) * dt;
 		int spawnN = int(m_sprayRate * dist);
 		for (int n = 0; n < spawnN; ++n) {
@@ -509,6 +525,7 @@ void FluidSystem::UpdateInteractions(float dt)
 		if (p.life <= 0.0f || p.amp < 0.01f) m_packets.erase(m_packets.begin() + i); else ++i;
 	}
 
+	// 飛沫の更新
 	for (size_t i = 0; i < m_spray.size(); )
 	{
 		auto& s = m_spray[i];
@@ -684,9 +701,11 @@ void FluidSystem::UpdateParticles(float dt)
 	}
 }
 
-void FluidSystem::DrawParticles(ID3D12GraphicsCommandList*, const Camera&) { /* 可視化はGameSceneで */ }
+void FluidSystem::DrawParticles(ID3D12GraphicsCommandList*, const Camera&) {  }
 
-// 追加インタラクション（任意）
+// ===============================
+
+// 追加インタラクション
 void FluidSystem::ParticleAttractDisc(const XMFLOAT2& c, float r, float k, float dt) {
 	float r2 = r * r;
 	for (auto& p : m_particles) {
@@ -744,16 +763,16 @@ void FluidSystem::UpdateBlob(float dt)
 	}
 }
 
-// 体積 [m^3] を中心XZにガウス分布で水面高さへ加算（Heightfieldモード用）
+// 体積 [m^3] を中心XZにガウス分布で水面高さへ加算（HeightFieldモード用）
 void FluidSystem::DepositVolumeGaussian(const DirectX::XMFLOAT2& centerXZ, float volume, float sigma)
 {
-	// 粒子モードでは何もしない（高さ場が無い）
+	// 粒子モードでは何もしない（HeightFieldが無い）
 	if (m_mode != SimMode::Heightfield) return;
 
 	if (m_resolution <= 1 || m_cellDx <= 0.0f || m_cellDz <= 0.0f) return;
 	if (sigma <= 0.0f || std::abs(volume) < 1e-12f) return;
 
-	// 影響半径は 3σ 程度
+	// 影響半径は3σ程度
 	const float radius = 3.0f * sigma;
 	const float r2 = radius * radius;
 
@@ -800,7 +819,7 @@ void FluidSystem::DepositVolumeGaussian(const DirectX::XMFLOAT2& centerXZ, float
 		}
 }
 
-
+// 水関係の更新処理
 void FluidSystem::Update(float deltaTime)
 {
 	if (deltaTime <= 0.0f) return;
@@ -808,7 +827,6 @@ void FluidSystem::Update(float deltaTime)
 
 	if (m_mode == SimMode::Particles) {
 		UpdateParticles(deltaTime);
-		// しぶきやBlobは今は使わない／必要ならここで追加
 		return;
 	}
 

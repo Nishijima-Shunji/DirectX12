@@ -15,6 +15,7 @@
 
 using namespace DirectX;
 
+// 壁の情報(とりあえずでここに置く)
 namespace GameSceneDetail
 {
     struct WallVertex
@@ -25,8 +26,8 @@ namespace GameSceneDetail
 
     struct WallConstant
     {
-        XMFLOAT4X4 view; // ビュー行列（転置済み）
-        XMFLOAT4X4 proj; // プロジェクション行列（転置済み）
+        XMFLOAT4X4 view; // ビュー行列
+        XMFLOAT4X4 proj; // プロジェクション行列
     };
 
     // 透明な壁の描画を担当する補助クラス
@@ -83,6 +84,7 @@ namespace GameSceneDetail
             return true;
         }
 
+       // 壁の移動
         void Update(const FluidSystem::Bounds& bounds, const Camera& camera)
         {
             if (bounds.min.x != m_cachedBounds.min.x || bounds.min.y != m_cachedBounds.min.y ||
@@ -177,15 +179,18 @@ namespace GameSceneDetail
 
 using GameSceneDetail::TransparentWalls;
 
+// コンストラクタ
 GameScene::GameScene(Game* game)
     : BaseScene(game)
 {
+    // 水平面の大きさ
     m_initialBounds.min = XMFLOAT3(-20.0f, 0.0f, -20.0f);
     m_initialBounds.max = XMFLOAT3(20.0f, 2.5f, 20.0f);
 }
 
 GameScene::~GameScene() = default;
 
+// シーン初期化
 bool GameScene::Init()
 {
     auto* camera = new Camera();
@@ -216,10 +221,11 @@ bool GameScene::Init()
     return true;
 }
 
+// 水生成
 bool GameScene::RecreateFluid()
 {
     auto newFluid = std::make_unique<FluidSystem>();
-    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 100))
+    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 0))
     {
         OutputDebugStringA("FluidSystem recreate failed.\n"); // 失敗をデバッグ出力して原因調査しやすくする
         return false;
@@ -229,6 +235,7 @@ bool GameScene::RecreateFluid()
     return true;
 }
 
+// 視点の先にある水面のXZ座標を求める
 static bool RayHitWaterXZ(Camera& cam, float waterY, DirectX::XMFLOAT2& outXZ)
 {
     using namespace DirectX;
@@ -243,30 +250,9 @@ static bool RayHitWaterXZ(Camera& cam, float waterY, DirectX::XMFLOAT2& outXZ)
     return true;
 }
 
+// カメラ操作に応じて水面を持ち上げる
 void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
 {
-    //if (!m_fluid)
-    //{
-    //    return;
-    //}
-
-    //if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) == 0)
-    //{
-    //    m_fluid->ClearCameraLiftRequest(); // 入力が無い間は巻き上げ効果を解除
-    //    return;
-    //}
-
-    //XMVECTOR eye = camera.GetEyePos();
-    //XMVECTOR target = camera.GetTargetPos();
-    //XMVECTOR dir = XMVector3Normalize(XMVectorSubtract(target, eye));
-
-    //XMFLOAT3 origin{};
-    //XMFLOAT3 direction{};
-    //XMStoreFloat3(&origin, eye);
-    //XMStoreFloat3(&direction, dir);
-
-    //m_fluid->SetCameraLiftRequest(origin, direction, deltaTime); // 視線方向に沿った巻き上げを指示
-
     if (!m_fluid) return;
 
     using namespace DirectX;
@@ -275,7 +261,7 @@ void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
     const float kGrabRadius = 1.18f;   // 掴む円の半径[m]
     const float kLiftPerSec = 5.60f;   // 押下中に毎秒どれだけ持ち上げるか[m/s]
     const float kThrowScale = 1.00f;   // 投げ速度スケール
-    const float kMinThrowSpd = 0.2f;    // これ未満なら投げない[m/s]
+    const float kMinThrowSpd = 0.2f;   // これ未満なら投げない[m/s]
     // ---------------------------------------------
 
     // 関数内で状態を保持（簡単のためstatic使用）
@@ -361,6 +347,7 @@ void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
     m_fluid->UpdateGrab(hitXZ, /*liftPerSec*/ kLiftPerSec, deltaTime);
 }
 
+// 壁の押し引き、スライド操作
 void GameScene::HandleWallControl(Camera& camera, float deltaTime)
 {
     if (!(GetAsyncKeyState(VK_SPACE) & 0x8000))
