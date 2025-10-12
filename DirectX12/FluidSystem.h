@@ -13,6 +13,7 @@
 #include "ConstantBuffer.h"
 #include "RootSignature.h"
 #include "PipelineState.h"
+#include "FullscreenPSO.h"
 #include "VertexBuffer.h"
 #include "IndexBuffer.h"
 #include "Camera.h"
@@ -206,7 +207,7 @@ private:
     std::unique_ptr<PipelineState> m_particleDepthPSO;
     std::array<std::unique_ptr<ConstantBuffer>, Engine::FRAME_BUFFER_COUNT> m_particleDepthCB;
     std::unique_ptr<RootSignature> m_particleCompositeRoot;
-    std::unique_ptr<PipelineState> m_particleCompositePSO;
+    std::unique_ptr<FullscreenPSO> m_particleCompositePSO;
     std::array<std::unique_ptr<ConstantBuffer>, Engine::FRAME_BUFFER_COUNT> m_particleCompositeCB;
     ComPtr<ID3D12DescriptorHeap> m_particleRtvHeap;
     D3D12_CPU_DESCRIPTOR_HANDLE m_particleDepthRtv{};

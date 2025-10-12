@@ -253,32 +253,20 @@ bool FluidSystem::BuildParticleRenderResources()
                 return false;
         }
 
-        m_particleCompositePSO = std::make_unique<PipelineState>();
+        m_particleCompositePSO = std::make_unique<FullscreenPSO>();
         if (!m_particleCompositePSO) {
                 return false;
         }
-        m_particleCompositePSO->SetInputLayout({ nullptr, 0 });
         m_particleCompositePSO->SetRootSignature(m_particleCompositeRoot->Get());
-        m_particleCompositePSO->SetVS(L"ParticleCompositeVS.cso");
-        m_particleCompositePSO->SetPS(L"ParticleCompositePS.cso");
-        m_particleCompositePSO->SetDepthStencilFormat(DXGI_FORMAT_D32_FLOAT);
+        m_particleCompositePSO->SetShaders(L"ParticleCompositeVS.cso", L"ParticleCompositePS.cso");
+        m_particleCompositePSO->SetFormats(DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_D32_FLOAT);
+        m_particleCompositePSO->SetBlend(FullscreenPSO::Blend::Alpha);
+        m_particleCompositePSO->SetTopology(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 
-        // 半透明合成のためアルファブレンドを有効化
-        D3D12_BLEND_DESC blendDesc{};
-        blendDesc.AlphaToCoverageEnable = FALSE;
-        blendDesc.IndependentBlendEnable = FALSE;
-        auto& rtBlend = blendDesc.RenderTarget[0];
-        rtBlend.BlendEnable = TRUE;
-        rtBlend.SrcBlend = D3D12_BLEND_SRC_ALPHA;
-        rtBlend.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-        rtBlend.BlendOp = D3D12_BLEND_OP_ADD;
-        rtBlend.SrcBlendAlpha = D3D12_BLEND_ONE;
-        rtBlend.DestBlendAlpha = D3D12_BLEND_INV_SRC_ALPHA;
-        rtBlend.BlendOpAlpha = D3D12_BLEND_OP_ADD;
-        rtBlend.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-        m_particleCompositePSO->SetBlendState(blendDesc);
-
-        m_particleCompositePSO->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+        // SSFR合成はフルスクリーントライアングル描画なので既存クラスで十分
+        if (!m_particleCompositePSO->Create(m_device)) {
+                return false;
+        }
         if (!m_particleCompositePSO->IsValid()) {
                 return false;
         }
