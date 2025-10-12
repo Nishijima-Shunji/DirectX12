@@ -10,11 +10,13 @@ public:
 	bool IsValid();		// ɐǂԂ
 
 	void SetInputLayout(D3D12_INPUT_LAYOUT_DESC layout);            // ̓CAEgݒ
-	void SetRootSignature(ID3D12RootSignature* rootSignature);      // [gVOl`ݒ
-	void SetVS(std::wstring filePath);                                                      // VSシェーダーを設定
-	void SetPS(std::wstring filePath);                                                      // PSシェーダーを設定
-	void SetDepthStencilFormat(DXGI_FORMAT format);                                         // 深度ステンシルフォーマット設定
-	void Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);                                        // グラフィックスパイプラインを生成
+        void SetRootSignature(ID3D12RootSignature* rootSignature);      // [gVOl`ݒ
+        void SetVS(std::wstring filePath);                                                      // VSシェーダーを設定
+        void SetPS(std::wstring filePath);                                                      // PSシェーダーを設定
+        void SetDepthStencilFormat(DXGI_FORMAT format);                                         // 深度ステンシルフォーマット設定
+        void SetBlendState(const D3D12_BLEND_DESC& blend);                                      // ブレンド設定を上書き
+        void SetRenderTargetFormat(DXGI_FORMAT format);                                         // RTVフォーマット設定
+        void Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);                                        // グラフィックスパイプラインを生成
 	ID3D12PipelineState* Get();
 
 private:

@@ -97,6 +97,16 @@ void PipelineState::SetDepthStencilFormat(DXGI_FORMAT format)
     desc.DSVFormat = format; // フレームバッファの深度バッファ形式とPSOを揃える
 }
 
+void PipelineState::SetBlendState(const D3D12_BLEND_DESC& blend)
+{
+    desc.BlendState = blend;
+}
+
+void PipelineState::SetRenderTargetFormat(DXGI_FORMAT format)
+{
+    desc.RTVFormats[0] = format;
+}
+
 void PipelineState::Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE type)
 {
     desc.PrimitiveTopologyType = type;

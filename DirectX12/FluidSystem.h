@@ -9,6 +9,7 @@
 #include <cmath>
 #include <algorithm>
 
+#include "ComPtr.h"
 #include "ConstantBuffer.h"
 #include "RootSignature.h"
 #include "PipelineState.h"
@@ -16,6 +17,7 @@
 #include "IndexBuffer.h"
 #include "Camera.h"
 #include "Engine.h"
+#include "DescriptorHeap.h"
 
 class FluidSystem
 {
@@ -41,6 +43,7 @@ public:
 
     const Bounds& GetBounds() const { return m_bounds; }
     float GetWaterLevel() const { return m_waterLevel; }
+    SimMode GetMode() const { return m_mode; }
 
     // マウス等から呼ぶ（GameScene側でRay→XZ座標にして渡す）
     void BeginGrab(const DirectX::XMFLOAT2& xz, float radius);
@@ -129,6 +132,7 @@ private:
     // ===== 粒子（SPHライト） =====
     struct Particle { DirectX::XMFLOAT3 pos{ 0,0,0 }, vel{ 0,0,0 }; float density = 0.0f, pressure = 0.0f; };
     std::vector<Particle> m_particles;
+    struct ParticleInstanceGPU { DirectX::XMFLOAT3 pos; float radius; };
 
     // 空間ハッシュ
     std::unordered_map<long long, std::vector<int>> m_grid;
@@ -145,6 +149,8 @@ private:
     void ResolveWall(DirectX::XMFLOAT3& p, DirectX::XMFLOAT3& v, float restitution = 0.2f, float friction = 0.2f);
 
     void DrawParticles(ID3D12GraphicsCommandList* cmd, const Camera& cam);
+
+    bool BuildParticleRenderResources();
 
 private:
     // 共有
@@ -191,4 +197,20 @@ private:
     float m_stiffness = 3000.0f;  // 圧力係数
     float m_viscosity = 0.08f;    // 粘性
     float m_xsph = 0.05f;         // XSPH係数
+
+    // 粒子描画用リソース
+    std::unique_ptr<VertexBuffer> m_particleQuadVB;
+    std::unique_ptr<IndexBuffer>  m_particleQuadIB;
+    std::unique_ptr<VertexBuffer> m_particleInstanceVB;
+    std::unique_ptr<RootSignature> m_particleDepthRoot;
+    std::unique_ptr<PipelineState> m_particleDepthPSO;
+    std::array<std::unique_ptr<ConstantBuffer>, Engine::FRAME_BUFFER_COUNT> m_particleDepthCB;
+    std::unique_ptr<RootSignature> m_particleCompositeRoot;
+    std::unique_ptr<PipelineState> m_particleCompositePSO;
+    std::array<std::unique_ptr<ConstantBuffer>, Engine::FRAME_BUFFER_COUNT> m_particleCompositeCB;
+    ComPtr<ID3D12DescriptorHeap> m_particleRtvHeap;
+    D3D12_CPU_DESCRIPTOR_HANDLE m_particleDepthRtv{};
+    ComPtr<ID3D12Resource> m_particleDepthTexture;
+    DescriptorHandle* m_particleDepthSrv = nullptr;
+    D3D12_RESOURCE_STATES m_particleDepthState = D3D12_RESOURCE_STATE_COMMON;
 };

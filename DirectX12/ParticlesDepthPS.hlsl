@@ -15,13 +15,6 @@ struct PSInput
     float  radius   : TEXCOORD2; // 粒子半径[m]
 };
 
-float NormalizeDepth(float depthView)
-{
-    float nearZ = gClipZ.x;
-    float farZ = gClipZ.y;
-    return saturate((depthView - nearZ) / max(farZ - nearZ, 1e-6f));
-}
-
 float main(PSInput input) : SV_Target0
 {
     float2 disc = input.uv * 2.0f - 1.0f; // [-1,1]へ戻して円板上の座標を得る
@@ -35,5 +28,5 @@ float main(PSInput input) : SV_Target0
     float planar2 = r2 * radius * radius; // 平面上の距離^2
     float depthOffset = sqrt(max(radius * radius - planar2, 0.0f));
     float depthView = input.viewPos.z - depthOffset; // 球の前面深度
-    return NormalizeDepth(depthView);
+    return -depthView; // ビュー空間前方が負方向なので符号反転して線形深度として保存
 }

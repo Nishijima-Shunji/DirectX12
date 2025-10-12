@@ -179,6 +179,16 @@ namespace GameSceneDetail
 
 using GameSceneDetail::TransparentWalls;
 
+// キー押下を1度だけ検出する簡易ヘルパー
+static bool WasKeyPressed(int vk)
+{
+    static std::unordered_map<int, SHORT> s_prevState;
+    SHORT state = GetAsyncKeyState(vk);
+    bool pressed = (state & 0x8000) && !(s_prevState[vk] & 0x8000);
+    s_prevState[vk] = state;
+    return pressed;
+}
+
 // コンストラクタ
 GameScene::GameScene(Game* game)
     : BaseScene(game)
@@ -196,7 +206,7 @@ bool GameScene::Init()
     auto* camera = new Camera();
     g_Engine->RegisterObj<Camera>("Camera", camera);
 
-    if (!RecreateFluid())
+    if (!RecreateFluid(m_selectedMode))
     {
         return false; // 初期生成に失敗した場合はシーンの起動を中止
     }
@@ -224,16 +234,18 @@ bool GameScene::Init()
 }
 
 // 水生成
-bool GameScene::RecreateFluid()
+bool GameScene::RecreateFluid(FluidSystem::SimMode mode)
 {
     auto newFluid = std::make_unique<FluidSystem>();
-    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, 0))
+    size_t particleCount = (mode == FluidSystem::SimMode::Particles) ? m_particleSpawnCount : 0;
+    if (!newFluid || !newFluid->Init(g_Engine->Device(), m_initialBounds, particleCount))
     {
         OutputDebugStringA("FluidSystem recreate failed.\n");
         return false;
     }
 
     m_fluid = std::move(newFluid);
+    m_selectedMode = mode;
     return true;
 }
 
@@ -255,7 +267,7 @@ static bool RayHitWaterXZ(Camera& cam, float waterY, DirectX::XMFLOAT2& outXZ)
 // カメラ操作に応じて水面を持ち上げる
 void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
 {
-    if (!m_fluid) return;
+    if (!m_fluid || m_fluid->GetMode() != FluidSystem::SimMode::Heightfield) return;
 
     using namespace DirectX;
 
@@ -275,12 +287,7 @@ void GameScene::HandleCameraLift(Camera& camera, float deltaTime)
     const bool lmbDown = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
 
     // 現在の水位（FluidSystemに getter がある想定。なければ 0.0f などに置換）
-    const float waterY = 0.0f;
-#if 1
-        m_fluid->GetWaterLevel();
-#else
-        0.0f;
-#endif
+    const float waterY = m_fluid->GetWaterLevel();
 
     XMFLOAT2 hitXZ;
     const bool hit = RayHitWaterXZ(camera, waterY, hitXZ);
@@ -416,6 +423,16 @@ void GameScene::Update(float deltaTime)
     if (!camera)
     {
         return;
+    }
+
+    // 計算モードの切り替え入力（1:高さ場、2:粒子）
+    if (WasKeyPressed('1') && m_selectedMode != FluidSystem::SimMode::Heightfield)
+    {
+        RecreateFluid(FluidSystem::SimMode::Heightfield);
+    }
+    if (WasKeyPressed('2') && m_selectedMode != FluidSystem::SimMode::Particles)
+    {
+        RecreateFluid(FluidSystem::SimMode::Particles);
     }
 
     camera->Update(deltaTime);
