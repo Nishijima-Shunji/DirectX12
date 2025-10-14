@@ -131,9 +131,14 @@ private:
     float m_gatherRadius = 0.18f, m_gatherRingW = 0.20f, m_gatheredVolume = 0.0f, m_gatherRate = 0.015f;
 
     // ===== 粒子（SPHライト） =====
-    struct Particle { DirectX::XMFLOAT3 pos{ 0,0,0 }, vel{ 0,0,0 }; float density = 0.0f, pressure = 0.0f; };
+    struct Particle { 
+        DirectX::XMFLOAT3 pos{ 0,0,0 },vel{ 0,0,0 };
+        float density = 0.0f,pressure = 0.0f; };
     std::vector<Particle> m_particles;
-    struct ParticleInstanceGPU { DirectX::XMFLOAT3 pos; float radius; };
+    struct ParticleInstanceGPU {
+        DirectX::XMFLOAT3 pos;   // POSITION1（オフセット0）
+        float             radius;// TEXCOORD0（オフセット12）
+    };
 
     // 空間ハッシュ
     std::unordered_map<long long, std::vector<int>> m_grid;

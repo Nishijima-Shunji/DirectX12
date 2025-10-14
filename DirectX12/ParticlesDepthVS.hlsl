@@ -16,7 +16,7 @@ struct VSInput
 
 struct VSOutput
 {
-    float4 position : SV_Position;
+    float4 position : SV_POSITION;
     float3 viewPos  : TEXCOORD0;
     float2 uv       : TEXCOORD1;
     float  radius   : TEXCOORD2;

@@ -9,24 +9,25 @@
 using namespace DirectX;
 
 namespace {
-        constexpr XMFLOAT4 kSurfaceColor{ 0.0f, 0.45f, 0.8f, 0.9f };
-        constexpr float kCameraNear = 0.1f;
-        constexpr float kCameraFar = 1000.0f;
+	constexpr XMFLOAT4 kSurfaceColor{ 0.0f, 0.45f, 0.8f, 0.9f };
+	constexpr float kCameraNear = 0.1f;
+	constexpr float kCameraFar = 1000.0f;
 
-        struct ParticleDepthConstant
-        {
-                XMFLOAT4X4 view;
-                XMFLOAT4X4 proj;
-                XMFLOAT2 clipZ;
-                XMFLOAT2 pad;
-        };
+	struct ParticleDepthConstant
+	{
+		XMFLOAT4X4 view;
+		XMFLOAT4X4 proj;
+		XMFLOAT2 clipZ;
+		XMFLOAT2 pad;
+	};
 
-        struct ParticleCompositeConstant
-        {
-                XMFLOAT4 misc0; // x=1/width, y=1/height, z=半径, w=法線強調
-                XMFLOAT4 misc1; // x,y,z=流体色, w=不透明度基準
-                XMFLOAT4 misc2; // x,y,z=ライト方向, w=ハイライト硬さ
-        };
+	struct ParticleCompositeConstant
+	{
+		XMFLOAT4 misc0; // x=1/width, y=1/height, z=半径, w=法線強調
+		XMFLOAT4 misc1; // x,y,z=流体色, w=不透明度基準
+		XMFLOAT4 misc2; // x,y,z=ライト方向, w=ハイライト硬さ
+		XMFLOAT4 misc3; // x=FarClip, yzw=未使用
+	};
 }
 
 FluidSystem::FluidSystem() = default;
@@ -50,11 +51,11 @@ bool FluidSystem::Init(ID3D12Device* device, const Bounds& bounds, size_t partic
 	m_cellDx = (m_resolution > 1) ? gridWidth / float(m_resolution - 1) : 0.0f;
 	m_cellDz = (m_resolution > 1) ? gridDepth / float(m_resolution - 1) : 0.0f;
 
-        if (m_mode == SimMode::Particles) {
-                InitParticles(std::max(100, m_particleCap)); // 粒子スポーン
-                if (!BuildParticleRenderResources()) return false; // SSFR描画用リソース生成
-                return true;
-        }
+	if (m_mode == SimMode::Particles) {
+		InitParticles(std::max(100, m_particleCap)); // 粒子スポーン
+		if (!BuildParticleRenderResources()) return false; // SSFR描画用リソース生成
+		return true;
+	}
 
 	// ---- 高さ場モード----
 	if (!BuildSimulationResources()) return false;
@@ -90,195 +91,198 @@ bool FluidSystem::BuildSimulationResources()
 
 bool FluidSystem::BuildParticleRenderResources()
 {
-        // 既存リソースを初期化してから再構築する
-        m_particleQuadVB.reset();
-        m_particleQuadIB.reset();
-        m_particleInstanceVB.reset();
-        m_particleDepthRoot.reset();
-        m_particleDepthPSO.reset();
-        for (auto& cb : m_particleDepthCB) cb.reset();
-        m_particleCompositeRoot.reset();
-        m_particleCompositePSO.reset();
-        for (auto& cb : m_particleCompositeCB) cb.reset();
-        m_particleRtvHeap.Reset();
-        m_particleDepthTexture.Reset();
-        m_particleDepthSrv = nullptr;
-        m_particleDepthState = D3D12_RESOURCE_STATE_COMMON;
+	// 既存リソースを初期化してから再構築する
+	m_particleQuadVB.reset();
+	m_particleQuadIB.reset();
+	m_particleInstanceVB.reset();
+	m_particleDepthRoot.reset();
+	m_particleDepthPSO.reset();
+	for (auto& cb : m_particleDepthCB) cb.reset();
+	m_particleCompositeRoot.reset();
+	m_particleCompositePSO.reset();
+	for (auto& cb : m_particleCompositeCB) cb.reset();
+	m_particleRtvHeap.Reset();
+	m_particleDepthTexture.Reset();
+	m_particleDepthSrv = nullptr;
+	m_particleDepthState = D3D12_RESOURCE_STATE_COMMON;
 
-        if (!m_device || m_particleCap <= 0) {
-                return false;
-        }
+	if (!m_device || m_particleCap <= 0) {
+		return false;
+	}
 
-        // 画面に張り付けるビルボード頂点（4隅）
-        struct QuadVertex { XMFLOAT2 corner; };
-        const QuadVertex quad[4] = {
-                { XMFLOAT2(-1.0f, -1.0f) },
-                { XMFLOAT2( 1.0f, -1.0f) },
-                { XMFLOAT2( 1.0f,  1.0f) },
-                { XMFLOAT2(-1.0f,  1.0f) },
-        };
-        m_particleQuadVB = std::make_unique<VertexBuffer>(sizeof(quad), sizeof(QuadVertex), quad);
-        if (!m_particleQuadVB || !m_particleQuadVB->IsValid()) {
-                return false;
-        }
+	// 画面に張り付けるビルボード頂点（4隅）
+	struct QuadVertex { XMFLOAT2 corner; };
+	const QuadVertex quad[4] = {
+			{ XMFLOAT2(-1.0f, -1.0f) },
+			{ XMFLOAT2(1.0f, -1.0f) },
+			{ XMFLOAT2(1.0f,  1.0f) },
+			{ XMFLOAT2(-1.0f,  1.0f) },
+	};
+	m_particleQuadVB = std::make_unique<VertexBuffer>(sizeof(quad), sizeof(QuadVertex), quad);
+	if (!m_particleQuadVB || !m_particleQuadVB->IsValid()) {
+		return false;
+	}
 
-        const uint32_t quadIndices[6] = { 0,1,2, 0,2,3 };
-        m_particleQuadIB = std::make_unique<IndexBuffer>(sizeof(quadIndices), quadIndices);
-        if (!m_particleQuadIB || !m_particleQuadIB->IsValid()) {
-                return false;
-        }
+	const uint32_t quadIndices[6] = { 0,1,2, 0,2,3 };
+	m_particleQuadIB = std::make_unique<IndexBuffer>(sizeof(quadIndices), quadIndices);
+	if (!m_particleQuadIB || !m_particleQuadIB->IsValid()) {
+		return false;
+	}
 
-        // 粒子インスタンス用頂点バッファ（毎フレーム更新）
-        m_particleInstanceVB = std::make_unique<VertexBuffer>(sizeof(ParticleInstanceGPU) * (size_t)m_particleCap, sizeof(ParticleInstanceGPU), nullptr);
-        if (!m_particleInstanceVB || !m_particleInstanceVB->IsValid()) {
-                return false;
-        }
+	// 粒子インスタンス用頂点バッファ（毎フレーム更新）
+	m_particleInstanceVB = std::make_unique<VertexBuffer>(sizeof(ParticleInstanceGPU) * (size_t)m_particleCap, sizeof(ParticleInstanceGPU), nullptr);
+	if (!m_particleInstanceVB || !m_particleInstanceVB->IsValid()) {
+		return false;
+	}
 
-        // 深度パス用ルートシグネチャ
-        CD3DX12_ROOT_PARAMETER depthParams[1];
-        depthParams[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_ALL);
+	// 深度パス用ルートシグネチャ
+	CD3DX12_ROOT_PARAMETER depthParams[1];
+	depthParams[0].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_ALL);
 
-        D3D12_ROOT_SIGNATURE_DESC depthDesc{};
-        depthDesc.NumParameters = _countof(depthParams);
-        depthDesc.pParameters = depthParams;
-        depthDesc.NumStaticSamplers = 0;
-        depthDesc.pStaticSamplers = nullptr;
-        depthDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+	D3D12_ROOT_SIGNATURE_DESC depthDesc{};
+	depthDesc.NumParameters = _countof(depthParams);
+	depthDesc.pParameters = depthParams;
+	depthDesc.NumStaticSamplers = 0;
+	depthDesc.pStaticSamplers = nullptr;
+	depthDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-        m_particleDepthRoot = std::make_unique<RootSignature>();
-        if (!m_particleDepthRoot || !m_particleDepthRoot->Init(depthDesc) || !m_particleDepthRoot->IsValid()) {
-                return false;
-        }
+	m_particleDepthRoot = std::make_unique<RootSignature>();
+	if (!m_particleDepthRoot || !m_particleDepthRoot->Init(depthDesc) || !m_particleDepthRoot->IsValid()) {
+		return false;
+	}
 
-        // 深度パイプラインステート
-        m_particleDepthPSO = std::make_unique<PipelineState>();
-        if (!m_particleDepthPSO) {
-                return false;
-        }
+	// 深度パイプラインステート
+	m_particleDepthPSO = std::make_unique<PipelineState>();
+	if (!m_particleDepthPSO) {
+		return false;
+	}
 
-        D3D12_INPUT_ELEMENT_DESC depthLayout[] = {
-                { "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT,    0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,   0 },
-                { "POSITION", 1, DXGI_FORMAT_R32G32B32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
-                { "TEXCOORD", 0, DXGI_FORMAT_R32_FLOAT,       1, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
-        };
-        m_particleDepthPSO->SetInputLayout({ depthLayout, _countof(depthLayout) });
-        m_particleDepthPSO->SetRootSignature(m_particleDepthRoot->Get());
-        m_particleDepthPSO->SetVS(L"ParticlesDepthVS.cso");
-        m_particleDepthPSO->SetPS(L"ParticlesDepthPS.cso");
-        m_particleDepthPSO->SetDepthStencilFormat(DXGI_FORMAT_UNKNOWN); // 深度バッファ非使用
-        m_particleDepthPSO->SetRenderTargetFormat(DXGI_FORMAT_R32_FLOAT);
-        m_particleDepthPSO->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-        if (!m_particleDepthPSO->IsValid()) {
-                return false;
-        }
+	D3D12_INPUT_ELEMENT_DESC depthLayout[] = {
+		// per-vertex (slot 0)
+		{ "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		// per-instance (slot 1)
+		{ "POSITION", 1, DXGI_FORMAT_R32G32B32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32_FLOAT,       1, sizeof(float) * 3, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
+	};
+	m_particleDepthPSO->SetInputLayout({ depthLayout, _countof(depthLayout) });
 
-        for (auto& cb : m_particleDepthCB) {
-                cb = std::make_unique<ConstantBuffer>(sizeof(ParticleDepthConstant));
-                if (!cb || !cb->IsValid()) {
-                        return false;
-                }
-        }
+	m_particleDepthPSO->SetRootSignature(m_particleDepthRoot->Get());
+	m_particleDepthPSO->SetVS(L"ParticlesDepthVS.cso");
+	m_particleDepthPSO->SetPS(L"ParticlesDepthPS.cso");
+	m_particleDepthPSO->SetDepthStencilFormat(DXGI_FORMAT_UNKNOWN); // 深度バッファ非使用
+	m_particleDepthPSO->SetRenderTargetFormat(DXGI_FORMAT_R32_FLOAT);
+	m_particleDepthPSO->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+	if (!m_particleDepthPSO->IsValid()) {
+		return false;
+	}
 
-        // 深度結果を書き込むレンダーターゲット
-        const UINT width = std::max(1u, g_Engine->FrameBufferWidth());
-        const UINT height = std::max(1u, g_Engine->FrameBufferHeight());
+	for (auto& cb : m_particleDepthCB) {
+		cb = std::make_unique<ConstantBuffer>(sizeof(ParticleDepthConstant));
+		if (!cb || !cb->IsValid()) {
+			return false;
+		}
+	}
 
-        CD3DX12_RESOURCE_DESC depthTexDesc = CD3DX12_RESOURCE_DESC::Tex2D(
-                DXGI_FORMAT_R32_FLOAT, width, height, 1, 1, 1, 0,
-                D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
+	// 深度結果を書き込むレンダーターゲット
+	const UINT width = std::max(1u, g_Engine->FrameBufferWidth());
+	const UINT height = std::max(1u, g_Engine->FrameBufferHeight());
 
-        D3D12_CLEAR_VALUE clearValue{};
-        clearValue.Format = DXGI_FORMAT_R32_FLOAT;
-        clearValue.Color[0] = 0.0f; // 深度テクスチャ初期値
+	CD3DX12_RESOURCE_DESC depthTexDesc = CD3DX12_RESOURCE_DESC::Tex2D(
+		DXGI_FORMAT_R32_FLOAT, width, height, 1, 1, 1, 0,
+		D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET);
 
-        auto heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-        HRESULT hr = m_device->CreateCommittedResource(
-                &heapProp,
-                D3D12_HEAP_FLAG_NONE,
-                &depthTexDesc,
-                D3D12_RESOURCE_STATE_RENDER_TARGET,
-                &clearValue,
-                IID_PPV_ARGS(m_particleDepthTexture.ReleaseAndGetAddressOf()));
-        if (FAILED(hr)) {
-                return false;
-        }
-        m_particleDepthState = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	D3D12_CLEAR_VALUE clearValue{};
+	clearValue.Format = DXGI_FORMAT_R32_FLOAT;
+	clearValue.Color[0] = kCameraFar; // 深度テクスチャ初期値
 
-        // RTVヒープを粒子専用で確保
-        D3D12_DESCRIPTOR_HEAP_DESC rtvDesc{};
-        rtvDesc.NumDescriptors = 1;
-        rtvDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-        rtvDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-        hr = m_device->CreateDescriptorHeap(&rtvDesc, IID_PPV_ARGS(m_particleRtvHeap.ReleaseAndGetAddressOf()));
-        if (FAILED(hr)) {
-                return false;
-        }
-        m_particleDepthRtv = m_particleRtvHeap->GetCPUDescriptorHandleForHeapStart();
-        m_device->CreateRenderTargetView(m_particleDepthTexture.Get(), nullptr, m_particleDepthRtv);
+	auto heapProp = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	HRESULT hr = m_device->CreateCommittedResource(
+		&heapProp,
+		D3D12_HEAP_FLAG_NONE,
+		&depthTexDesc,
+		D3D12_RESOURCE_STATE_RENDER_TARGET,
+		&clearValue,
+		IID_PPV_ARGS(m_particleDepthTexture.ReleaseAndGetAddressOf()));
+	if (FAILED(hr)) {
+		return false;
+	}
+	m_particleDepthState = D3D12_RESOURCE_STATE_RENDER_TARGET;
 
-        // SRV登録
-        if (!g_Engine->CbvSrvUavHeap()) {
-                return false;
-        }
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-        srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Texture2D.MipLevels = 1;
-        m_particleDepthSrv = g_Engine->CbvSrvUavHeap()->Register(m_particleDepthTexture.Get(), srvDesc);
-        if (!m_particleDepthSrv) {
-                return false;
-        }
+	// RTVヒープを粒子専用で確保
+	D3D12_DESCRIPTOR_HEAP_DESC rtvDesc{};
+	rtvDesc.NumDescriptors = 1;
+	rtvDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	rtvDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	hr = m_device->CreateDescriptorHeap(&rtvDesc, IID_PPV_ARGS(m_particleRtvHeap.ReleaseAndGetAddressOf()));
+	if (FAILED(hr)) {
+		return false;
+	}
+	m_particleDepthRtv = m_particleRtvHeap->GetCPUDescriptorHandleForHeapStart();
+	m_device->CreateRenderTargetView(m_particleDepthTexture.Get(), nullptr, m_particleDepthRtv);
 
-        // 合成パス用ルートシグネチャ
-        CD3DX12_DESCRIPTOR_RANGE range{};
-        range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+	// SRV登録
+	if (!g_Engine->CbvSrvUavHeap()) {
+		return false;
+	}
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
+	srvDesc.Format = DXGI_FORMAT_R32_FLOAT;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Texture2D.MipLevels = 1;
+	m_particleDepthSrv = g_Engine->CbvSrvUavHeap()->Register(m_particleDepthTexture.Get(), srvDesc);
+	if (!m_particleDepthSrv) {
+		return false;
+	}
 
-        CD3DX12_ROOT_PARAMETER compParams[2];
-        compParams[0].InitAsDescriptorTable(1, &range, D3D12_SHADER_VISIBILITY_PIXEL);
-        compParams[1].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
+	// 合成パス用ルートシグネチャ
+	CD3DX12_DESCRIPTOR_RANGE range{};
+	range.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
-        CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT,
-                D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
+	CD3DX12_ROOT_PARAMETER compParams[2];
+	compParams[0].InitAsDescriptorTable(1, &range, D3D12_SHADER_VISIBILITY_PIXEL);
+	compParams[1].InitAsConstantBufferView(0, 0, D3D12_SHADER_VISIBILITY_PIXEL);
 
-        D3D12_ROOT_SIGNATURE_DESC compDesc{};
-        compDesc.NumParameters = _countof(compParams);
-        compDesc.pParameters = compParams;
-        compDesc.NumStaticSamplers = 1;
-        compDesc.pStaticSamplers = &sampler;
-        compDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+	CD3DX12_STATIC_SAMPLER_DESC sampler(0, D3D12_FILTER_MIN_MAG_LINEAR_MIP_POINT,
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP);
 
-        m_particleCompositeRoot = std::make_unique<RootSignature>();
-        if (!m_particleCompositeRoot || !m_particleCompositeRoot->Init(compDesc) || !m_particleCompositeRoot->IsValid()) {
-                return false;
-        }
+	D3D12_ROOT_SIGNATURE_DESC compDesc{};
+	compDesc.NumParameters = _countof(compParams);
+	compDesc.pParameters = compParams;
+	compDesc.NumStaticSamplers = 1;
+	compDesc.pStaticSamplers = &sampler;
+	compDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
 
-        m_particleCompositePSO = std::make_unique<FullscreenPSO>();
-        if (!m_particleCompositePSO) {
-                return false;
-        }
-        m_particleCompositePSO->SetRootSignature(m_particleCompositeRoot->Get());
-        m_particleCompositePSO->SetShaders(L"ParticleCompositeVS.cso", L"ParticleCompositePS.cso");
-        m_particleCompositePSO->SetFormats(DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_D32_FLOAT);
-        m_particleCompositePSO->SetBlend(FullscreenPSO::Blend::Alpha);
-        m_particleCompositePSO->SetTopology(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+	m_particleCompositeRoot = std::make_unique<RootSignature>();
+	if (!m_particleCompositeRoot || !m_particleCompositeRoot->Init(compDesc) || !m_particleCompositeRoot->IsValid()) {
+		return false;
+	}
 
-        // SSFR合成はフルスクリーントライアングル描画なので既存クラスで十分
-        if (!m_particleCompositePSO->Create(m_device)) {
-                return false;
-        }
-        if (!m_particleCompositePSO->IsValid()) {
-                return false;
-        }
+	m_particleCompositePSO = std::make_unique<FullscreenPSO>();
+	if (!m_particleCompositePSO) {
+		return false;
+	}
+	m_particleCompositePSO->SetRootSignature(m_particleCompositeRoot->Get());
+	m_particleCompositePSO->SetShaders(L"ParticleCompositeVS.cso", L"ParticleCompositePS.cso");
+	m_particleCompositePSO->SetFormats(DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_D32_FLOAT);
+	m_particleCompositePSO->SetBlend(FullscreenPSO::Blend::Alpha);
+	m_particleCompositePSO->SetTopology(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
 
-        for (auto& cb : m_particleCompositeCB) {
-                cb = std::make_unique<ConstantBuffer>(sizeof(ParticleCompositeConstant));
-                if (!cb || !cb->IsValid()) {
-                        return false;
-                }
-        }
+	// SSFR合成はフルスクリーントライアングル描画なので既存クラスで十分
+	if (!m_particleCompositePSO->Create(m_device)) {
+		return false;
+	}
+	if (!m_particleCompositePSO->IsValid()) {
+		return false;
+	}
 
-        return true;
+	for (auto& cb : m_particleCompositeCB) {
+		cb = std::make_unique<ConstantBuffer>(sizeof(ParticleCompositeConstant));
+		if (!cb || !cb->IsValid()) {
+			return false;
+		}
+	}
+
+	return true;
 }
 
 // 描画に必要なリソースを作成
@@ -913,113 +917,160 @@ void FluidSystem::UpdateParticles(float dt)
 
 void FluidSystem::DrawParticles(ID3D12GraphicsCommandList* cmd, const Camera& cam)
 {
-        if (!cmd || !m_particleDepthPSO || !m_particleDepthPSO->IsValid() ||
-                !m_particleCompositePSO || !m_particleCompositePSO->IsValid()) {
-                return;
-        }
+	if (!cmd || !m_particleDepthPSO || !m_particleDepthPSO->IsValid() ||
+		!m_particleCompositePSO || !m_particleCompositePSO->IsValid()) {
+		return;
+	}
 
-        const UINT particleCount = static_cast<UINT>(m_particles.size());
-        if (particleCount == 0) {
-                return;
-        }
+	const UINT particleCount = static_cast<UINT>(m_particles.size());
+	const UINT capacity = static_cast<UINT>(m_particleCap);
+	const UINT instCount = std::min(particleCount, capacity);
 
-        if (!m_particleInstanceVB || !m_particleQuadVB || !m_particleQuadIB || !m_particleDepthSrv) {
-                return;
-        }
+	char s[128];
+	sprintf_s(s, "[DrawParticles] particle=%u cap=%u inst=%u\n", particleCount, capacity, instCount);
+	OutputDebugStringA(s);
+	if (instCount == 0) return;
 
-        // インスタンスバッファへ粒子中心と半径を書き込む
-        if (auto* resource = m_particleInstanceVB->GetResource()) {
-                ParticleInstanceGPU* mapped = nullptr;
-                if (SUCCEEDED(resource->Map(0, nullptr, reinterpret_cast<void**>(&mapped)))) {
-                        for (UINT i = 0; i < particleCount; ++i) {
-                                mapped[i].pos = m_particles[i].pos;
-                                mapped[i].radius = m_particleRadius;
-                        }
-                        resource->Unmap(0, nullptr);
-                }
-        }
+	if (!m_particleInstanceVB || !m_particleQuadVB || !m_particleQuadIB || !m_particleDepthSrv) {
+		return;
+	}
+	
+	// インスタンスバッファへ粒子中心と半径を書き込む
+	if (auto* resource = m_particleInstanceVB->GetResource()) {
+		ParticleInstanceGPU* mapped = nullptr;
+		if (SUCCEEDED(resource->Map(0, nullptr, reinterpret_cast<void**>(&mapped)))) {
+			for (UINT i = 0; i < instCount; ++i) {
+				mapped[i].pos = m_particles[i].pos;
+				mapped[i].radius = m_particleRadius;
 
-        UINT frameIndex = g_Engine->CurrentBackBufferIndex();
-        auto& depthCB = m_particleDepthCB[frameIndex];
-        auto& compCB = m_particleCompositeCB[frameIndex];
-        if (!depthCB || !compCB) {
-                return;
-        }
+				
+			}
+			if (instCount > 0) {
+				// カメラ原点付近、少し大きめ
+				mapped[0].pos = { 0.0f, m_bounds.min.y + 0.3f, 0.0f };
+				mapped[0].radius = std::max(0.05f, m_particleRadius * 2.0f);
+			}
+			resource->Unmap(0, nullptr);
+		}
+	}
 
-        // 深度描画用定数バッファ更新
-        if (auto* constants = depthCB->GetPtr<ParticleDepthConstant>()) {
-                XMStoreFloat4x4(&constants->view, XMMatrixTranspose(cam.GetViewMatrix()));
-                XMStoreFloat4x4(&constants->proj, XMMatrixTranspose(cam.GetProjMatrix()));
-                constants->clipZ = XMFLOAT2(kCameraNear, kCameraFar);
-                constants->pad = XMFLOAT2(0.0f, 0.0f);
-        }
+	UINT frameIndex = g_Engine->CurrentBackBufferIndex();
+	auto& depthCB = m_particleDepthCB[frameIndex];
+	auto& compCB = m_particleCompositeCB[frameIndex];
+	if (!depthCB || !compCB) {
+		return;
+	}
 
-        // 合成用定数バッファ更新
-        const float invWidth = 1.0f / std::max(1u, g_Engine->FrameBufferWidth());
-        const float invHeight = 1.0f / std::max(1u, g_Engine->FrameBufferHeight());
-        if (auto* constants = compCB->GetPtr<ParticleCompositeConstant>()) {
-                constants->misc0 = XMFLOAT4(invWidth, invHeight, m_particleRadius, m_particleRadius * 12.0f);
-                constants->misc1 = XMFLOAT4(kSurfaceColor.x, kSurfaceColor.y, kSurfaceColor.z, 0.65f);
-                constants->misc2 = XMFLOAT4(0.25f, 0.85f, -0.35f, 48.0f);
-        }
+	// 深度描画用定数バッファ更新
+	if (auto* constants = depthCB->GetPtr<ParticleDepthConstant>()) {
+		XMStoreFloat4x4(&constants->view, XMMatrixTranspose(cam.GetViewMatrix()));
+		XMStoreFloat4x4(&constants->proj, XMMatrixTranspose(cam.GetProjMatrix()));
+		constants->clipZ = XMFLOAT2(kCameraNear, kCameraFar);
+		constants->pad = XMFLOAT2(0.0f, 0.0f);
+	}
 
-        // 深度テクスチャをレンダーターゲットへ遷移
-        if (m_particleDepthTexture && m_particleDepthState != D3D12_RESOURCE_STATE_RENDER_TARGET) {
-                auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-                        m_particleDepthTexture.Get(),
-                        m_particleDepthState,
-                        D3D12_RESOURCE_STATE_RENDER_TARGET);
-                cmd->ResourceBarrier(1, &barrier);
-                m_particleDepthState = D3D12_RESOURCE_STATE_RENDER_TARGET;
-        }
+	// 合成用定数バッファ更新
+	const float invWidth = 1.0f / std::max(1u, g_Engine->FrameBufferWidth());
+	const float invHeight = 1.0f / std::max(1u, g_Engine->FrameBufferHeight());
+	if (auto* constants = compCB->GetPtr<ParticleCompositeConstant>()) {
+		constants->misc0 = XMFLOAT4(invWidth, invHeight, m_particleRadius, m_particleRadius * 12.0f);
+		constants->misc1 = XMFLOAT4(kSurfaceColor.x, kSurfaceColor.y, kSurfaceColor.z, 0.65f);
+		constants->misc2 = XMFLOAT4(0.25f, 0.85f, -0.35f, 48.0f);
+		constants->misc3 = XMFLOAT4(kCameraFar, 0, 0, 0); // FarClip
+	}
 
-        // 深度パス描画
-        cmd->OMSetRenderTargets(1, &m_particleDepthRtv, FALSE, nullptr);
-        const float clearColor[4] = { 0.0f,0.0f,0.0f,0.0f };
-        cmd->ClearRenderTargetView(m_particleDepthRtv, clearColor, 0, nullptr);
+	// 深度テクスチャをレンダーターゲットへ遷移
+	if (m_particleDepthTexture && m_particleDepthState != D3D12_RESOURCE_STATE_RENDER_TARGET) {
+		auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_particleDepthTexture.Get(),
+			m_particleDepthState,
+			D3D12_RESOURCE_STATE_RENDER_TARGET);
+		cmd->ResourceBarrier(1, &barrier);
+		m_particleDepthState = D3D12_RESOURCE_STATE_RENDER_TARGET;
+	}
 
-        cmd->SetGraphicsRootSignature(m_particleDepthRoot->Get());
-        cmd->SetPipelineState(m_particleDepthPSO->Get());
-        cmd->SetGraphicsRootConstantBufferView(0, depthCB->GetAddress());
+	{
+		// 深度RTがバックバッファと同サイズならこれでOK
+		D3D12_VIEWPORT vp{};
+		vp.TopLeftX = 0.0f; vp.TopLeftY = 0.0f;
+		vp.Width = float(std::max(1u, g_Engine->FrameBufferWidth()));
+		vp.Height = float(std::max(1u, g_Engine->FrameBufferHeight()));
+		vp.MinDepth = 0.0f; vp.MaxDepth = 1.0f;
 
-        D3D12_VERTEX_BUFFER_VIEW vbViews[2];
-        vbViews[0] = m_particleQuadVB->View();
-        vbViews[1] = m_particleInstanceVB->View();
-        vbViews[1].SizeInBytes = sizeof(ParticleInstanceGPU) * particleCount; // 無駄な読みを避けるため実サイズ指定
-        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmd->IASetVertexBuffers(0, 2, vbViews);
-        auto ibView = m_particleQuadIB->View();
-        cmd->IASetIndexBuffer(&ibView);
-        cmd->DrawIndexedInstanced(6, particleCount, 0, 0, 0);
+		D3D12_RECT sc{ 0, 0, (LONG)vp.Width, (LONG)vp.Height };
+		cmd->RSSetViewports(1, &vp);
+		cmd->RSSetScissorRects(1, &sc);
+	}
 
-        // 深度テクスチャをシェーダーリソースへ遷移
-        if (m_particleDepthTexture && m_particleDepthState != D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) {
-                auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-                        m_particleDepthTexture.Get(),
-                        m_particleDepthState,
-                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-                cmd->ResourceBarrier(1, &barrier);
-                m_particleDepthState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-        }
+	// 深度パス描画
+	cmd->OMSetRenderTargets(1, &m_particleDepthRtv, FALSE, nullptr);
+	const float clearColor[4] = { kCameraFar, 0, 0, 0 };
+	cmd->ClearRenderTargetView(m_particleDepthRtv, clearColor, 0, nullptr);
 
-        // バックバッファへ戻して合成パスを実行
-        auto backRtv = g_Engine->CurrentBackBufferView();
-        auto dsv = g_Engine->DepthStencilView();
-        cmd->OMSetRenderTargets(1, &backRtv, FALSE, &dsv);
+	cmd->SetGraphicsRootSignature(m_particleDepthRoot->Get());
+	cmd->SetPipelineState(m_particleDepthPSO->Get());
+	cmd->SetGraphicsRootConstantBufferView(0, depthCB->GetAddress());
 
-        auto* srvHeap = g_Engine->CbvSrvUavHeap();
-        if (!srvHeap) {
-                return;
-        }
-        ID3D12DescriptorHeap* heaps[] = { srvHeap->GetHeap() };
-        cmd->SetDescriptorHeaps(1, heaps);
 
-        cmd->SetGraphicsRootSignature(m_particleCompositeRoot->Get());
-        cmd->SetPipelineState(m_particleCompositePSO->Get());
-        cmd->SetGraphicsRootDescriptorTable(0, m_particleDepthSrv->HandleGPU);
-        cmd->SetGraphicsRootConstantBufferView(1, compCB->GetAddress());
-        cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        cmd->DrawInstanced(3, 1, 0, 0);
+	D3D12_VERTEX_BUFFER_VIEW vbViews[2];
+	vbViews[0] = m_particleQuadVB->View();
+	vbViews[1] = m_particleInstanceVB->View();
+	vbViews[1].SizeInBytes = sizeof(ParticleInstanceGPU) * instCount; // 無駄な読みを避けるため実サイズ指定
+
+	vbViews[1].StrideInBytes = sizeof(ParticleInstanceGPU);
+	vbViews[1].SizeInBytes = sizeof(ParticleInstanceGPU) * instCount;
+
+	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	cmd->IASetVertexBuffers(0, 2, vbViews);
+	auto ibView = m_particleQuadIB->View();
+	cmd->IASetIndexBuffer(&ibView);
+	cmd->DrawIndexedInstanced(6, instCount, 0, 0, 0);
+
+	// 深度テクスチャをシェーダーリソースへ遷移
+	if (m_particleDepthTexture && m_particleDepthState != D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE) {
+		auto barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_particleDepthTexture.Get(),
+			m_particleDepthState,
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		cmd->ResourceBarrier(1, &barrier);
+		m_particleDepthState = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+	}
+
+	// バックバッファへ戻して合成パスを実行
+	auto backRtv = g_Engine->CurrentBackBufferView();
+	auto dsv = g_Engine->DepthStencilView();
+	cmd->OMSetRenderTargets(1, &backRtv, FALSE, &dsv);
+
+	{
+		const UINT w = std::max(1u, g_Engine->FrameBufferWidth());
+		const UINT h = std::max(1u, g_Engine->FrameBufferHeight());
+
+		D3D12_VIEWPORT vp{};
+		vp.TopLeftX = 0.0f;
+		vp.TopLeftY = 0.0f;
+		vp.Width = static_cast<float>(w);
+		vp.Height = static_cast<float>(h);
+		vp.MinDepth = 0.0f;
+		vp.MaxDepth = 1.0f;
+
+		D3D12_RECT sc{ 0, 0, static_cast<LONG>(w), static_cast<LONG>(h) };
+		cmd->RSSetViewports(1, &vp);
+		cmd->RSSetScissorRects(1, &sc);
+	}
+
+	auto* srvHeap = g_Engine->CbvSrvUavHeap();
+	if (!srvHeap) {
+		return;
+	}
+	ID3D12DescriptorHeap* heaps[] = { srvHeap->GetHeap() };
+	cmd->SetDescriptorHeaps(1, heaps);
+
+	cmd->SetGraphicsRootSignature(m_particleCompositeRoot->Get());
+	cmd->SetPipelineState(m_particleCompositePSO->Get());
+	cmd->SetGraphicsRootDescriptorTable(0, m_particleDepthSrv->HandleGPU);
+	cmd->SetGraphicsRootConstantBufferView(1, compCB->GetAddress());
+	cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	cmd->DrawInstanced(3, 1, 0, 0);
 }
 
 // ===============================

@@ -28,7 +28,7 @@ private:
     FluidSystem::Bounds m_initialBounds{}; // 初期境界情報
     float m_wallMoveSpeed = 1.5f;          // 壁移動速度
     FluidSystem::SimMode m_selectedMode = FluidSystem::SimMode::Heightfield; // 現在の計算モード
-    size_t m_particleSpawnCount = 4000;    // 粒子モード時の生成数
+    size_t m_particleSpawnCount = 100;    // 粒子モード時の生成数
     void HandleWallControl(Camera& camera, float deltaTime);
     void HandleCameraLift(Camera& camera, float deltaTime); // カメラから粒子を巻き上げる入力を監視
     bool RecreateFluid(FluidSystem::SimMode mode); // 流体システムを再生成

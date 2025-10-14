@@ -1,28 +1,28 @@
 // スクリーンスペース流体レンダリング用の合成ピクセルシェーダー。
 Texture2D<float> gDepthTex : register(t0);
-SamplerState gLinearClamp  : register(s0);
+SamplerState gLinearClamp : register(s0);
 
 cbuffer CompositeCB : register(b0)
 {
     float4 misc0; // x=1/width, y=1/height, z=半径, w=法線強調
     float4 misc1; // x,y,z=流体色, w=不透明度基準
     float4 misc2; // x,y,z=ライト方向, w=ハイライト硬さ
+    float4 misc3; // x=FarClip
 };
+
 
 struct PSInput
 {
     float4 position : SV_POSITION;
-    float2 uv       : TEXCOORD0;
+    float2 uv : TEXCOORD0;
 };
 
 float4 main(PSInput input) : SV_TARGET
 {
     float depthCenter = gDepthTex.SampleLevel(gLinearClamp, input.uv, 0);
-    if (depthCenter <= 0.0f)
-    {
-        // 深度が無い画素はそのまま透過
-        return float4(0.0f, 0.0f, 0.0f, 0.0f);
-    }
+    if (depthCenter >= (misc3.x - 1e-3f))
+        discard;
+
 
     float2 invScreen = misc0.xy;
     float radius = misc0.z;
@@ -38,17 +38,17 @@ float4 main(PSInput input) : SV_TARGET
     float depthUp    = gDepthTex.SampleLevel(gLinearClamp, input.uv - float2(0.0f, invScreen.y), 0);
     float depthDown  = gDepthTex.SampleLevel(gLinearClamp, input.uv + float2(0.0f, invScreen.y), 0);
 
-    depthRight = (depthRight <= 0.0f) ? depthCenter : depthRight;
-    depthLeft  = (depthLeft  <= 0.0f) ? depthCenter : depthLeft;
-    depthUp    = (depthUp    <= 0.0f) ? depthCenter : depthUp;
-    depthDown  = (depthDown  <= 0.0f) ? depthCenter : depthDown;
+    depthRight = (depthRight >= (misc3.x - 1e-3f)) ? depthCenter : depthRight;
+    depthLeft  = (depthLeft >= (misc3.x - 1e-3f)) ? depthCenter : depthLeft;
+    depthUp    = (depthUp >= (misc3.x - 1e-3f)) ? depthCenter : depthUp;
+    depthDown  = (depthDown >= (misc3.x - 1e-3f)) ? depthCenter : depthDown;
 
-    float dx = (depthRight - depthLeft) * 0.5f;
-    float dy = (depthDown - depthUp) * 0.5f;
+    float dx      = (depthRight - depthLeft) * 0.5f;
+    float dy      = (depthDown - depthUp) * 0.5f;
     float3 normal = normalize(float3(-dx * normalScale, -dy * normalScale, 1.0f));
 
     float3 viewDir = float3(0.0f, 0.0f, -1.0f);
-    float diffuse = saturate(dot(normal, lightDir));
+    float diffuse  = saturate(dot(normal, lightDir));
     float3 halfDir = normalize(lightDir + viewDir);
     float specular = pow(saturate(dot(normal, halfDir)), specPower);
 
