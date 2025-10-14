@@ -21,8 +21,8 @@ struct VSOutput
 };
 
 
-// FXCがVSMainを参照するためエントリーポイント名を一致させる
-VSOutput VSMain(VSInput input)
+// エントリーポイントをmainに統一してパイプライン設定と一致させる
+VSOutput main(VSInput input)
 {
     VSOutput output;
 

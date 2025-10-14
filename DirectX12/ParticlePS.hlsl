@@ -5,7 +5,8 @@ struct VSOutput
     float3 worldPos : TEXCOORD0;
 };
 
-float4 PSMain(VSOutput input) : SV_TARGET
+// エントリーポイントをmainに統一して描画パスを共通化
+float4 main(VSOutput input) : SV_TARGET
 {
     const float3 lightDir = normalize(float3(0.3f, 0.8f, 0.4f)); // 粒子を立体的に見せる簡易平行光源
     const float3 baseColor = float3(0.2f, 0.6f, 1.0f);

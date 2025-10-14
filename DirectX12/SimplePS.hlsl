@@ -5,8 +5,9 @@ struct VSOutput
     float2 uv : TEXCOORD;
 };
 
-SamplerState smp : register(s0); // ƒTƒ“ƒvƒ‰[
-Texture2D _MainTex : register(t0); // ƒeƒNƒXƒ`ƒƒ
+// Gg[|CgmainÉí‚¹PSOÆ“
+float4 main(VSOutput input) : SV_TARGET
+Texture2D _MainTex : register(t0); // Æ’eÆ’NÆ’XÆ’`Æ’Æ’
 
 float4 pixel(VSOutput input) : SV_TARGET
 {

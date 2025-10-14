@@ -18,7 +18,8 @@ float SchlickFresnel(float cosTheta, float bias, float scale, float power)
     return bias + scale * pow(1.0 - cosTheta, power);
 }
 
-float4 PSMain(VSOutput input) : SV_TARGET
+// エントリーポイントをmainに統一してレンダリングパイプラインと整合
+float4 main(VSOutput input) : SV_TARGET
 {
     float3 N = normalize(input.normal);
     float3 V = normalize(-input.worldPos);
