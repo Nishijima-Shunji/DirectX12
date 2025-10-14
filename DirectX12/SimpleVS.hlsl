@@ -18,8 +18,7 @@ struct VSOutput
 {
     float4 svpos : SV_POSITION;
     float4 color : COLOR;
-// Gg[|CgmainÉ“ê‚µPSOÌwÆŠİí‚¹
-VSOutput main(VSInput input)
+    float2 uv : TEXCOORD; // ƒsƒNƒZƒ‹ƒVƒF[ƒ_[‚Éuv‚ğ“n‚·
 };
 
 VSOutput vert(VSInput input)
@@ -33,6 +32,6 @@ VSOutput vert(VSInput input)
 
     output.svpos = projPos;
     output.color = input.color;
-    output.uv = input.uv; // å…¥åŠ›ã‹ã‚‰uvã‚’æ¸¡ã™
+    output.uv = input.uv; // “ü—Í‚©‚çuv‚ğ“n‚·
     return output;
 }

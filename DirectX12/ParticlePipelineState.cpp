@@ -71,7 +71,8 @@ void ParticlePipelineState::SetVS(std::wstring filePath)
     size_t pos = hlsl.find_last_of(L'.');
     if (pos != std::wstring::npos) hlsl.replace(pos, std::wstring::npos, L".hlsl");
 
-    const char* entry = "main"; // 粒子系もmain固定としシェーダーファイルとの整合性を保つ
+    const char* entry = "VSMain";
+    if (filePath.find(L"SimpleVS") != std::wstring::npos) entry = "vert";
 
     if (SUCCEEDED(LoadOrCompileShader(filePath, hlsl, entry, "vs_5_0", m_pVsBlob))) {
         desc.VS = CD3DX12_SHADER_BYTECODE(m_pVsBlob.Get());
@@ -84,7 +85,8 @@ void ParticlePipelineState::SetPS(std::wstring filePath)
     size_t pos = hlsl.find_last_of(L'.');
     if (pos != std::wstring::npos) hlsl.replace(pos, std::wstring::npos, L".hlsl");
 
-    const char* entry = "main"; // 合成用PSもmainに統一してコンパイル設定を簡素化
+    const char* entry = "PSMain";
+    if (filePath.find(L"SimplePS") != std::wstring::npos) entry = "pixel";
 
     if (SUCCEEDED(LoadOrCompileShader(filePath, hlsl, entry, "ps_5_0", m_pPSBlob))) {
         desc.PS = CD3DX12_SHADER_BYTECODE(m_pPSBlob.Get());
