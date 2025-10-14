@@ -97,6 +97,11 @@ void PipelineState::SetDepthStencilFormat(DXGI_FORMAT format)
     desc.DSVFormat = format; // フレームバッファの深度バッファ形式とPSOを揃える
 }
 
+void PipelineState::SetDepthStencilState(const D3D12_DEPTH_STENCIL_DESC& state)
+{
+    desc.DepthStencilState = state; // 深度テストの有効・無効などを明示的に指定
+}
+
 void PipelineState::SetBlendState(const D3D12_BLEND_DESC& blend)
 {
     desc.BlendState = blend;

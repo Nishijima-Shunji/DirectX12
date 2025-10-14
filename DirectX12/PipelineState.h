@@ -14,6 +14,7 @@ public:
         void SetVS(std::wstring filePath);                                                      // VSシェーダーを設定
         void SetPS(std::wstring filePath);                                                      // PSシェーダーを設定
         void SetDepthStencilFormat(DXGI_FORMAT format);                                         // 深度ステンシルフォーマット設定
+        void SetDepthStencilState(const D3D12_DEPTH_STENCIL_DESC& state);                       // 深度ステンシル設定を上書き
         void SetBlendState(const D3D12_BLEND_DESC& blend);                                      // ブレンド設定を上書き
         void SetRenderTargetFormat(DXGI_FORMAT format);                                         // RTVフォーマット設定
         void Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE type);                                        // グラフィックスパイプラインを生成

@@ -166,15 +166,21 @@ bool FluidSystem::BuildParticleRenderResources()
 	};
 	m_particleDepthPSO->SetInputLayout({ depthLayout, _countof(depthLayout) });
 
-	m_particleDepthPSO->SetRootSignature(m_particleDepthRoot->Get());
-	m_particleDepthPSO->SetVS(L"ParticlesDepthVS.cso");
-	m_particleDepthPSO->SetPS(L"ParticlesDepthPS.cso");
-	m_particleDepthPSO->SetDepthStencilFormat(DXGI_FORMAT_UNKNOWN); // 深度バッファ非使用
-	m_particleDepthPSO->SetRenderTargetFormat(DXGI_FORMAT_R32_FLOAT);
-	m_particleDepthPSO->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
-	if (!m_particleDepthPSO->IsValid()) {
-		return false;
-	}
+        m_particleDepthPSO->SetRootSignature(m_particleDepthRoot->Get());
+        m_particleDepthPSO->SetVS(L"ParticlesDepthVS.cso");
+        m_particleDepthPSO->SetPS(L"ParticlesDepthPS.cso");
+        m_particleDepthPSO->SetDepthStencilFormat(DXGI_FORMAT_UNKNOWN); // 深度バッファ非使用
+        {
+                D3D12_DEPTH_STENCIL_DESC dsDesc = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+                dsDesc.DepthEnable = FALSE; // 深度バッファを使わないので深度テストを完全に無効化
+                dsDesc.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO; // 万一の書き込みも抑止
+                m_particleDepthPSO->SetDepthStencilState(dsDesc);
+        }
+        m_particleDepthPSO->SetRenderTargetFormat(DXGI_FORMAT_R32_FLOAT);
+        m_particleDepthPSO->Create(D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE);
+        if (!m_particleDepthPSO->IsValid()) {
+                return false;
+        }
 
 	for (auto& cb : m_particleDepthCB) {
 		cb = std::make_unique<ConstantBuffer>(sizeof(ParticleDepthConstant));
