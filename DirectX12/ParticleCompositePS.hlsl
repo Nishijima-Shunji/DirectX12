@@ -19,6 +19,11 @@ struct PSInput
 
 float4 main(PSInput input) : SV_TARGET
 {
+    //float d = gDepthTex.SampleLevel(gLinearClamp, input.uv, 0);
+    //// Far(=未描画)なら黒、それ以外は赤で出す
+    //if (d >= misc3.x - 1e-3)
+    //    return float4(0, 0, 0, 1);
+    //return float4(1, 0, 0, 1);
     float depthCenter = gDepthTex.SampleLevel(gLinearClamp, input.uv, 0);
     if (depthCenter >= (misc3.x - 1e-3f))
         discard;
@@ -34,21 +39,21 @@ float4 main(PSInput input) : SV_TARGET
 
     // 近傍ピクセルの深度差分からスクリーンスペース法線を推定
     float depthRight = gDepthTex.SampleLevel(gLinearClamp, input.uv + float2(invScreen.x, 0.0f), 0);
-    float depthLeft  = gDepthTex.SampleLevel(gLinearClamp, input.uv - float2(invScreen.x, 0.0f), 0);
-    float depthUp    = gDepthTex.SampleLevel(gLinearClamp, input.uv - float2(0.0f, invScreen.y), 0);
-    float depthDown  = gDepthTex.SampleLevel(gLinearClamp, input.uv + float2(0.0f, invScreen.y), 0);
+    float depthLeft = gDepthTex.SampleLevel(gLinearClamp, input.uv - float2(invScreen.x, 0.0f), 0);
+    float depthUp = gDepthTex.SampleLevel(gLinearClamp, input.uv - float2(0.0f, invScreen.y), 0);
+    float depthDown = gDepthTex.SampleLevel(gLinearClamp, input.uv + float2(0.0f, invScreen.y), 0);
 
     depthRight = (depthRight >= (misc3.x - 1e-3f)) ? depthCenter : depthRight;
-    depthLeft  = (depthLeft >= (misc3.x - 1e-3f)) ? depthCenter : depthLeft;
-    depthUp    = (depthUp >= (misc3.x - 1e-3f)) ? depthCenter : depthUp;
-    depthDown  = (depthDown >= (misc3.x - 1e-3f)) ? depthCenter : depthDown;
+    depthLeft = (depthLeft >= (misc3.x - 1e-3f)) ? depthCenter : depthLeft;
+    depthUp = (depthUp >= (misc3.x - 1e-3f)) ? depthCenter : depthUp;
+    depthDown = (depthDown >= (misc3.x - 1e-3f)) ? depthCenter : depthDown;
 
-    float dx      = (depthRight - depthLeft) * 0.5f;
-    float dy      = (depthDown - depthUp) * 0.5f;
+    float dx = (depthRight - depthLeft) * 0.5f;
+    float dy = (depthDown - depthUp) * 0.5f;
     float3 normal = normalize(float3(-dx * normalScale, -dy * normalScale, 1.0f));
 
     float3 viewDir = float3(0.0f, 0.0f, -1.0f);
-    float diffuse  = saturate(dot(normal, lightDir));
+    float diffuse = saturate(dot(normal, lightDir));
     float3 halfDir = normalize(lightDir + viewDir);
     float specular = pow(saturate(dot(normal, halfDir)), specPower);
 
@@ -58,4 +63,5 @@ float4 main(PSInput input) : SV_TARGET
 
     float3 color = fluidColor * (0.35f + diffuse * 0.55f) + specular * 0.2f;
     return float4(color, alpha);
+
 }

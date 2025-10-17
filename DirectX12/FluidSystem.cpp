@@ -5,6 +5,7 @@
 #include <cstring>
 #include <d3dx12.h>
 #include "Engine.h"
+#include "RandomUtil.h"
 
 using namespace DirectX;
 
@@ -123,7 +124,7 @@ bool FluidSystem::BuildParticleRenderResources()
 		return false;
 	}
 
-	const uint32_t quadIndices[6] = { 0,1,2, 0,2,3 };
+	const uint32_t quadIndices[6] = { 0,2,1, 0,3,2 };
 	m_particleQuadIB = std::make_unique<IndexBuffer>(sizeof(quadIndices), quadIndices);
 	if (!m_particleQuadIB || !m_particleQuadIB->IsValid()) {
 		return false;
@@ -765,27 +766,61 @@ void FluidSystem::UpdateInteractions(float dt)
 // ====== 粒子（SPHライト） ======
 void FluidSystem::InitParticles(int count)
 {
-	m_particles.clear(); m_particles.reserve(count);
+	using namespace DirectX;
 
-	const float s = m_kernelH * 0.9f; // 粒径間隔
-	int nx = std::max(1, (int)((m_bounds.max.x - m_bounds.min.x) / s) - 2);
-	int ny = std::max(1, (int)((m_bounds.max.y - m_bounds.min.y) / s) - 2);
-	int nz = std::max(1, (int)((m_bounds.max.z - m_bounds.min.z) / s) - 2);
+	m_particles.clear();
+	const int cap = (int)m_particleCap;
+	m_particles.reserve(std::min(count, cap));
 
-	for (int z = 1; z < nz && (int)m_particles.size() < count; ++z)
-		for (int y = 1; y < ny && (int)m_particles.size() < count; ++y)
-			for (int x = 1; x < nx && (int)m_particles.size() < count; ++x)
+	// 見やすさ優先の基本スケール（お好みで調整）
+	const float spacing = 0.18f;              // 粒の間隔[m]
+	m_particleRadius = spacing * 0.50f;    // 表示半径
+	const float Vp = spacing * spacing * spacing * 0.8f; // 充填率≒0.8
+	m_mass = m_rho0 * Vp;
+
+	// 近傍半径は粒半径の1.6〜2.0倍あたりが軽くて安定
+	m_kernelH = std::max(1.8f * m_particleRadius, 0.10f);
+	// SPH係数（強すぎると固まるので控えめに）
+	m_stiffness = 40.0f;
+	m_viscosity = 0.08f;
+	m_xsph = 0.015f;
+
+	// 生成個数からブロック寸法を決定（ほぼ立方体、少し薄め）
+	int nx = std::max(1, (int)std::ceil(std::cbrt((double)count)));
+	int ny = std::max(2, nx / 2);
+	int nz = nx;
+
+	int target = std::min({ count, nx * ny * nz, cap });
+
+	// 中央付近・水面より少し上に配置
+	XMFLOAT3 c{
+		(m_bounds.min.x + m_bounds.max.x) * 0.5f,
+		m_waterLevel + 0.6f,
+		(m_bounds.min.z + m_bounds.max.z) * 0.5f
+	};
+
+	const float jitter = spacing * 0.25f; // 微小ジッタで完全格子を崩す
+	for (int z = 0; z < nz && (int)m_particles.size() < target; ++z)
+		for (int y = 0; y < ny && (int)m_particles.size() < target; ++y)
+			for (int x = 0; x < nx && (int)m_particles.size() < target; ++x)
 			{
-				Particle p;
-				p.pos = { m_bounds.min.x + x * s, m_bounds.min.y + y * s, m_bounds.min.z + z * s };
-				p.vel = { 0,0,0 };
+				Particle p{};
+				p.pos = XMFLOAT3(
+					c.x + (x - (nx - 1) * 0.5f) * spacing + RandFloat(-jitter, jitter),
+					c.y + (y)*spacing + RandFloat(-jitter * 0.5f, jitter * 0.5f),
+					c.z + (z - (nz - 1) * 0.5f) * spacing + RandFloat(-jitter, jitter)
+				);
+				// ごく弱い初速（停滞防止・自然さUP）
+				p.vel = XMFLOAT3(
+					RandFloat(-0.2f, 0.2f),
+					RandFloat(-0.1f, 0.1f),
+					RandFloat(-0.2f, 0.2f)
+				);
 				m_particles.push_back(p);
-				if ((int)m_particles.size() >= count) break;
 			}
 
-	m_particleRadius = s * 0.5f;
-	float Vp = s * s * s * 0.8f;      // 充填率0.8
-	m_mass = m_rho0 * Vp;
+	// 生成後にグリッドを作り直しておくと初回も安定
+	BuildGrid();
 }
 
 void FluidSystem::BuildGrid()
@@ -951,11 +986,6 @@ void FluidSystem::DrawParticles(ID3D12GraphicsCommandList* cmd, const Camera& ca
 
 				
 			}
-			if (instCount > 0) {
-				// カメラ原点付近、少し大きめ
-				mapped[0].pos = { 0.0f, m_bounds.min.y + 0.3f, 0.0f };
-				mapped[0].radius = std::max(0.05f, m_particleRadius * 2.0f);
-			}
 			resource->Unmap(0, nullptr);
 		}
 	}
@@ -996,7 +1026,6 @@ void FluidSystem::DrawParticles(ID3D12GraphicsCommandList* cmd, const Camera& ca
 	}
 
 	{
-		// 深度RTがバックバッファと同サイズならこれでOK
 		D3D12_VIEWPORT vp{};
 		vp.TopLeftX = 0.0f; vp.TopLeftY = 0.0f;
 		vp.Width = float(std::max(1u, g_Engine->FrameBufferWidth()));
@@ -1004,6 +1033,19 @@ void FluidSystem::DrawParticles(ID3D12GraphicsCommandList* cmd, const Camera& ca
 		vp.MinDepth = 0.0f; vp.MaxDepth = 1.0f;
 
 		D3D12_RECT sc{ 0, 0, (LONG)vp.Width, (LONG)vp.Height };
+		cmd->RSSetViewports(1, &vp);
+		cmd->RSSetScissorRects(1, &sc);
+	}
+
+	{
+		UINT w = 1, h = 1;
+		if (m_particleDepthTexture) {
+			auto desc = m_particleDepthTexture->GetDesc();
+			w = static_cast<UINT>(desc.Width);
+			h = static_cast<UINT>(desc.Height);
+		}
+		D3D12_VIEWPORT vp{ 0.0f, 0.0f, float(w), float(h), 0.0f, 1.0f };
+		D3D12_RECT sc{ 0, 0, (LONG)w, (LONG)h };
 		cmd->RSSetViewports(1, &vp);
 		cmd->RSSetScissorRects(1, &sc);
 	}
@@ -1194,6 +1236,41 @@ void FluidSystem::DepositVolumeGaussian(const DirectX::XMFLOAT2& centerXZ, float
 			m_height[idx] += (float)dh;
 		}
 }
+
+//void FluidSystem::SpawnRandomSphere(int count, XMFLOAT3 center, float radius)
+//{
+//	m_particles.clear();
+//	m_particles.reserve(count);
+//
+//	const float minDist = (m_particleRadius * 2.0f) * 0.9f; // ちょい詰め
+//	const float minDist2 = minDist * minDist;
+//
+//	int attempts = 0;
+//	while ((int)m_particles.size() < count && attempts < count * 50) {
+//		attempts++;
+//		// 一様球内サンプル（半径は cbrt で体積一様）
+//		float rx = RandFloat(-1.0f, 1.0f);
+//		float ry = RandFloat(-1.0f, 1.0f);
+//		float rz = RandFloat(-1.0f, 1.0f);
+//		float r2 = rx * rx + ry * ry + rz * rz;
+//		if (r2 > 1.0f) continue;
+//		float r = std::cbrt(RandFloat(0.0f, 1.0f)) * radius;
+//		float inv = (r2 > 1e-8f) ? (r / std::sqrt(r2)) : 0.0f;
+//
+//		Particle p{};
+//		p.pos = { center.x + rx * inv, center.y + ry * inv, center.z + rz * inv };
+//		p.vel = { RandFloat(-0.1f, 0.1f), RandFloat(-0.05f, 0.15f), RandFloat(-0.1f, 0.1f) };
+//
+//		// 簡易“衝突回避”：近すぎるとリジェクト
+//		bool ok = true;
+//		for (auto& q : m_particles) {
+//			float dx = p.pos.x - q.pos.x, dy = p.pos.y - q.pos.y, dz = p.pos.z - q.pos.z;
+//			if (dx * dx + dy * dy + dz * dz < minDist2) { ok = false; break; }
+//		}
+//		if (ok) m_particles.push_back(p);
+//	}
+//}
+
 
 // 水関係の更新処理
 void FluidSystem::Update(float deltaTime)

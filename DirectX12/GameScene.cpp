@@ -475,6 +475,11 @@ void GameScene::Draw()
         return;
     }
 
+    if (m_walls)
+    {
+        m_walls->Render(cmd);
+    }
+
     if (m_fluid)
     {
         m_fluid->Draw(cmd, *camera);
@@ -496,10 +501,6 @@ void GameScene::Draw()
     }
 
 
-    if (m_walls)
-    {
-        m_walls->Render(cmd);
-    }
 
     if (m_debugCube)
     {

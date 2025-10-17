@@ -1,10 +1,10 @@
 // ※SSFR初段: 粒子をスクリーン空間の四角形へ展開し、球とみなすための頂点シェーダー。
 cbuffer DepthConstants : register(b0)
 {
-    float4x4 gView;    // ビュー行列（転置済み）
-    float4x4 gProj;    // 射影行列（転置済み）
-    float2   gClipZ;   // ニア/ファー平面
-    float2   _pad0;    // 16byte境界合わせ
+    row_major float4x4 gView;
+    row_major float4x4 gProj;
+    float2 gClipZ; // near, far
+    float2 _pad0;  // 16byteアライン維持
 };
 
 struct VSInput

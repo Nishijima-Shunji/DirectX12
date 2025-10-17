@@ -157,6 +157,7 @@ private:
     void DrawParticles(ID3D12GraphicsCommandList* cmd, const Camera& cam);
 
     bool BuildParticleRenderResources();
+    void SpawnRandomSphere(int count, DirectX::XMFLOAT3 center, float radius);
 
 private:
     // 共有
