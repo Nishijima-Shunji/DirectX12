@@ -19,6 +19,8 @@
 #include "Camera.h"
 #include "Engine.h"
 #include "DescriptorHeap.h"
+#include "ComputePipelineState.h"
+#include "ComputeRootSignature.h"
 
 class FluidSystem
 {
@@ -157,6 +159,10 @@ private:
     void DrawParticles(ID3D12GraphicsCommandList* cmd, const Camera& cam);
 
     bool BuildParticleRenderResources();
+    bool BuildParticleSimulationResources();
+    bool DispatchParticleSimulation(float dt);
+    bool UploadParticlesToGpu();
+    void WaitForComputeFence();
     void SpawnRandomSphere(int count, DirectX::XMFLOAT3 center, float radius);
 
 private:
@@ -220,4 +226,46 @@ private:
     ComPtr<ID3D12Resource> m_particleDepthTexture;
     DescriptorHandle* m_particleDepthSrv = nullptr;
     D3D12_RESOURCE_STATES m_particleDepthState = D3D12_RESOURCE_STATE_COMMON;
+
+    // 粒子GPUシミュレーション用リソース
+    struct ParticleGpu { DirectX::XMFLOAT3 pos; DirectX::XMFLOAT3 vel; };
+    struct ParticleMetaGpu { DirectX::XMFLOAT3 pos; float radius; };
+    static constexpr UINT kMaxParticlesPerCell = 64;
+
+    std::unique_ptr<ComputeRootSignature> m_particleComputeRoot;
+    ComputePipelineState m_clearGridPSO;
+    ComputePipelineState m_buildGridPSO;
+    ComputePipelineState m_particleSimPSO;
+
+    std::unique_ptr<ConstantBuffer> m_sphParamCB;
+    std::unique_ptr<ConstantBuffer> m_dummyViewCB;
+
+    ComPtr<ID3D12Resource> m_particleBuffer[2];
+    ComPtr<ID3D12Resource> m_particleUpload;
+    ComPtr<ID3D12Resource> m_particleReadback;
+    DescriptorHandle* m_particleSrv[2] = { nullptr, nullptr };
+    DescriptorHandle* m_particleUav[2] = { nullptr, nullptr };
+    D3D12_RESOURCE_STATES m_particleState[2] = { D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COMMON };
+    UINT m_activeParticleBuffer = 0;
+
+    ComPtr<ID3D12Resource> m_particleMetaBuffer;
+    DescriptorHandle* m_particleMetaUav = nullptr;
+    D3D12_RESOURCE_STATES m_particleMetaState = D3D12_RESOURCE_STATE_COMMON;
+
+    ComPtr<ID3D12Resource> m_gridCountBuffer;
+    ComPtr<ID3D12Resource> m_gridTableBuffer;
+    DescriptorHandle* m_gridCountUav = nullptr;
+    DescriptorHandle* m_gridTableUav = nullptr;
+    D3D12_RESOURCE_STATES m_gridCountState = D3D12_RESOURCE_STATE_COMMON;
+    D3D12_RESOURCE_STATES m_gridTableState = D3D12_RESOURCE_STATE_COMMON;
+
+    DirectX::XMFLOAT3 m_gridMin{ 0,0,0 };
+    DirectX::XMUINT3 m_gridDim{ 1,1,1 };
+    UINT m_gridCellCount = 1;
+
+    ComPtr<ID3D12CommandAllocator> m_computeAllocator;
+    ComPtr<ID3D12GraphicsCommandList> m_computeCmdList;
+    ComPtr<ID3D12Fence> m_computeFence;
+    UINT64 m_computeFenceValue = 0;
+    HANDLE m_computeFenceEvent = nullptr;
 };

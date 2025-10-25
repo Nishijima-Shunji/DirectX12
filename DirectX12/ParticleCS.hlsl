@@ -47,7 +47,7 @@ RWStructuredBuffer<uint>  gridTable : register(u3);
 // ========================================
 
 [numthreads(256,1,1)]
-void CSMain(uint3 id : SV_DispatchThreadID)
+void main(uint3 id : SV_DispatchThreadID)
 {
     // powを事前計算
     float radius2 = radius * radius;

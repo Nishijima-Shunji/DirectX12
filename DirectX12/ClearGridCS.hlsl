@@ -26,7 +26,7 @@ RWStructuredBuffer<uint> gridCount : register(u2);
 RWStructuredBuffer<uint> gridTable : register(u3);
 
 [numthreads(256,1,1)]
-void CSMain(uint3 id : SV_DispatchThreadID)
+void main(uint3 id : SV_DispatchThreadID)
 {
     uint cellCount = gridDim.x * gridDim.y * gridDim.z;
     uint index = id.x;

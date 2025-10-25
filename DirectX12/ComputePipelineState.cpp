@@ -67,7 +67,7 @@ void ComputePipelineState::SetCS(const std::wstring& path) {
         flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
 #endif
         ComPtr<ID3DBlob> err;
-        hr = D3DCompileFromFile(hlslPath.c_str(), nullptr, nullptr, "CSMain", "cs_5_0", flags, 0,
+        hr = D3DCompileFromFile(hlslPath.c_str(), nullptr, nullptr, "main", "cs_5_0", flags, 0,
                                m_csBlob.GetAddressOf(), err.GetAddressOf());
         if (FAILED(hr)) {
             if (err) wprintf(L"CS compile error: %hs\n", (char*)err->GetBufferPointer());

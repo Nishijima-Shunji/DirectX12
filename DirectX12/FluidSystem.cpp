@@ -3,6 +3,8 @@
 #include <cfloat>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <Windows.h>
 #include <d3dx12.h>
 #include "Engine.h"
 #include "RandomUtil.h"
@@ -22,17 +24,44 @@ namespace {
 		XMFLOAT2 pad;
 	};
 
-	struct ParticleCompositeConstant
-	{
-		XMFLOAT4 misc0; // x=1/width, y=1/height, z=半径, w=法線強調
-		XMFLOAT4 misc1; // x,y,z=流体色, w=不透明度基準
-		XMFLOAT4 misc2; // x,y,z=ライト方向, w=ハイライト硬さ
-		XMFLOAT4 misc3; // x=FarClip, yzw=未使用
-	};
+        struct ParticleCompositeConstant
+        {
+                XMFLOAT4 misc0; // x=1/width, y=1/height, z=半径, w=法線強調
+                XMFLOAT4 misc1; // x,y,z=流体色, w=不透明度基準
+                XMFLOAT4 misc2; // x,y,z=ライト方向, w=ハイライト硬さ
+                XMFLOAT4 misc3; // x=FarClip, yzw=未使用
+        };
+
+        struct SphParams
+        {
+                float restDensity;
+                float particleMass;
+                float viscosity;
+                float stiffness;
+                float radius;
+                float timeStep;
+                UINT  particleCount;
+                UINT  pad0;
+                XMFLOAT3 gridMin;
+                float pad1;
+                XMUINT3 gridDim;
+                UINT pad2;
+        };
+
+        struct DummyViewProj
+        {
+                XMFLOAT4X4 viewProj;
+        };
 }
 
 FluidSystem::FluidSystem() = default;
-FluidSystem::~FluidSystem() = default;
+FluidSystem::~FluidSystem()
+{
+        if (m_computeFenceEvent) {
+                CloseHandle(m_computeFenceEvent);
+                m_computeFenceEvent = nullptr;
+        }
+}
 
 bool FluidSystem::Init(ID3D12Device* device, const Bounds& bounds, size_t particleCount)
 {
@@ -52,11 +81,12 @@ bool FluidSystem::Init(ID3D12Device* device, const Bounds& bounds, size_t partic
 	m_cellDx = (m_resolution > 1) ? gridWidth / float(m_resolution - 1) : 0.0f;
 	m_cellDz = (m_resolution > 1) ? gridDepth / float(m_resolution - 1) : 0.0f;
 
-	if (m_mode == SimMode::Particles) {
-		InitParticles(std::max(100, m_particleCap)); // 粒子スポーン
-		if (!BuildParticleRenderResources()) return false; // SSFR描画用リソース生成
-		return true;
-	}
+        if (m_mode == SimMode::Particles) {
+                InitParticles(std::max(100, m_particleCap)); // 粒子スポーン
+                if (!BuildParticleSimulationResources()) return false; // GPU計算リソース生成
+                if (!BuildParticleRenderResources()) return false; // SSFR描画用リソース生成
+                return true;
+        }
 
 	// ---- 高さ場モード----
 	if (!BuildSimulationResources()) return false;
@@ -282,14 +312,380 @@ bool FluidSystem::BuildParticleRenderResources()
 		return false;
 	}
 
-	for (auto& cb : m_particleCompositeCB) {
-		cb = std::make_unique<ConstantBuffer>(sizeof(ParticleCompositeConstant));
-		if (!cb || !cb->IsValid()) {
-			return false;
-		}
-	}
+        for (auto& cb : m_particleCompositeCB) {
+                cb = std::make_unique<ConstantBuffer>(sizeof(ParticleCompositeConstant));
+                if (!cb || !cb->IsValid()) {
+                        return false;
+                }
+        }
 
-	return true;
+        return true;
+}
+
+bool FluidSystem::BuildParticleSimulationResources()
+{
+        if (!m_device || m_particleCap <= 0) {
+                return false;
+        }
+
+        auto* srvHeap = g_Engine->CbvSrvUavHeap();
+        if (!srvHeap) {
+                return false;
+        }
+
+        // 既存のGPUリソースを片付ける
+        m_particleBuffer[0].Reset();
+        m_particleBuffer[1].Reset();
+        m_particleUpload.Reset();
+        m_particleReadback.Reset();
+        m_particleMetaBuffer.Reset();
+        m_gridCountBuffer.Reset();
+        m_gridTableBuffer.Reset();
+        m_particleSrv[0] = m_particleSrv[1] = nullptr;
+        m_particleUav[0] = m_particleUav[1] = nullptr;
+        m_particleMetaUav = nullptr;
+        m_gridCountUav = nullptr;
+        m_gridTableUav = nullptr;
+        m_particleState[0] = m_particleState[1] = D3D12_RESOURCE_STATE_COMMON;
+        m_particleMetaState = D3D12_RESOURCE_STATE_COMMON;
+        m_gridCountState = D3D12_RESOURCE_STATE_COMMON;
+        m_gridTableState = D3D12_RESOURCE_STATE_COMMON;
+
+        // 計算用コマンド周りを準備
+        if (!m_computeAllocator) {
+                if (FAILED(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE,
+                        IID_PPV_ARGS(m_computeAllocator.ReleaseAndGetAddressOf())))) {
+                        return false;
+                }
+        }
+
+        if (!m_computeCmdList) {
+                if (FAILED(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_COMPUTE,
+                        m_computeAllocator.Get(), nullptr,
+                        IID_PPV_ARGS(m_computeCmdList.ReleaseAndGetAddressOf())))) {
+                        return false;
+                }
+                m_computeCmdList->Close();
+        }
+
+        if (!m_computeFence) {
+                if (FAILED(m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE,
+                        IID_PPV_ARGS(m_computeFence.ReleaseAndGetAddressOf())))) {
+                        return false;
+                }
+                m_computeFenceValue = 0;
+        }
+
+        if (!m_computeFenceEvent) {
+                m_computeFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+                if (!m_computeFenceEvent) {
+                        return false;
+                }
+        }
+
+        // ルートシグネチャとPSOを生成
+        m_particleComputeRoot = std::make_unique<ComputeRootSignature>();
+        if (!m_particleComputeRoot || !m_particleComputeRoot->InitForSPH() || !m_particleComputeRoot->IsValid()) {
+                return false;
+        }
+
+        auto initComputePSO = [&](ComputePipelineState& pso, const wchar_t* shaderPath) {
+                pso.SetDevice(m_device);
+                pso.SetRootSignature(m_particleComputeRoot->Get());
+                pso.SetCS(shaderPath);
+                return pso.Create();
+        };
+
+        if (!initComputePSO(m_clearGridPSO, L"ClearGridCS.cso")) return false;
+        if (!initComputePSO(m_buildGridPSO, L"BuildGridCS.cso")) return false;
+        if (!initComputePSO(m_particleSimPSO, L"ParticleCS.cso")) return false;
+
+        // グリッド情報を算出（粒子半径に合わせて粗さを決める）
+        const float cellSize = std::max(0.05f, m_kernelH);
+        m_gridMin = XMFLOAT3(m_bounds.min.x, m_bounds.min.y, m_bounds.min.z);
+        const float sizeX = std::max(0.1f, m_bounds.max.x - m_bounds.min.x);
+        const float sizeY = std::max(0.1f, m_bounds.max.y - m_bounds.min.y);
+        const float sizeZ = std::max(0.1f, m_bounds.max.z - m_bounds.min.z);
+        const UINT dimX = std::max<UINT>(1, UINT(std::ceil(sizeX / cellSize)) + 2);
+        const UINT dimY = std::max<UINT>(1, UINT(std::ceil((sizeY + cellSize) / cellSize)) + 2);
+        const UINT dimZ = std::max<UINT>(1, UINT(std::ceil(sizeZ / cellSize)) + 2);
+        m_gridDim = XMUINT3(dimX, dimY, dimZ);
+        const uint64_t cellCount64 = static_cast<uint64_t>(dimX) * dimY * dimZ;
+        m_gridCellCount = static_cast<UINT>(std::min<uint64_t>(std::numeric_limits<UINT>::max(), std::max<uint64_t>(1, cellCount64)));
+
+        const size_t bufferElements = static_cast<size_t>(std::max(1, m_particleCap));
+        const UINT64 particleBytes = static_cast<UINT64>(bufferElements * sizeof(ParticleGpu));
+        const UINT64 metaBytes = static_cast<UINT64>(bufferElements * sizeof(ParticleMetaGpu));
+        const UINT64 gridCountBytes = static_cast<UINT64>(m_gridCellCount) * sizeof(uint32_t);
+        const UINT64 gridTableBytes = static_cast<UINT64>(m_gridCellCount) * kMaxParticlesPerCell * sizeof(uint32_t);
+
+        auto createDefaultBuffer = [&](ComPtr<ID3D12Resource>& dst, UINT64 bytes, D3D12_RESOURCE_STATES initialState) {
+                CD3DX12_HEAP_PROPERTIES prop(D3D12_HEAP_TYPE_DEFAULT);
+                auto desc = CD3DX12_RESOURCE_DESC::Buffer(bytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+                return SUCCEEDED(m_device->CreateCommittedResource(&prop, D3D12_HEAP_FLAG_NONE, &desc,
+                        initialState, nullptr, IID_PPV_ARGS(dst.ReleaseAndGetAddressOf())));
+        };
+
+        auto createUploadBuffer = [&](ComPtr<ID3D12Resource>& dst, UINT64 bytes, D3D12_HEAP_TYPE type, D3D12_RESOURCE_STATES state) {
+                CD3DX12_HEAP_PROPERTIES prop(type);
+                auto desc = CD3DX12_RESOURCE_DESC::Buffer(bytes);
+                return SUCCEEDED(m_device->CreateCommittedResource(&prop, D3D12_HEAP_FLAG_NONE, &desc,
+                        state, nullptr, IID_PPV_ARGS(dst.ReleaseAndGetAddressOf())));
+        };
+
+        if (!createDefaultBuffer(m_particleBuffer[0], particleBytes, D3D12_RESOURCE_STATE_COPY_DEST)) return false;
+        if (!createDefaultBuffer(m_particleBuffer[1], particleBytes, D3D12_RESOURCE_STATE_COPY_DEST)) return false;
+        m_particleState[0] = m_particleState[1] = D3D12_RESOURCE_STATE_COPY_DEST;
+
+        if (!createUploadBuffer(m_particleUpload, particleBytes, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_STATE_GENERIC_READ)) return false;
+        if (!createUploadBuffer(m_particleReadback, particleBytes, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_STATE_COPY_DEST)) return false;
+
+        if (!createDefaultBuffer(m_particleMetaBuffer, metaBytes, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) return false;
+        m_particleMetaState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        if (!createDefaultBuffer(m_gridCountBuffer, gridCountBytes, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) return false;
+        m_gridCountState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        if (!createDefaultBuffer(m_gridTableBuffer, gridTableBytes, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)) return false;
+        m_gridTableState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+
+        // SRV/UAVをディスクリプタヒープへ登録
+        m_particleSrv[0] = srvHeap->RegisterBuffer(m_particleBuffer[0].Get(), static_cast<UINT>(bufferElements), sizeof(ParticleGpu));
+        m_particleSrv[1] = srvHeap->RegisterBuffer(m_particleBuffer[1].Get(), static_cast<UINT>(bufferElements), sizeof(ParticleGpu));
+        m_particleUav[0] = srvHeap->RegisterBufferUAV(m_particleBuffer[0].Get(), static_cast<UINT>(bufferElements), sizeof(ParticleGpu));
+        m_particleUav[1] = srvHeap->RegisterBufferUAV(m_particleBuffer[1].Get(), static_cast<UINT>(bufferElements), sizeof(ParticleGpu));
+        m_particleMetaUav = srvHeap->RegisterBufferUAV(m_particleMetaBuffer.Get(), static_cast<UINT>(bufferElements), sizeof(ParticleMetaGpu));
+        m_gridCountUav = srvHeap->RegisterBufferUAV(m_gridCountBuffer.Get(), m_gridCellCount, sizeof(uint32_t));
+        m_gridTableUav = srvHeap->RegisterBufferUAV(m_gridTableBuffer.Get(), m_gridCellCount * kMaxParticlesPerCell, sizeof(uint32_t));
+
+        if (!m_particleSrv[0] || !m_particleSrv[1] || !m_particleUav[0] || !m_particleUav[1] ||
+                !m_particleMetaUav || !m_gridCountUav || !m_gridTableUav) {
+                return false;
+        }
+
+        m_sphParamCB = std::make_unique<ConstantBuffer>(sizeof(SphParams));
+        m_dummyViewCB = std::make_unique<ConstantBuffer>(sizeof(DummyViewProj));
+        if (!m_sphParamCB || !m_dummyViewCB || !m_sphParamCB->IsValid() || !m_dummyViewCB->IsValid()) {
+                return false;
+        }
+
+        if (auto* dummy = m_dummyViewCB->GetPtr<DummyViewProj>()) {
+                XMStoreFloat4x4(&dummy->viewProj, XMMatrixTranspose(XMMatrixIdentity()));
+        }
+
+        // 初期値をGPUへ送る
+        if (!UploadParticlesToGpu()) {
+                return false;
+        }
+
+        m_activeParticleBuffer = 0;
+        return true;
+}
+
+bool FluidSystem::UploadParticlesToGpu()
+{
+        if (!m_particleUpload || !m_computeCmdList) {
+                return false;
+        }
+
+        const size_t bufferElements = static_cast<size_t>(std::max(1, m_particleCap));
+        const UINT64 particleBytes = static_cast<UINT64>(bufferElements * sizeof(ParticleGpu));
+
+        ParticleGpu* mapped = nullptr;
+        if (FAILED(m_particleUpload->Map(0, nullptr, reinterpret_cast<void**>(&mapped)))) {
+                return false;
+        }
+
+        // CPU側の粒子状態をそのまま転送
+        for (size_t i = 0; i < bufferElements; ++i) {
+                if (i < m_particles.size()) {
+                        mapped[i].pos = m_particles[i].pos;
+                        mapped[i].vel = m_particles[i].vel;
+                }
+                else {
+                        mapped[i].pos = XMFLOAT3(0, 0, 0);
+                        mapped[i].vel = XMFLOAT3(0, 0, 0);
+                }
+        }
+        m_particleUpload->Unmap(0, nullptr);
+
+        m_computeAllocator->Reset();
+        m_computeCmdList->Reset(m_computeAllocator.Get(), nullptr);
+
+        m_computeCmdList->CopyBufferRegion(m_particleBuffer[0].Get(), 0, m_particleUpload.Get(), 0, particleBytes);
+        m_computeCmdList->CopyBufferRegion(m_particleBuffer[1].Get(), 0, m_particleUpload.Get(), 0, particleBytes);
+
+        CD3DX12_RESOURCE_BARRIER barrier[2] = {
+                CD3DX12_RESOURCE_BARRIER::Transition(m_particleBuffer[0].Get(),
+                        m_particleState[0], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE),
+                CD3DX12_RESOURCE_BARRIER::Transition(m_particleBuffer[1].Get(),
+                        m_particleState[1], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+        };
+        m_computeCmdList->ResourceBarrier(2, barrier);
+
+        m_particleState[0] = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        m_particleState[1] = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+
+        m_computeCmdList->Close();
+
+        ID3D12CommandList* lists[] = { m_computeCmdList.Get() };
+        g_Engine->ComputeCommandQueue()->ExecuteCommandLists(1, lists);
+        ++m_computeFenceValue;
+        g_Engine->ComputeCommandQueue()->Signal(m_computeFence.Get(), m_computeFenceValue);
+        WaitForComputeFence();
+
+        return true;
+}
+
+void FluidSystem::WaitForComputeFence()
+{
+        if (!m_computeFence) return;
+        if (m_computeFence->GetCompletedValue() < m_computeFenceValue) {
+                if (m_computeFenceEvent) {
+                        m_computeFence->SetEventOnCompletion(m_computeFenceValue, m_computeFenceEvent);
+                        WaitForSingleObject(m_computeFenceEvent, INFINITE);
+                }
+        }
+}
+
+bool FluidSystem::DispatchParticleSimulation(float dt)
+{
+        if (!m_computeCmdList || !m_particleSrv[0] || !m_particleUav[0]) {
+                return false;
+        }
+
+        const UINT particleCount = static_cast<UINT>(m_particles.size());
+        const size_t bufferElements = static_cast<size_t>(std::max(1, m_particleCap));
+        if (particleCount == 0) {
+                return true;
+        }
+
+        if (auto* params = m_sphParamCB->GetPtr<SphParams>()) {
+                params->restDensity = m_rho0;
+                params->particleMass = m_mass;
+                params->viscosity = m_viscosity;
+                params->stiffness = m_stiffness;
+                params->radius = m_kernelH;
+                params->timeStep = dt;
+                params->particleCount = particleCount;
+                params->gridMin = m_gridMin;
+                params->gridDim = m_gridDim;
+                params->pad0 = 0;
+                params->pad1 = 0.0f;
+                params->pad2 = 0;
+        }
+
+        const UINT inputIndex = m_activeParticleBuffer;
+        const UINT outputIndex = 1 - inputIndex;
+
+        m_computeAllocator->Reset();
+        m_computeCmdList->Reset(m_computeAllocator.Get(), nullptr);
+
+        ID3D12DescriptorHeap* heaps[] = { g_Engine->CbvSrvUavHeap()->GetHeap() };
+        m_computeCmdList->SetDescriptorHeaps(1, heaps);
+        m_computeCmdList->SetComputeRootSignature(m_particleComputeRoot->Get());
+
+        // 必要なステートへ遷移
+        std::vector<CD3DX12_RESOURCE_BARRIER> transitions;
+        if (m_particleState[inputIndex] != D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE) {
+                transitions.emplace_back(CD3DX12_RESOURCE_BARRIER::Transition(
+                        m_particleBuffer[inputIndex].Get(), m_particleState[inputIndex],
+                        D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+                m_particleState[inputIndex] = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+        }
+        if (m_particleState[outputIndex] != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
+                transitions.emplace_back(CD3DX12_RESOURCE_BARRIER::Transition(
+                        m_particleBuffer[outputIndex].Get(), m_particleState[outputIndex],
+                        D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
+                m_particleState[outputIndex] = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        }
+        if (m_particleMetaState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
+                transitions.emplace_back(CD3DX12_RESOURCE_BARRIER::Transition(
+                        m_particleMetaBuffer.Get(), m_particleMetaState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
+                m_particleMetaState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        }
+        if (m_gridCountState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
+                transitions.emplace_back(CD3DX12_RESOURCE_BARRIER::Transition(
+                        m_gridCountBuffer.Get(), m_gridCountState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
+                m_gridCountState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        }
+        if (m_gridTableState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
+                transitions.emplace_back(CD3DX12_RESOURCE_BARRIER::Transition(
+                        m_gridTableBuffer.Get(), m_gridTableState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
+                m_gridTableState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+        }
+
+        if (!transitions.empty()) {
+                m_computeCmdList->ResourceBarrier(static_cast<UINT>(transitions.size()), transitions.data());
+        }
+
+        m_computeCmdList->SetComputeRootConstantBufferView(0, m_sphParamCB->GetAddress());
+        m_computeCmdList->SetComputeRootConstantBufferView(1, m_dummyViewCB->GetAddress());
+        m_computeCmdList->SetComputeRootDescriptorTable(2, m_particleSrv[inputIndex]->HandleGPU);
+        m_computeCmdList->SetComputeRootDescriptorTable(3, m_particleUav[outputIndex]->HandleGPU);
+        m_computeCmdList->SetComputeRootDescriptorTable(4, m_particleMetaUav->HandleGPU);
+        m_computeCmdList->SetComputeRootDescriptorTable(5, m_gridCountUav->HandleGPU);
+        m_computeCmdList->SetComputeRootDescriptorTable(6, m_gridTableUav->HandleGPU);
+
+        const size_t cellCount = static_cast<size_t>(m_gridCellCount);
+        const size_t tableCount = cellCount * kMaxParticlesPerCell;
+        const size_t clearThreads = std::max(cellCount, tableCount);
+        const UINT clearGroups = clearThreads > 0 ? static_cast<UINT>(std::min<size_t>((clearThreads + 255) / 256, std::numeric_limits<UINT>::max())) : 0;
+        const size_t buildThreads = std::max(cellCount, static_cast<size_t>(particleCount));
+        const UINT buildGroups = buildThreads > 0 ? static_cast<UINT>(std::min<size_t>((buildThreads + 255) / 256, std::numeric_limits<UINT>::max())) : 0;
+        const UINT simGroups = static_cast<UINT>(std::min<size_t>((static_cast<size_t>(particleCount) + 255) / 256, std::numeric_limits<UINT>::max()));
+
+        if (clearGroups > 0) {
+                m_computeCmdList->SetPipelineState(m_clearGridPSO.Get());
+                m_computeCmdList->Dispatch(clearGroups, 1, 1);
+        }
+        if (buildGroups > 0) {
+                m_computeCmdList->SetPipelineState(m_buildGridPSO.Get());
+                m_computeCmdList->Dispatch(buildGroups, 1, 1);
+        }
+        m_computeCmdList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(nullptr));
+
+        if (simGroups > 0) {
+                m_computeCmdList->SetPipelineState(m_particleSimPSO.Get());
+                m_computeCmdList->Dispatch(simGroups, 1, 1);
+        }
+
+        const UINT64 particleBytes = static_cast<UINT64>(bufferElements * sizeof(ParticleGpu));
+
+        CD3DX12_RESOURCE_BARRIER beforeCopy = CD3DX12_RESOURCE_BARRIER::Transition(
+                m_particleBuffer[outputIndex].Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                D3D12_RESOURCE_STATE_COPY_SOURCE);
+        m_computeCmdList->ResourceBarrier(1, &beforeCopy);
+        m_particleState[outputIndex] = D3D12_RESOURCE_STATE_COPY_SOURCE;
+
+        m_computeCmdList->CopyBufferRegion(m_particleReadback.Get(), 0,
+                m_particleBuffer[outputIndex].Get(), 0, particleBytes);
+
+        CD3DX12_RESOURCE_BARRIER afterCopy = CD3DX12_RESOURCE_BARRIER::Transition(
+                m_particleBuffer[outputIndex].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE,
+                D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        m_computeCmdList->ResourceBarrier(1, &afterCopy);
+        m_particleState[outputIndex] = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+
+        m_computeCmdList->Close();
+
+        ID3D12CommandList* lists[] = { m_computeCmdList.Get() };
+        g_Engine->ComputeCommandQueue()->ExecuteCommandLists(1, lists);
+        ++m_computeFenceValue;
+        g_Engine->ComputeCommandQueue()->Signal(m_computeFence.Get(), m_computeFenceValue);
+        WaitForComputeFence();
+
+        void* readPtr = nullptr;
+        if (SUCCEEDED(m_particleReadback->Map(0, nullptr, &readPtr))) {
+                auto* gpuData = reinterpret_cast<const ParticleGpu*>(readPtr);
+                const size_t count = std::min(m_particles.size(), bufferElements);
+                for (size_t i = 0; i < count; ++i) {
+                        m_particles[i].pos = gpuData[i].pos;
+                        m_particles[i].vel = gpuData[i].vel;
+                }
+                m_particleReadback->Unmap(0, nullptr);
+        }
+
+        m_activeParticleBuffer = outputIndex;
+        return true;
 }
 
 // 描画に必要なリソースを作成
@@ -936,24 +1332,42 @@ void FluidSystem::ResolveWall(XMFLOAT3& p, XMFLOAT3& v, float restitution, float
 
 void FluidSystem::UpdateParticles(float dt)
 {
-	float remain = dt;
-	while (remain > 1e-6f) {
-		float sdt = std::min(remain, 0.016f);
+        if (dt <= 0.0f) return;
 
-		float vmax = 0.1f;
-		for (auto& p : m_particles) {
-			float s = std::sqrt(p.vel.x * p.vel.x + p.vel.y * p.vel.y + p.vel.z * p.vel.z);
-			vmax = std::max(vmax, s);
-		}
-		float cfl = 0.4f * m_kernelH / std::max(0.5f, vmax);
-		sdt = std::min(sdt, cfl);
+        if (m_particleComputeRoot && m_sphParamCB && m_computeCmdList) {
+                float remain = dt;
+                bool gpuSuccess = true;
+                while (remain > 1e-6f) {
+                        float step = std::min(remain, 0.016f);
+                        if (!DispatchParticleSimulation(step)) {
+                                gpuSuccess = false;
+                                break;
+                        }
+                        remain -= step;
+                }
+                if (gpuSuccess) {
+                        return;
+                }
+        }
 
-		BuildGrid();
-		SPH_DensityPressure();
-		SPH_ForcesIntegrate(sdt);
+        float remain = dt;
+        while (remain > 1e-6f) {
+                float sdt = std::min(remain, 0.016f);
 
-		remain -= sdt;
-	}
+                float vmax = 0.1f;
+                for (auto& p : m_particles) {
+                        float s = std::sqrt(p.vel.x * p.vel.x + p.vel.y * p.vel.y + p.vel.z * p.vel.z);
+                        vmax = std::max(vmax, s);
+                }
+                float cfl = 0.4f * m_kernelH / std::max(0.5f, vmax);
+                sdt = std::min(sdt, cfl);
+
+                BuildGrid();
+                SPH_DensityPressure();
+                SPH_ForcesIntegrate(sdt);
+
+                remain -= sdt;
+        }
 }
 
 void FluidSystem::DrawParticles(ID3D12GraphicsCommandList* cmd, const Camera& cam)
